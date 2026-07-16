@@ -18,8 +18,7 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [tier1-review](tier1-review/SKILL.md) | Three-lens same-model review: parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "three-lens review", feature/refactor bead reaches self-review-done |
 | [tier2-handoff](tier2-handoff/SKILL.md) | Cross-model review handoff: deterministic prompt assembler (`assemble.py`), response triage, close evidence | "tier 2 review", "cross-model review", "assemble the review prompt" |
 | [packet](packet/SKILL.md) | Gate/sprint packet authoring: committed blueprint template + `render.py` (self-contained HTML share + headless blueprint/anchor verify) | "build the packet", "gate packet", "sprint packet" |
-
-The remaining process skill (packet-deepdive) is incubating — see [PLAN.md](../PLAN.md).
+| [packet-deepdive](packet-deepdive/SKILL.md) | Four-lane packet validation (accuracy/cold-read/receipts/structure) + convergence, orchestrator-wrapped, with a resilience protocol and dispositions report | "deep-dive the packet", "validate the packet", "cold-read the gate packet" |
 
 ## Project Overlay Convention
 
