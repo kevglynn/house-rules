@@ -48,7 +48,10 @@ an incomplete package is the most common cause of shallow reviews.
 
 1. **Bead description + acceptance criteria** — from `bd show <id>`
 2. **Full file contents** of every changed/created file (not diffs alone —
-   lenses need the surrounding code to judge boundaries and edge cases)
+   lenses need the surrounding code to judge boundaries and edge cases).
+   Embed the contents in the prompt, or — when reviewers have file access —
+   give exact paths with a read-completely instruction and a note pinning
+   the state under review (branch/commit; confirm the working tree matches)
 3. **Bead type** (feature/refactor/bug) — calibrates review depth
 4. **Shared components the change depends on** — so reviewers can check
    integration, not just the new code in isolation
@@ -80,6 +83,10 @@ is Tier 2's job). The overlay may override models per lens.
 **Fallback (no parallel subagents):** run the three passes sequentially,
 writing each pass's findings to a scratch file *before* starting the next,
 to prevent anchoring on your own prior findings.
+
+**Recovery:** if a lens's final message arrives as a summary without the
+full report, resume that subagent and ask it to restate the complete
+findings — do not re-run the lens fresh (that discards its analysis).
 
 ### Phase 3 — Triage
 

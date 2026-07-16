@@ -32,6 +32,11 @@ against the ACs first; **refactor** — behavior must be unchanged, judge
 structure; **bug** — judge whether the fix covers the pattern class, not
 just the reported site.
 
+Every template ends with the same delivery instruction — keep it. Only a
+subagent's final message reaches the dispatcher, and a lens that closes
+with "findings are in the message above" delivers nothing (battle-test
+lesson: two of three lenses did exactly this on the first run).
+
 ---
 
 ## code-reviewer
@@ -59,6 +64,9 @@ comment on style.
   Critical (correctness/data-loss/security), Important (real defect),
   Minor (diagnostics/polish).
 - If you find nothing at a severity level, say so explicitly.
+- Your FINAL message must contain the complete findings report in full.
+  Do not summarize or point to an earlier message — only the final
+  message is delivered.
 - End with: `verdict: N Critical, N Important, N Minor.`
 ```
 
@@ -89,6 +97,9 @@ over-engineering/simplification — other reviewers own those.
 - For each finding, cite the location, name the pattern or boundary at
   issue, and rate severity: Critical, Important, Minor.
 - If the structure is sound, say so explicitly — do not invent findings.
+- Your FINAL message must contain the complete findings report in full.
+  Do not summarize or point to an earlier message — only the final
+  message is delivered.
 - End with: `verdict: N Critical, N Important, N Minor.`
 ```
 
@@ -133,4 +144,7 @@ shouldn't exist," "the tests test upstream behavior not this code,"
 "this is a tutorial masquerading as an implementation." These are often
 the highest-value findings; do not suppress them to fit the tag format.
 If there are none, write `No structural observations.`
+
+Your FINAL message must contain both sections in full. Do not summarize
+or point to an earlier message — only the final message is delivered.
 ```
