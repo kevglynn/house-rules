@@ -1,6 +1,6 @@
 # process-kit
 
-> Working name. The final kit name, license, and publication posture are tracked open decisions — see [PLAN.md](PLAN.md).
+> Working name (kept until publication). License (Apache-2.0), publication posture, and packaging are settled in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0001-naming-license-publication.md); publication is gated on a readiness checklist.
 
 A portable operating kit for AI-native development — versioned agent rules, skills, and scripts that make coding-agent work repeatable across projects and tools (Cursor and Claude Code today).
 

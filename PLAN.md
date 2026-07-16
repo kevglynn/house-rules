@@ -21,15 +21,17 @@ Design rule for all skills: **generic core / project overlay**. Skill cores neve
 
 Work is tracked in the consuming project's issue tracker during incubation, not in this repo.
 
-## Open decisions
+## Decisions
 
-| Decision | Status |
-|----------|--------|
-| Final kit name (this repo uses the working name `process-kit`) | Open |
-| License | Open |
-| Publication posture (public vs private, timing, what publication requires) | Open |
-| Relationship to the private predecessor playbook (one-way upstream, divergence, or retirement) | Open |
-| Packaging at publication time (plain repo vs plugin bundle vs both) | Open |
+Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0001-naming-license-publication.md) (2026-07-16):
+
+| Decision | Resolution |
+|----------|------------|
+| Kit name | Keep the working name `process-kit`; final brand deferred to the publication trigger |
+| License | Apache-2.0 (landed at publication, not before) |
+| Publication posture | Private until a readiness checklist is met (IP clear, skills stable, second-consumer proof, LICENSE + CONTRIBUTING, neutrality audit) |
+| Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |
+| Packaging | Plain repo for v1; Claude Code plugin bundle deferred |
 
 Marker strings in the installers deliberately keep the legacy `ai-dev-playbook:` prefix until the final name lands (see `defer:` comments in `scripts/`) — renaming them requires a legacy-marker migration in the same change. One rule (`ponytail-playbook.mdc`) also mentions the predecessor name in its body; it is left byte-identical so synced consumers show zero drift, and gets renamed in the same future change.
 
