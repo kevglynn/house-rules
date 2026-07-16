@@ -17,8 +17,9 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [ponytail-debt](ponytail-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "ponytail debt", defer-ledger review |
 | [tier1-review](tier1-review/SKILL.md) | Three-lens same-model review: parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "three-lens review", feature/refactor bead reaches self-review-done |
 | [tier2-handoff](tier2-handoff/SKILL.md) | Cross-model review handoff: deterministic prompt assembler (`assemble.py`), response triage, close evidence | "tier 2 review", "cross-model review", "assemble the review prompt" |
+| [packet](packet/SKILL.md) | Gate/sprint packet authoring: committed blueprint template + `render.py` (self-contained HTML share + headless blueprint/anchor verify) | "build the packet", "gate packet", "sprint packet" |
 
-Remaining process skills for validation/packet workflows (packet, packet-deepdive) are incubating — see [PLAN.md](../PLAN.md).
+The remaining process skill (packet-deepdive) is incubating — see [PLAN.md](../PLAN.md).
 
 ## Project Overlay Convention
 
