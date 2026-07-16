@@ -13,7 +13,7 @@ The rules state the law; skills encode the procedures. Four process skills are b
 | Skill | Encapsulates | Status |
 |-------|--------------|--------|
 | `tier1-review` | Same-model three-lens review: dispatch, Critical/Important/Minor triage, close evidence | Incubating (shipped, battle-testing) |
-| `tier2-handoff` | Cross-model review handoff: deterministic prompt assembly, response triage | Planned |
+| `tier2-handoff` | Cross-model review handoff: deterministic prompt assembly (`assemble.py`), response triage | Incubating (shipped, battle-testing) |
 | `packet` | Gate/sprint packet authoring: committed blueprint template, evidence gathering, share render | Planned |
 | `packet-deepdive` | Packet validation: four specialist lanes + convergence, orchestrator-wrapped | Planned |
 
