@@ -10,14 +10,14 @@ The standalone home for a portable AI-native development kit: versioned agent ru
 
 The rules state the law; skills encode the procedures. Four process skills are being incubated here and battle-tested against a private consumer project before being considered stable:
 
-| Skill | Encapsulates |
-|-------|--------------|
-| `tier1-review` | Same-model three-lens review: dispatch, Critical/Important/Minor triage, close evidence |
-| `tier2-handoff` | Cross-model review handoff: deterministic prompt assembly, response triage |
-| `packet` | Gate/sprint packet authoring: committed blueprint template, evidence gathering, share render |
-| `packet-deepdive` | Packet validation: four specialist lanes + convergence, orchestrator-wrapped |
+| Skill | Encapsulates | Status |
+|-------|--------------|--------|
+| `tier1-review` | Same-model three-lens review: dispatch, Critical/Important/Minor triage, close evidence | Incubating (shipped, battle-testing) |
+| `tier2-handoff` | Cross-model review handoff: deterministic prompt assembly, response triage | Planned |
+| `packet` | Gate/sprint packet authoring: committed blueprint template, evidence gathering, share render | Planned |
+| `packet-deepdive` | Packet validation: four specialist lanes + convergence, orchestrator-wrapped | Planned |
 
-Design rule for all skills: **generic core / project overlay**. Skill cores never name a project, a person, or a project-specific parameter. Reader rosters, model assignments, tone rules, and repo paths live in a small per-project overlay file in the consuming repo; each skill documents the overlay keys it reads and behaves sensibly when no overlay exists.
+Design rule for all skills: **generic core / project overlay**. Skill cores never name a project, a person, or a project-specific parameter. Reader rosters, model assignments, tone rules, and repo paths live in a single per-project overlay file (`.agents/overlay.md`, one section per skill — convention documented in `skills/README.md`); each skill documents the overlay keys it reads and behaves sensibly when no overlay exists.
 
 Work is tracked in the consuming project's issue tracker during incubation, not in this repo.
 

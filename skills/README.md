@@ -15,8 +15,20 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [ponytail-audit](ponytail-audit/SKILL.md) | Repo-wide over-engineering scan: dead code, stdlib replacements, YAGNI | "ponytail audit", periodic hygiene pass |
 | [ponytail-gain](ponytail-gain/SKILL.md) | Find high-leverage simplification wins | "ponytail gain", "what can we delete" |
 | [ponytail-debt](ponytail-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "ponytail debt", defer-ledger review |
+| [tier1-review](tier1-review/SKILL.md) | Three-lens same-model review: parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "three-lens review", feature/refactor bead reaches self-review-done |
 
-Process skills for review/validation/packet workflows (tier1-review, tier2-handoff, packet, packet-deepdive) are incubating — see [PLAN.md](../PLAN.md).
+Remaining process skills for review/validation/packet workflows (tier2-handoff, packet, packet-deepdive) are incubating — see [PLAN.md](../PLAN.md).
+
+## Project Overlay Convention
+
+Skills that need project-specific parameters (model assignments, reader
+rosters, paths, extra focus areas) read them from **one file in the
+consuming repo: `.agents/overlay.md`**, with one `## <skill-name>` section
+per skill. Skill cores never name a project, a person, or a project-specific
+parameter; each skill documents the overlay keys it reads and behaves
+sensibly when the file or its section is absent. Do not invent per-skill
+overlay files — if the single-file convention stops fitting, change the
+convention here, not in one skill.
 
 ## How to Use
 
