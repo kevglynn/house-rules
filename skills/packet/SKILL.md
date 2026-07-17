@@ -4,9 +4,9 @@ description: >-
   Author a gate/sprint review packet from a committed blueprint: gather the
   gate's bead evidence and receipts, populate the reader's-own-checklist
   status grid with a divergence strip, a capped FAQ, and exactly three linked
-  receipts, carry the decision vocabulary into the reader's repo, then render
-  a self-contained <subject>-packet.html share that passes headless
-  verification. Use when the user says "build the packet", "gate packet",
+  receipts, carry the decision vocabulary into the reader's repo, then verify
+  it headlessly and share the single packet.md markdown file. Use when the
+  user says "build the packet", "gate packet",
   "sprint packet", "assemble the G2/G3 packet", or when a gate/sprint reaches
   close and needs a review artifact for a cold reader.
 ---
@@ -78,15 +78,17 @@ Copy `template.md` and fill it. The blueprint constraints it encodes:
 Write the packet to the consuming repo at `docs/<gate>/packet.md` (per the
 packet naming convention).
 
-### Phase 4 — Render and verify
+### Phase 4 — Verify
 
 ```bash
-python3 <skill-dir>/render.py --in docs/<gate>/packet.md \
-  --out docs/<gate>/<subject>-packet.html --title "<Gate N>" --verify
+python3 <skill-dir>/render.py --in docs/<gate>/packet.md --verify
 ```
 
-The renderer inlines a dark-theme CSS and a heading-derived sidebar into one
-offline HTML file, then **verifies headlessly** (no browser):
+**The share artifact is the markdown file itself** — a single, simple
+`packet.md` (reader preference, 2026-07-16: plain markdown over generated
+HTML). `render.py --verify` runs checks-only with no output file; the HTML
+render (`--out`) remains available as an optional offline view but is no
+longer the share step. The verifier runs headlessly (no browser):
 
 - **Blueprint checks** — grid present, FAQ ≤ 5 (error if over), exactly 3
   receipts (error otherwise), divergence strip present (warn), prose ≤ 700
@@ -105,8 +107,9 @@ ran to ~1100 prose words and shipped — a documented, deliberate exception).
 
 ### Phase 5 — Record
 
-- Commit `packet.md`, the rendered HTML, and `receipts/` to the target repo.
-- The share the reader receives is the single `<subject>-packet.html` file.
+- Commit `packet.md` and `receipts/` to the target repo (plus the rendered
+  HTML only if the optional render was produced).
+- The share the reader receives is the single `packet.md` markdown file.
 - **When this skill first lands, update the `gate-packet-blueprint` memory**
   (if the project uses one) to point at the committed template — the template
   is now the single source of truth, not the memory.
@@ -140,5 +143,6 @@ tags, write to `docs/<gate>/`.
   in their repo. Carry the vocabulary in.
 - **Shipping on a red verifier.** A dangling anchor or an over-cap FAQ is an
   error for a reason — the cold reader hits exactly those.
-- **Hand-writing the HTML.** The share is generated from `packet.md`; never
-  hand-edit the HTML (it's overwritten on every render).
+- **Hand-writing the HTML.** If the optional HTML view is rendered, it is
+  generated from `packet.md`; never hand-edit it (overwritten on every
+  render). The share is `packet.md` itself.
