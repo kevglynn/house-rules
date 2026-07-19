@@ -17,6 +17,7 @@ Reference material for the kit. If you're new, read in this order:
 | [Governance](governance.md) | How the Agentic Covenant fits into the kit. |
 | [Agentic Covenant Adoption Guide](adoption-guide.md) | Step-by-step governance adoption for teams. |
 | [Rule Effectiveness Scorecard](rule-effectiveness-scorecard.md) | Measuring whether rule changes improve agent behavior. |
+| [Blog draft: Agentic Covenant](blog-agentic-covenant.md) | Draft post on why open source needs the Covenant (publication candidate). |
 
 ## Key concepts (30-second version)
 

@@ -7,9 +7,11 @@
 __pycache__/
 *.pyc
 
-# Cursor workspace files (track only committed config)
+# Cursor workspace files (track committed config + maintenance agents)
 .cursor/*
 !.cursor/worktrees.json
+!.cursor/agents/
+!.cursor/agents/**
 
 # macOS
 .DS_Store

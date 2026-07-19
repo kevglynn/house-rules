@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Carried over (identity refresh)
+- **Maintenance subagents** in `.cursor/agents/`: `rules-auditor`, `rule-efficacy-analyst`, `beads-strategist`, `docs-automation-architect`, `x-factor-innovator` — rewritten for process-kit (12 rules, no predecessor/org-specific references); documented again in CONTRIBUTING
+- **`docs/blog-agentic-covenant.md`** — org-neutral Agentic Covenant blog draft, with draft-status note for publication readiness
+
 ## 0.1.0 — 2026-07-15
 
 Initial extraction. This repo starts with fresh git history; the content was carried from a private predecessor playbook at its v1.2.0, with all organization-specific material removed.

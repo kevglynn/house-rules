@@ -157,6 +157,20 @@ git push origin main --tags
 
 Teams pin to versions via `sync-rules.sh --version v1.0.0`. Breaking changes should be communicated before tagging.
 
+## Subagents
+
+The `.cursor/agents/` directory contains specialized analysis agents for maintaining the kit itself:
+
+| Agent | Purpose |
+|-------|---------|
+| `rules-auditor` | Audits rule quality, consistency, coverage gaps |
+| `beads-strategist` | Analyzes beads usage maturity, proposes advanced patterns |
+| `docs-automation-architect` | Audits docs and automation for quality and friction |
+| `x-factor-innovator` | Generates novel ideas for extending kit value |
+| `rule-efficacy-analyst` | Measures whether rule changes improve agent behavior |
+
+To run an analysis, use Cursor's subagent feature or Claude Code's Task tool with the agent definition as the prompt/context. Results should inform changes, not be committed directly.
+
 ## Measuring impact
 
 Before and after rule changes, use the [Rule Effectiveness Scorecard](docs/rule-effectiveness-scorecard.md) to measure whether the change actually improved agent behavior. The scorecard has:
