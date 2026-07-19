@@ -5,7 +5,8 @@
 **Mode:** retrospective · **Refinement object(s):** mechanisms
 **Scope:** the pragmatic-tdd capability — `cursor/rules/pragmatic-tdd.mdc` and the surfaces it could span (skill, review lens, evidence tooling). Not in scope: the substance of the test discipline itself.
 **Execution during refinement:** continues — no active work depends on the rule changing.
-**Status:** Under review
+**Status:** Approved (2026-07-19, kit owner) — with one revision at the
+approval gate: Option D's ledger pulled forward (see §8)
 **Bead:** process-kit-vvx · **Spec:** [2026-07-19-refinement-initiative.md](../specs/2026-07-19-refinement-initiative.md)
 
 ## 1. Executive summary
@@ -21,8 +22,10 @@ keeping only obligations, exceptions, and evidence requirements; a
 `pragmatic-tdd` skill carrying the per-bead-type playbooks and the
 red-proof ceremony; and a fourth tier1-review lens giving the zero-signal
 taxonomy a semantic detection surface. A stronger variant adding an
-evidence-ledger CLI with CI verification is specified but deferred with an
-explicit trigger — the kit currently has no CI layer for it to gate on.
+evidence-ledger CLI with CI verification was initially deferred, but the
+deferral was reversed at the approval gate (§8): the ledger is a
+distributable artifact whose gate host is target-repo CI, which typically
+exists. It proceeds as a follow-up bead after the split lands.
 
 ## 2. Governing intent
 
@@ -236,13 +239,19 @@ from the profile pattern's shared-namespace insight, applied to prose).
 ## 8. Deferred and rejected
 
 - **Option B — rejected:** relocation without a destination is deletion.
-- **Option D (evidence-ledger CLI + CI verify) — deferred.** Trigger:
-  *(a)* the kit gains a CI layer (the l1h audit is expected to propose
-  one), **and** *(b)* the 9r8 baseline or post-split scoring shows red-first
-  skipping or evidence-quality gaps — or the publication push wants
-  demonstrable enforcement. Shape when triggered: per catalog Part 3
-  (record-failing / record-passing / verify against a committed JSONL
-  ledger; profile-parameterizable per Part 5).
+- **Option D (evidence-ledger CLI + CI verify) — deferral REVERSED at the
+  approval gate (2026-07-19).** The kit owner challenged the deferral
+  rationale and the challenge held: the "no CI layer" objection
+  misattributed the gate host — the ledger is a *distributable* artifact
+  and target repos (the actual gate hosts) typically have CI. The baseline
+  precondition was also weaker than framed, since external adoption of
+  TDD Guard/Probity already evidences the failure mode; the 9r8 baseline
+  remains valuable as before/after measurement, not as a gate. Revised
+  disposition: **pulled forward as bead process-kit-0ei**, sequenced after
+  the rule thinning (`2l2`) so the skill's red-proof ceremony can reference
+  the ledger commands. Shape per catalog Part 3 (record-failing /
+  record-passing / verify against a committed JSONL ledger); the kit adds a
+  minimal CI workflow to dogfood the verify gate.
 - **TDD hooks as enforcement — remains deferred** per the spec non-goal;
   Probity-style `requireCommand` gating noted as optional in-session UX
   only, subordinate to the same trigger as Option D.
@@ -264,15 +273,16 @@ from the profile pattern's shared-namespace insight, applied to prose).
 
 | Finding | Decision | Authority | Date | Rationale |
 |---|---|---|---|---|
-| F1 (split + relocate) | pending | kit owner | | |
-| F2 (test-signal lens) | pending | kit owner | | |
-| F3 (ledger — defer w/ trigger) | pending | kit owner | | |
-| F4 (content frozen) | pending | kit owner | | |
-| F5 (measure via 9r8) | pending | kit owner | | |
+| F1 (split + relocate) | approved | kit owner | 2026-07-19 | Option C as recommended |
+| F2 (test-signal lens) | approved | kit owner | 2026-07-19 | Option C as recommended |
+| F3 (ledger) | approved — **pulled forward**, not deferred | kit owner | 2026-07-19 | Deferral rationale conflated kit CI with target-repo CI; see §8. Bead process-kit-0ei |
+| F4 (content frozen) | approved | kit owner | 2026-07-19 | Obligations checklist is the neutrality proof |
+| F5 (measure via 9r8) | approved | kit owner | 2026-07-19 | Baseline reframed as before/after measurement (F3 revision), still required |
 
-**Resulting work items:** already exist — process-kit-3ju, -2l2, -4ek, -9r8
-(created at initiative planning; this proposal is the evidence they were
-correctly scoped). No new beads required for Option C.
+**Resulting work items:** process-kit-3ju, -2l2, -4ek, -9r8 (pre-existing;
+this proposal is the evidence they were correctly scoped) + process-kit-0ei
+(evidence-ledger CLI, created at the approval gate, depends on 2l2).
 **Traceability:** prior state = `cursor/rules/pragmatic-tdd.mdc` at commit
-`a288891` (pre-split); this proposal; spec trade-off table rows (hooks
-defer, ledger option). Post-split diffs will reference this document.
+`a288891` (pre-split); this proposal at `e28bf2e`; the approval-gate
+challenge and F3 reversal recorded in §8. Post-split diffs will reference
+this document.
