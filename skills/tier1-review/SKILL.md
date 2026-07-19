@@ -92,9 +92,18 @@ is Tier 2's job). The overlay may override models per lens.
 writing each pass's findings to a scratch file *before* starting the next,
 to prevent anchoring on your own prior findings.
 
-**Recovery:** if a lens's final message arrives as a summary without the
-full report, resume that subagent and ask it to restate the complete
-findings — do not re-run the lens fresh (that discards its analysis).
+**Recovery:** when collecting results, check each lens's final message
+before triage. If it contains a verdict line (or section headers) without
+the full findings, resume that subagent once with this fixed prompt — do
+not re-run the lens fresh (that discards its analysis):
+
+> Your final message did not contain the findings report — only your FINAL
+> message is delivered; earlier messages are invisible. Repeat the COMPLETE
+> findings report now, in full, in this message. Do not reference earlier
+> messages. End with the verdict line.
+
+In both observed failures to date, this prompt recovered the full report
+cleanly on the first resume.
 
 ### Phase 3 — Triage
 
