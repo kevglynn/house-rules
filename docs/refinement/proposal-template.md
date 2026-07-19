@@ -66,9 +66,12 @@ One block per finding. Small refinements may have one; that's fine.
 ## 6. Change options
 
 For each finding (or coherent group of findings), the realistic responses —
-always including "keep as is" so the do-nothing cost is explicit.
+always including "keep as is" so the do-nothing cost is explicit. When all
+findings share one structural response, use a single combined option set and
+say so — do not repeat near-identical tables per finding. (Learned in the
+first pilot run.)
 
-### Option set for F1
+### Option set for F1 (or combined set)
 
 | Option | Benefits | Costs / risks | Work invalidated | Reversibility | Confidence |
 |---|---|---|---|---|---|
