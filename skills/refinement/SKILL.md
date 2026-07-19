@@ -26,9 +26,9 @@ This skill is the procedure that connects them. Worked example: the
 [pragmatic-tdd topology proposal](../../docs/refinements/2026-07-19-pragmatic-tdd-topology.md)
 (the pilot run — a retrospective mechanism-placement refinement).
 
-Refinement is not a correction mechanism. Most refinements are caused by
-discovery, not failure — frame findings as opportunity and confirmation, not
-deficiency.
+This skill depends on the kit's `docs/refinement/` tree (concepts doc and
+proposal template). In a repo where the skill was copied without those docs,
+read them from the kit checkout (`${PROCESS_KIT:-~/process-kit}/docs/refinement/`).
 
 ## When to Use This Skill
 
@@ -98,32 +98,29 @@ you go — its sections map onto these phases.
 Record: initiator, the trigger(s) that fired, mode (active-plan or
 retrospective), object(s) (the work, the mechanisms, or both), the precise
 scope boundary, and whether execution continues or pauses during the
-refinement. (Template header + §1.)
+refinement. (Template header — §1's executive summary comes last, in
+Phase 8.)
 
 ### Phase 2 — Reconstruct governing intent
 
 Identify the authoritative sources of intent for this scope and order them
 by precedence — spec, ADRs, epic descriptions, rule text, research docs.
-State what they say: problem, outcomes, constraints, non-goals, prior
-decisions with rationale. Flag conflicts between sources; resolving which
-artifact is authoritative may itself be a finding. In retrospective mode
-this phase is reconstruction, not lookup. (Template §2.)
+Flag conflicts between sources; resolving which artifact is authoritative
+may itself be a finding. In retrospective mode this phase is
+reconstruction, not lookup. (Template §2 lists what to capture.)
 
 ### Phase 3 — Gather evidence
 
-List everything actually examined — artifact texts, commits, test results,
-transcripts, bead history, measurements, external comparisons — so the
-review is reproducible. **Record evidence that was wanted but unavailable**;
-gaps lower confidence and belong in the proposal (the pilot recorded two
-such gaps and rated its confidence accordingly, proposal §3). (Template §3.)
+List everything actually examined so the review is reproducible (template
+§3 enumerates the categories). **Record evidence that was wanted but
+unavailable**; gaps lower confidence and belong in the proposal (the pilot
+recorded two such gaps and rated its confidence accordingly, proposal §3).
 
 ### Phase 4 — Compare against reality
 
 Build the assumption ledger: each assumption the plan or capability design
 rests on, marked confirmed / weakened / invalidated / untested, with
-evidence. Then ask the four control-loop questions from concepts.md — intent
-still correct? plan still expresses it? execution still follows it? has
-reality revealed anything? (Template §4.)
+evidence. Then ask concepts.md's four control-loop questions. (Template §4.)
 
 ### Phase 5 — Produce findings
 
@@ -142,14 +139,13 @@ successes with the same rigor as problems — they lock in proven patterns.
 
 ### Phase 6 — Generate change options
 
-For each finding or coherent group, the realistic responses — **always
-including "keep as is"** so the do-nothing cost is explicit. Each option
-carries benefits, costs/risks, work invalidated, reversibility, confidence.
-**When all findings share one structural response, use a single combined
-option set and say so** — the pilot's four findings resolved to one option
-set (proposal §6), and forcing per-finding tables would have meant
-repetition. Note missing information that would change the choice and
-whether a spike could obtain it. (Template §6.)
+Build option sets per template §6 — **keep-as-is is mandatory** so the
+do-nothing cost is explicit, and **a combined option set is permitted when
+findings share one structural response** (pilot lesson: the pilot's five
+findings — one a confirmation needing no options — resolved to one combined
+set, proposal §6, and forcing per-finding tables would have meant
+repetition). Note missing information that would change the choice and
+whether a spike could obtain it.
 
 ### Phase 7 — Recommend
 

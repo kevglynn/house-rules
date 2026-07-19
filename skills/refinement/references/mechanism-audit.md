@@ -22,8 +22,8 @@ candidate finding (usually type *mechanism misplacement*).
    responsibility of the surface class it lives on (table below)? Obligations
    belong on normative surfaces, procedures on procedural ones, checkable
    facts on deterministic ones.
-2. **Right activation?** Always-in-context, on-demand, event-driven,
-   scheduled, or gate-at-boundary — does the mechanism fire when it's needed
+2. **Right activation?** Always-in-context, on-demand, event-driven (agent-
+   or world-), scheduled, or gate-at-boundary — does the mechanism fire when it's needed
    and *only* when it's needed? An always-on artifact that matters once per
    bead type is over-activated; a manually-invoked workflow that must never
    be skipped is under-activated.
@@ -32,10 +32,9 @@ candidate finding (usually type *mechanism misplacement*).
    Not everything deserves blocking; almost nothing critical should be
    advisory-only.
 4. **Enforceable where claimed?** Can this surface actually deliver the
-   enforcement level it presents? A rule is an instruction with privileged
-   visibility, not a guarantee; client-side git hooks are skippable; harness
-   deny-hooks have documented ignore bugs. The only true trust boundary is a
-   gate outside the agent harness.
+   enforcement level it presents? Per concepts.md's placement principles:
+   rules and client-side hooks are advisory in practice; the only true trust
+   boundary is a gate outside the agent harness.
 5. **Duplicated across surfaces?** Does the same obligation, procedure, or
    data live in two places that can evolve independently? Cross-referencing
    with shared vocabulary is fine; parallel authoritative copies are not.
@@ -62,11 +61,9 @@ are the placement test; the last column is what to look for when auditing.
 | **Work-item system** (tracker: ACs, dependencies, lint) | Workflow substrate — the only surface that mechanically sequences daily work | Narrative context (that's docs/scratchpad); governing conventions | Plans tracked in ephemeral to-do tools; ACs duplicated into prose docs that drift |
 | **Meta-surfaces** (distribution, measurement, overlays, persistence infra) | Governing the governing mechanisms: sync, scorecards, parameterization, memory | Direct project work; policy content of its own | Sync scripts whose output drifts from canon unnoticed; measurement that rewards the proxy, not the outcome |
 
-Sidebar — **canonical specification**: introduce a prose spec only when
-drift between projections is actually observed; use a machine-readable
-profile when the convention is enumerable as data (see concepts.md for the
-economics of each). Profiles carry data-shaped conventions; judgment-shaped
-policy stays prose.
+For when to introduce a canonical spec or machine-readable profile over
+these surfaces, see the economics discussion in concepts.md — data-shaped
+conventions go in profiles; judgment-shaped policy stays prose.
 
 ## Anti-patterns
 
