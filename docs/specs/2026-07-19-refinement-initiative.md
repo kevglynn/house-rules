@@ -5,6 +5,19 @@
 **Status:** Approved
 **Source research:** [docs/research/2026-07-19-chatgpt-prag-tdd-and-refinement-process.md](../research/2026-07-19-chatgpt-prag-tdd-and-refinement-process.md)
 
+## Intent frame
+
+Nothing this initiative touches is broken — the kit works well today. The
+purpose is **evolution, not remediation**: climbing toward the abstraction
+layer where agentic development works at its best (the developer's
+"cockpit"), which can only be discovered by building it. The trajectory is
+open-source publication with a fail-fast posture — the initiative's outputs
+(concepts doc, surface catalog, refinement capability, kit audit) are
+themselves publication candidates and should be written for outside readers.
+Findings produced under this initiative are framed as opportunity and
+confirmation, not deficiency; decision 0001's publication readiness
+checklist is treated as a fail-fast target, not an indefinite gate.
+
 ## Architecture and component overview
 
 Three linked outcomes, delivered as one sequenced initiative:
