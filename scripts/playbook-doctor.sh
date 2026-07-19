@@ -17,11 +17,13 @@ set -uo pipefail
 # Exit codes:
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
-#   3 = rules_drift (rules present but stale vs playbook source)
+#   3 = drift (kit-managed files present but stale vs playbook source:
+#       rules_drift_* or ledger_drift — dispatch on the SUMMARY key)
 #   1 = generic error / other failure
 #
 # SUMMARY keys (--agent mode) for rules_drift carry the format that needs
 # remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
+# ledger_drift means scripts/tdd-ledger is stale vs the kit copy.
 # Agents must dispatch on the specific key, not the generic exit code, to
 # avoid running sync-rules.sh with the wrong --format.
 
@@ -41,6 +43,7 @@ Usage: playbook-doctor.sh [project-path] [--agent]
 Checks:
   • bd (beads) is on PATH
   • Agent rules are present and match the canonical source
+  • tdd-ledger CLI (if distributed) matches the kit copy
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
   • Scratchpad exists with correct sections
@@ -50,9 +53,10 @@ Checks:
 
 Flags:
   --agent   Emit a machine-consumable SUMMARY line and use structured
-            exit codes (0=ok, 2=bootstrap_needed, 3=rules_drift,
-            1=error). The rules_drift SUMMARY carries the format
-            (rules_drift_cursor|rules_drift_claude|rules_drift_both).
+            exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
+            Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
+            rules_drift_both (stale rules) or ledger_drift (stale
+            scripts/tdd-ledger; only emitted when rules are current).
   --help    Show this help.
 
 Exit codes (human mode): 0 = all pass, 1 = issues found.
@@ -101,6 +105,7 @@ warn=0
 bootstrap_missing=0
 cursor_stale=0
 claude_stale=0
+ledger_stale=0
 
 check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
 check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
@@ -216,6 +221,40 @@ if ! $is_playbook_repo; then
   fi
   if $has_cursor && git -C "$PROJECT_ROOT" check-ignore -q ".cursor/rules/test.mdc" 2>/dev/null; then
     check_warn ".cursor/rules/ appears to be gitignored — rules won't be committed"
+  fi
+fi
+
+echo ""
+
+# ---------- TDD ledger ----------
+#
+# scripts/tdd-ledger is kit-managed: playbook-init.sh copies it with cp -f
+# (same semantics as rules), so it drift-checks against the kit copy the
+# same way rules do. The CI workflow (.github/workflows/tdd-ledger-verify.yml)
+# is NOT drift-checked — init treats it as not-overwriting, so target repos
+# may legitimately customize it. We only note its absence when the CLI is
+# present.
+
+echo "TDD ledger:"
+
+ledger_src="$PLAYBOOK_ROOT/scripts/tdd-ledger"
+ledger_dest="$PROJECT_ROOT/scripts/tdd-ledger"
+
+if [ ! -f "$ledger_src" ]; then
+  check_warn "Kit copy missing at $ledger_src — cannot drift-check tdd-ledger"
+elif [ ! -f "$ledger_dest" ]; then
+  # Informational, not a failure: the repo may predate the ledger or not use it.
+  echo "  – tdd-ledger not distributed here (optional — re-run playbook-init.sh to add it)"
+else
+  if diff -q "$ledger_src" "$ledger_dest" > /dev/null 2>&1; then
+    check_pass "tdd-ledger CLI matches the kit copy"
+  else
+    check_fail "tdd-ledger CLI is stale vs the kit copy — verify invariants may have evolved" \
+      "cp -f \"$ledger_src\" \"$ledger_dest\" && chmod +x \"$ledger_dest\""
+    ledger_stale=1
+  fi
+  if ! $is_playbook_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+    check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
   fi
 fi
 
@@ -370,15 +409,22 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 
 # --- Agent-mode structured summary + exit ---
 #
-# Priority: bootstrap_needed > rules_drift > error > ok. The SUMMARY line
-# is a stable contract; do not emit user-controlled paths or free-form
-# strings — only the fixed enum keys below.
+# Priority: bootstrap_needed > rules_drift > ledger_drift > error > ok.
+# The SUMMARY line is a stable contract; do not emit user-controlled paths
+# or free-form strings — only the fixed enum keys below.
 #
 # rules_drift is split tri-state so the agent contract maps directly to a
 # specific sync-rules.sh --format flag. Without this, an agent following
 # the agent-protocol's "bash sync-rules.sh" recommendation on a Claude-only
 # project would default to --format cursor (the script's default) and
 # silently create unwanted .cursor/rules/ files in the target.
+#
+# ledger_drift reuses exit 3 (drift class) with its own SUMMARY key rather
+# than a new exit code, so the agent-protocol exit table stays stable.
+# Ordering: rules drift wins the SUMMARY when both drift (existing agents
+# already dispatch on rules_drift_*); the ledger finding is still in the
+# text output above, and ledger_drift is the SUMMARY only when it is the
+# sole drift.
 if $AGENT_MODE; then
   if [ $bootstrap_missing -eq 1 ]; then
     echo ""
@@ -395,6 +441,10 @@ if $AGENT_MODE; then
   elif [ $claude_stale -eq 1 ]; then
     echo ""
     echo "SUMMARY: rules_drift_claude"
+    exit 3
+  elif [ $ledger_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: ledger_drift"
     exit 3
   elif [ $fail -gt 0 ]; then
     echo ""

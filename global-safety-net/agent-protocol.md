@@ -5,7 +5,7 @@ If the user invokes the playbook ("use the playbook", "bootstrap this repo",
 
 1. Run `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/playbook-doctor.sh" --agent` to get structured status. The `--agent` mode emits a `SUMMARY: <key>` line and a stable exit code.
 
-2. Branch on the **SUMMARY key**, not the bare exit code, when the exit code is `3` (rules_drift). The SUMMARY carries the format that needs remediation so the recommended `sync-rules.sh` invocation matches what's actually drifted. Do not execute until the user consents.
+2. Branch on the **SUMMARY key**, not the bare exit code, when the exit code is `3` (drift). The SUMMARY carries what drifted so the recommended remediation matches. Do not execute until the user consents.
 
    | Exit | SUMMARY key | Meaning | Proposed action |
    |------|-------------|---------|-----------------|
@@ -14,7 +14,10 @@ If the user invokes the playbook ("use the playbook", "bootstrap this repo",
    | `3` | `rules_drift_cursor` | Cursor rules stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/sync-rules.sh" --format cursor` |
    | `3` | `rules_drift_claude` | Claude rules stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/sync-rules.sh" --format claude` |
    | `3` | `rules_drift_both` | Both stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/sync-rules.sh" --format all` |
+   | `3` | `ledger_drift` | `scripts/tdd-ledger` stale vs kit copy | `cp -f "${PROCESS_KIT:-$HOME/process-kit}/scripts/tdd-ledger" scripts/tdd-ledger && chmod +x scripts/tdd-ledger` |
    | `1` | `error` | Generic error | Show the doctor's full text output to the user |
+
+   Rules drift wins the SUMMARY when both rules and the ledger drift; the ledger finding still appears in the doctor's text output, so check it after fixing rules drift.
 
 3. Do not invoke `sync-rules.sh` without `--format` on a Claude-only project. The script defaults to `--format cursor` and will create unwanted `.cursor/rules/` files in the target.
 
