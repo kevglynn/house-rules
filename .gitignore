@@ -34,3 +34,6 @@ global-safety-net/cursor-snippet.generated.md
 
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
