@@ -15,6 +15,7 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [ponytail-audit](ponytail-audit/SKILL.md) | Repo-wide over-engineering scan: dead code, stdlib replacements, YAGNI | "ponytail audit", periodic hygiene pass |
 | [ponytail-gain](ponytail-gain/SKILL.md) | Find high-leverage simplification wins | "ponytail gain", "what can we delete" |
 | [ponytail-debt](ponytail-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "ponytail debt", defer-ledger review |
+| [pragmatic-tdd](pragmatic-tdd/SKILL.md) | Per-bead-type TDD playbooks: bug/feature/story/refactor steps, red-proof ceremony, zero-signal taxonomy | "pragmatic tdd", starting a bug/feature/refactor bead, "write the failing test", "red-proof" |
 | [tier1-review](tier1-review/SKILL.md) | Three-lens same-model review: parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "three-lens review", feature/refactor bead reaches self-review-done |
 | [tier2-handoff](tier2-handoff/SKILL.md) | Cross-model review handoff: deterministic prompt assembler (`assemble.py`), response triage, close evidence | "tier 2 review", "cross-model review", "assemble the review prompt" |
 | [packet](packet/SKILL.md) | Gate/sprint packet authoring: committed blueprint template + `render.py` (self-contained HTML share + headless blueprint/anchor verify) | "build the packet", "gate packet", "sprint packet" |
