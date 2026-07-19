@@ -1,7 +1,7 @@
 # Refinement Initiative
 
 **Date:** 2026-07-19
-**Beads:** `process-kit-8va` (foundations + pragmatic-TDD pilot epic: ffa → vvx → {3ju, 4ek} → 2l2 → 9r8) and `process-kit-j2h` (refinement capability epic: tl1 → l1h → 7wz)
+**Beads:** `process-kit-8va` (foundations + pragmatic-TDD pilot epic: ffa → 8va.1 → vvx → {3ju, 4ek} → 2l2 → 9r8) and `process-kit-j2h` (refinement capability epic: tl1 → l1h → 7wz)
 **Status:** Approved
 **Source research:** [docs/research/2026-07-19-chatgpt-prag-tdd-and-refinement-process.md](../research/2026-07-19-chatgpt-prag-tdd-and-refinement-process.md)
 
@@ -111,7 +111,9 @@ Interfaces and conventions in play:
 | Refinement capability as standalone project (per ChatGPT kickoff prompt) vs in-kit skill family | Standalone: room to grow into a product | In-kit matches how every kit capability matured (packet, tier1); standalone fragments incubation | **In-kit** (user-approved 2026-07-19). Extract later if it outgrows the kit. |
 | Framework-first (all 20 kickoff-prompt deliverables) vs pilot-first | Framework-first: complete on paper | Process theater risk — the prompt's own principle 14; unvalidated taxonomy | **Minimal foundations → pilot → harden skill → first real run.** |
 | Dedicated TDD subagent | Independent judgment | Disconnected from the implementer's loop; tier1 lens covers the review need | **No subagent.** Test-signal lens inside tier1-review. |
-| TDD hooks (red-state capture, pre-commit gates) | Mechanical evidence, harder to skip | Spike showed hooks are nudge/gate only; noisy proxies incentivize performative tests | **Defer.** Upgrade when: transcript scoring shows agents skipping red-first despite the rule+skill split, or bd ships event hooks. |
+| TDD hooks (red-state capture, pre-commit gates) | Mechanical evidence, harder to skip | Harness hooks are blocking-capable but not a trust boundary (documented deny-ignored bugs); noisy proxies incentivize performative tests | **Defer.** Upgrade when: transcript scoring shows agents skipping red-first despite the rule+skill split, or bd ships event hooks. |
+| MCP server as a kit governance surface | Schema-gated ops, in-protocol elicitation, un-skippable server logging | Shell bypass is structural; 10-50k schema tokens; config drift; MCP spec revision 2026-07-28 breaks server-initiated patterns | **Skip as primary; CLI-first** (per surface-catalog memo). Upgrade when: kit targets a shell-less client AND the 2026-07-28 revision has settled — then wrap the existing CLI in a thin MCP layer as beads did. |
+| Evidence-ledger CLI (red-then-green recorder + CI verify) | Converts `bd close` evidence from prose to checkable data; no off-the-shelf tool exists | New surface to maintain; only valuable if the pilot proposal recommends it | **Live option for the pilot proposal (vvx)** — decided there, not pre-committed. |
 | Agent-applied refinements (agent authority to mutate plans) | Full autonomy loop | Authority boundaries undesigned; violates "no silent plan mutation" until designed | **MVP is proposal-only.** Human approves all applications. Upgrade when: two+ refinement runs complete with clean traceability. |
 
 ## Non-goals

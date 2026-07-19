@@ -140,27 +140,70 @@ different magnitudes in different dimensions (e.g. *none* for product intent,
 
 For mechanism-placement refinement, capabilities are mapped onto surfaces,
 each with a **bounded responsibility**. A capability may span several
-surfaces, but each surface answers for one kind of control:
+surfaces, but each surface answers for one kind of control. The evidence
+base for this model is the
+[operating-surface catalog memo](../research/2026-07-19-operating-surface-catalog.md).
 
-| Surface | Responsibility | Kind of control |
+### Classification axes
+
+Any surface is characterized on six axes:
+
+| Axis | Values |
+|---|---|
+| **Activation** | always-in-context · on-demand · agent-event-driven · world-event-driven · scheduled · gate-at-boundary |
+| **Enforcement** | advisory (model can ignore) · model-judgment-at-deterministic-trigger (check always runs; checker can misjudge) · observable (produces evidence) · blocking (mechanically prevents) |
+| **Statefulness** | none · per-run · persistent across sessions |
+| **Judgment** | deterministic · model judgment |
+| **Portability** | tool-specific · cross-tool · universal (any agent with a shell / any git platform) |
+| **Context cost** | none until invoked · metadata-only · always consumed |
+
+### Surface classes
+
+| Class | Surfaces | Bounded responsibility |
 |---|---|---|
-| **Canonical specification** | Authoritative definition of the capability (only introduce when drift between projections is actually observed; otherwise cross-referencing surfaces suffice) | Source of truth |
-| **Rule / policy** | Applicability triggers, obligations, prohibitions, exceptions, required evidence — always in context | Normative (soft — an agent can still miss or rationalize it) |
-| **Skill / procedure** | Multi-step, stateful executable method, invoked on demand | Procedural |
-| **Hook / automation** | Event-driven detection, evidence capture, mechanical gates — observable facts, never semantic judgment | Mechanical |
-| **Reviewer / lens** | Independent semantic judgment on the result (is it substantively good, not just formally compliant) | Semantic |
-| **Human decision point** | Authority explicitly reserved for human approval | Authority |
+| **Normative in-context** | always-on rules, agent-requestable rules, orientation docs (AGENTS.md/CLAUDE.md), per-machine safety nets, memories, output styles | Obligations, prohibitions, applicability triggers, exceptions — what must be true |
+| **Procedural on-demand** | skills, slash commands, templates/blueprints, tracker formulas/molecules | Multi-step executable method — how to do it |
+| **Deterministic executable** | purpose-built CLIs, skill-embedded scripts, linters, tests-as-spec | Deterministic computation, validation, evidence capture — checkable facts |
+| **MCP tool-surface** | MCP tools/resources/prompts/elicitation | Schema-validated operations, server-owned state machines, in-protocol human gates — for shell-less clients, credential withholding, or cross-project aggregation |
+| **Event & schedule** | agent-event hooks, world-event triggers (automations/channels), scheduled runs, environment-lifecycle hooks (worktree create, git hooks) | Detection and in-session feedback at the right moment |
+| **Delegated judgment** | subagents, review lenses, model-judgment hooks, cross-model review | Independent semantic evaluation — is it substantively good |
+| **Platform & environment gates** | CI required checks, branch protection/merge queues, sandbox/permission configs, devcontainers, server-side git hooks | Non-bypassable enforcement outside the agent harness |
+| **Human authority** | approval gates, elicitation responses, human-flagged decisions | Decisions explicitly reserved for people |
+| **Work-item system** | the tracker: ACs, dependency gating, lint, human flags | Workflow substrate — the only surface that mechanically sequences daily work |
+| **Meta-surfaces** | distribution (init/sync scripts, plugins, marketplaces, repo templates), measurement (scorecards, telemetry), parameterization (project overlays), persistence infra (memory/knowledge DBs) | Governing the governing mechanisms themselves |
+
+A **canonical specification** (authoritative definition a capability's other
+surfaces project from) remains available as a surface — introduce it only
+when drift between projections is actually observed; otherwise
+cross-referencing surfaces suffice.
+
+### Placement principles
 
 A rule is **not a guarantee** — it is an instruction with privileged
-visibility. When a behavior matters, expect to need normative + mechanical
-+ semantic control together, each on its own surface.
+visibility. When a behavior matters, expect to need normative + procedural
++ mechanical + semantic control together, each on its own surface. The
+enforcement stack that works:
+
+1. **Make the honest path the cheap path** — a deterministic CLI the agent
+   *wants* to use (CLI-first wherever a shell exists; the token cost of MCP
+   schemas and the shell-bypass problem make MCP the exception, not the
+   default).
+2. **Make deviation visible** — evidence ledgers, structured change records,
+   git-diffable conventions.
+3. **Make one late gate non-bypassable** — CI/platform checks run outside
+   the agent harness and are the only true trust boundary.
+4. **Treat in-the-moment blocking (hooks, MCP) as UX optimization** — faster
+   feedback, never the trust boundary: harnesses have documented bugs where
+   deny decisions were silently ignored, and the shell is always there.
 
 Common misplacement smells: an always-on rule carrying a full operational
 playbook (context bloat); competing sources of truth evolving independently;
-an advisory convention presented as hard enforcement; a hook measuring a
-proxy that rewards performative compliance; a workflow that depends on
-unreliable manual invocation; a specialist agent disconnected from the
-implementer's loop.
+an advisory convention presented as hard enforcement; **a surface claiming
+an enforcement level it cannot deliver** (client-side git hooks presented as
+blocking; a devcontainer presented as a boundary); a hook measuring a proxy
+that rewards performative compliance; a workflow that depends on unreliable
+manual invocation; a specialist agent disconnected from the implementer's
+loop.
 
 ## Design principles
 
@@ -194,3 +237,10 @@ version of the plan governed a given implementation decision*.
 ## Changelog
 
 - 2026-07-19 — Initial draft, distilled from the source research conversation.
+- 2026-07-19 — Operating-surface model replaced with the ten-class, six-axis
+  version from the [surface catalog memo](../research/2026-07-19-operating-surface-catalog.md)
+  (bead process-kit-8va.1): added deterministic-executable, MCP, platform-gate,
+  work-item, and meta-surface classes; enforcement axis extended to four
+  levels; placement principles rewritten around the CLI-first enforcement
+  stack. First live application of the two-axis change scheme (trigger:
+  newly discovered requirement; magnitude: local; transformation: extend).
