@@ -116,6 +116,13 @@ List everything actually examined so the review is reproducible (template
 unavailable**; gaps lower confidence and belong in the proposal (the pilot
 recorded two such gaps and rated its confidence accordingly, proposal §3).
 
+For large scopes, evidence gathering may be **parallelized across scoped
+lanes** (subagents, each covering a disjoint slice of the scope with the
+same method docs and vocabulary). Lane reports become citable evidence;
+consolidation into findings stays with the coordinating agent (kit-wide
+audit lesson — four lanes covered rules, skills, event/distribution, and
+tracker/templates concurrently).
+
 ### Phase 4 — Compare against reality
 
 Build the assumption ledger: each assumption the plan or capability design
@@ -127,8 +134,11 @@ evidence. Then ask concepts.md's four control-loop questions. (Template §4.)
 One block per finding, typed from the
 [findings taxonomy](../../docs/refinement/concepts.md#findings-taxonomy) and
 classified on the two axes (magnitude × transformation), with confidence,
-urgency, and evidence. State observations neutrally — what is true, not
-whose fault.
+urgency, and evidence. **Use concepts.md's magnitude scale by name** — if
+delegating evidence work (parallel lanes), pass the scale into the lane
+instructions; the kit-wide audit accidentally ran its lanes on an
+improvised four-level scale and had to note the deviation. State
+observations neutrally — what is true, not whose fault.
 
 **Findings can be confirmations** (pilot lesson). A refinement that changes
 nothing is a valid outcome: pilot finding F4 confirmed the discipline's
