@@ -63,6 +63,7 @@ Optional user-level Cursor Settings UI rule for personal conventions (e.g., "alw
 | `install-aliases.sh` | One-time per-machine install. Writes `~/.playbook-aliases.sh` and adds a single guarded source line to `~/.zshrc` / `~/.bashrc`. Installs `pbi` (init), `pbd` (doctor), and `PROCESS_KIT` env var. Non-interactive; safe for agents. |
 | `sync-rules.sh` | Multi-format rule sync. `--format cursor\|claude\|all` (also accepts `both` as an alias for `all`). Supports `--check` (drift), `--local` (in-repo generation), `--dry-run` (preview). Safe-by-default: locally modified files are backed up to `*.<ts>.bak` before being overwritten; `--unsafe` disables to silently overwrite. Validates targets, cleans stale files, survives per-target errors. |
 | `setup-worktree.sh` | Creates `.beads/redirect` so worktrees share the main repo's beads database. Runs automatically via IDE hooks or manually. |
+| `tdd-ledger` | Durable red-then-green TDD evidence recorder (Python 3 stdlib, single file). `record-failing` / `record-passing` append to a committed `.tdd-ledger.jsonl`; `verify` checks red-before-green invariants with stable exit codes (`0`=ok, `1`=violation, `2`=usage, `3`=I/O) for CI gating. Distributed to target repos by `playbook-init.sh`; workflow template in `templates/`. |
 
 ## Setup
 

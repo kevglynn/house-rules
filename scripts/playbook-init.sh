@@ -258,6 +258,21 @@ if [ -f "$ledger_src" ]; then
   echo "✓ Copied tdd-ledger CLI → scripts/tdd-ledger"
 fi
 
+# The CI gate that makes the ledger non-bypassable (not-overwriting, like
+# the PR template — target repos may have customized it).
+ledger_wf_src="$PLAYBOOK_ROOT/templates/tdd-ledger-verify.yml"
+ledger_wf_dest="$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml"
+
+if [ -f "$ledger_wf_src" ] && [ -f "$ledger_dest" ]; then
+  if [ -f "$ledger_wf_dest" ]; then
+    echo "✓ tdd-ledger CI workflow already exists (not overwriting)"
+  else
+    mkdir -p "$PROJECT_ROOT/.github/workflows"
+    cp -f "$ledger_wf_src" "$ledger_wf_dest"
+    echo "✓ Copied tdd-ledger CI workflow → .github/workflows/"
+  fi
+fi
+
 # ---------- Beads init ----------
 
 if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
@@ -489,6 +504,7 @@ fi
 echo "  • Scratchpad for cross-session context"
 [ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
 [ -f "$ledger_dest" ] && echo "  • TDD evidence ledger CLI (scripts/tdd-ledger — record-failing / record-passing / verify)"
+[ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
 echo "Next steps:"

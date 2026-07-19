@@ -1,2 +1,4 @@
 {"bead": "process-kit-0ei", "commit": "21b0201", "event": "red", "output_digest": "a30e1943dbb7a2248d128e8d8dd75bc8fb266d52f1f0487810155e1a07abcb5d", "test_id": "scripts/tests/test_tdd_ledger.py", "ts": "2026-07-19T07:27:12+00:00"}
 {"bead": "process-kit-0ei", "commit": "21b0201", "event": "green", "output_digest": "b9de93c6169d9514fd4ef5cea7c6f126a257fe75da3509fe5ddb3eca355be936", "test_id": "scripts/tests/test_tdd_ledger.py", "ts": "2026-07-19T07:27:12+00:00"}
+{"bead": "process-kit-0ei", "commit": "f097103", "event": "red", "output_digest": "0dac0f5ea5bb971484a445e36ddc5862fb0afd3cf8c73dfa55482dd42db44a05", "test_id": "scripts/tests/test_tdd_ledger.py::review-fixes", "ts": "2026-07-19T07:39:16+00:00"}
+{"bead": "process-kit-0ei", "commit": "f097103", "event": "green", "output_digest": "8203719b96720eb67eb53edadd007887ecb30d0c1e73dff163870da948857536", "test_id": "scripts/tests/test_tdd_ledger.py::review-fixes", "ts": "2026-07-19T07:40:17+00:00"}

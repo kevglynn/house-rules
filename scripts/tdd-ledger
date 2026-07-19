@@ -10,7 +10,7 @@ Commands:
   record-passing   Append a green entry (test observed passing)
   verify           Check invariants; exit 0 clean, 1 with violation JSON
 
-Exit codes: 0 ok · 1 invariant violation · 2 usage error.
+Exit codes: 0 ok · 1 invariant violation · 2 usage error · 3 I/O error.
 All output is JSON on stdout; errors are JSON on stderr. Non-interactive.
 
 Ledger path resolution: --ledger flag > TDD_LEDGER_PATH env >
@@ -28,8 +28,11 @@ from pathlib import Path
 
 DEFAULT_LEDGER_NAME = ".tdd-ledger.jsonl"
 
-# Fields that define a duplicate for idempotent re-record.
-DEDUP_FIELDS = ("event", "test_id", "output_digest", "commit")
+# Fields that define a duplicate for idempotent re-record. Includes "bead"
+# because verify matches green-to-red on bead — dedup and verify must agree
+# on identity, or a re-record under a new bead is silently dropped and later
+# fails verify as an id-mismatch.
+DEDUP_FIELDS = ("event", "test_id", "bead", "output_digest", "commit")
 
 
 def emit(payload, stream=sys.stdout):
@@ -37,35 +40,20 @@ def emit(payload, stream=sys.stdout):
     stream.write("\n")
 
 
-def die_usage(message):
-    emit({"ok": False, "error": message, "exit_code": 2}, sys.stderr)
-    sys.exit(2)
+def die_io(message):
+    emit({"ok": False, "error": message, "error_kind": "io", "exit_code": 3},
+         sys.stderr)
+    sys.exit(3)
 
 
-def git_head_short():
+def git_out(*args):
     try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=10,
+        r = subprocess.run(
+            ["git", *args], capture_output=True, text=True, timeout=10,
         )
-        if out.returncode == 0:
-            return out.stdout.strip()
+        return r.stdout.strip() if r.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired):
-        pass
-    return None
-
-
-def repo_root():
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if out.returncode == 0:
-            return Path(out.stdout.strip())
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    return Path.cwd()
+        return None
 
 
 def resolve_ledger_path(flag_value):
@@ -74,41 +62,34 @@ def resolve_ledger_path(flag_value):
     env = os.environ.get("TDD_LEDGER_PATH")
     if env:
         return Path(env)
-    return repo_root() / DEFAULT_LEDGER_NAME
+    root = git_out("rev-parse", "--show-toplevel")
+    return (Path(root) if root else Path.cwd()) / DEFAULT_LEDGER_NAME
 
 
 def read_entries(ledger_path):
-    """Returns (entries, malformed) — malformed lines become violations, not crashes."""
+    """Returns (entries, malformed) — malformed or undecodable lines become
+    violations, not crashes. Unreadable ledgers are I/O errors (exit 3)."""
     entries, malformed = [], []
     if not ledger_path.exists():
         return entries, malformed
-    with open(ledger_path, encoding="utf-8") as f:
-        for lineno, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-                if not isinstance(obj, dict):
-                    raise ValueError("entry is not an object")
-                entries.append(obj)
-            except (json.JSONDecodeError, ValueError):
-                malformed.append({"line": lineno, "content": line[:200]})
-    return entries, malformed
-
-
-def output_digest(output_arg):
-    """Digest the test output: if the arg names a readable file, digest its bytes;
-    otherwise digest the literal string."""
-    if output_arg is None:
-        return None
-    p = Path(output_arg)
     try:
-        if p.is_file():
-            return hashlib.sha256(p.read_bytes()).hexdigest()
-    except OSError:
-        pass
-    return hashlib.sha256(output_arg.encode("utf-8")).hexdigest()
+        raw_lines = ledger_path.read_bytes().splitlines()
+    except OSError as exc:
+        die_io(f"cannot read ledger {ledger_path}: {exc}")
+    for lineno, raw in enumerate(raw_lines, 1):
+        if not raw.strip():
+            continue
+        try:
+            obj = json.loads(raw.decode("utf-8"))
+            if not isinstance(obj, dict):
+                raise ValueError("entry is not an object")
+            entries.append(obj)
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+            malformed.append(
+                {"line": lineno,
+                 "content": raw.decode("utf-8", errors="replace")[:200]}
+            )
+    return entries, malformed
 
 
 def cmd_record(event, args):
@@ -117,21 +98,30 @@ def cmd_record(event, args):
         "event": event,
         "test_id": args.test_id,
         "bead": args.bead,
-        "output_digest": output_digest(args.output),
-        "commit": git_head_short(),
+        "output_digest": (
+            hashlib.sha256(args.output.encode("utf-8")).hexdigest()
+            if args.output is not None else None
+        ),
+        "commit": git_out("rev-parse", "--short", "HEAD"),
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
+    # Check-then-append without locking: concurrent identical invocations
+    # can both append. Benign — duplicates trigger no verify violation and
+    # single-line appends are atomic in practice. Not worth a lock.
     existing, _ = read_entries(ledger_path)
     for prior in existing:
         if all(prior.get(f) == entry.get(f) for f in DEDUP_FIELDS):
             emit({"ok": True, "skipped": True, "entry": prior})
             return 0
 
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(ledger_path, "a", encoding="utf-8") as f:
-        json.dump(entry, f, sort_keys=True)
-        f.write("\n")
+    try:
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(ledger_path, "a", encoding="utf-8") as f:
+            json.dump(entry, f, sort_keys=True)
+            f.write("\n")
+    except OSError as exc:
+        die_io(f"cannot write ledger {ledger_path}: {exc}")
     emit({"ok": True, "skipped": False, "entry": entry, "ledger": str(ledger_path)})
     return 0
 
@@ -184,11 +174,18 @@ def cmd_verify(args):
     return 0 if ok else 1
 
 
+def nonempty(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must be a non-empty string")
+    return value
+
+
 class JsonArgumentParser(argparse.ArgumentParser):
     """argparse that reports usage errors as JSON on stderr (agent convention)."""
 
     def error(self, message):
-        die_usage(message)
+        emit({"ok": False, "error": message, "exit_code": 2}, sys.stderr)
+        sys.exit(2)
 
 
 def build_parser():
@@ -197,19 +194,21 @@ def build_parser():
         description=(
             "Durable red-then-green TDD evidence ledger. "
             "Output is JSON on stdout. "
-            "Exit codes: 0 ok, 1 invariant violation, 2 usage error."
+            "Exit codes: 0 ok, 1 invariant violation, 2 usage error, "
+            "3 I/O error."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_record(name, help_text):
         p = sub.add_parser(name, help=help_text)
-        p.add_argument("--test-id", required=True,
+        p.add_argument("--test-id", required=True, type=nonempty,
                        help="Stable identifier for the test (e.g. test file::name)")
         p.add_argument("--bead", default=None, help="Bead ID this evidence belongs to")
         p.add_argument("--output", default=None,
-                       help="Test output: a literal string or a path to a file containing it")
-        p.add_argument("--ledger", default=None,
+                       help="Test output as a literal string (digested, never stored; "
+                            'for a file use --output "$(cat out.log)")')
+        p.add_argument("--ledger", default=None, type=nonempty,
                        help=f"Ledger path (default: {DEFAULT_LEDGER_NAME} at repo root, "
                             "or TDD_LEDGER_PATH)")
         return p
@@ -223,7 +222,8 @@ def build_parser():
              "test_id (and matching bead). Exit 0 clean, 1 with violations "
              "(green-without-red, missing-red, id-mismatch, malformed-entry).",
     )
-    v.add_argument("--ledger", default=None, help="Ledger path override")
+    v.add_argument("--ledger", default=None, type=nonempty,
+                   help="Ledger path override")
     return parser
 
 

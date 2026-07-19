@@ -84,15 +84,16 @@ class TddLedgerTest(unittest.TestCase):
         entries = read_ledger(self.ledger)
         self.assertEqual([e["event"] for e in entries], ["red", "green"])
 
-    def test_output_flag_reads_file_when_path_exists(self):
-        out_file = self.dir / "pytest.log"
-        out_file.write_text("1 failed\n")
-        r = self.record("red", "test_x", output=str(out_file))
+    def test_output_is_digested_as_literal_even_if_it_names_a_file(self):
+        # Review finding: file-vs-literal sniffing silently digested the wrong
+        # bytes when a short literal happened to name an existing file.
+        # Contract is literal-only; file callers use --output "$(cat log)".
+        out_file = self.dir / "pass"
+        out_file.write_text("file contents that must NOT be digested\n")
+        r = self.record("red", "test_x", output="pass")
         self.assertEqual(r.returncode, 0, r.stderr)
         e = read_ledger(self.ledger)[0]
-        self.assertEqual(
-            e["output_digest"], hashlib.sha256(b"1 failed\n").hexdigest()
-        )
+        self.assertEqual(e["output_digest"], hashlib.sha256(b"pass").hexdigest())
 
     # --- AC1: verify invariants ---
 
@@ -146,6 +147,21 @@ class TddLedgerTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         out = json.loads(r.stdout)
         self.assertFalse(out["ok"])
+        reasons = [v["reason"] for v in out["violations"]]
+        self.assertIn("malformed-entry", reasons)
+        # The valid line on the same ledger is still processed.
+        self.assertEqual(out["entries"], 1)
+
+    def test_non_utf8_ledger_line_is_malformed_violation_not_crash(self):
+        with open(self.ledger, "wb") as f:
+            f.write(b'{"event": "red", "test_id": "t"}\n')
+            f.write(b"\xff\xfe garbage bytes\n")
+        r = self.verify()
+        self.assertEqual(r.returncode, 1, r.stderr)
+        out = json.loads(r.stdout)
+        reasons = [v["reason"] for v in out["violations"]]
+        self.assertIn("malformed-entry", reasons)
+        self.assertEqual(out["entries"], 1)
 
     # --- Idempotency ---
 
@@ -162,7 +178,53 @@ class TddLedgerTest(unittest.TestCase):
         self.record("red", "test_dup2", output="second failure")
         self.assertEqual(len(read_ledger(self.ledger)), 2)
 
+    def test_same_failure_different_bead_is_recorded_not_skipped(self):
+        # Review finding: dedup excluded bead while verify matched on it,
+        # so a re-record under a new bead was silently dropped and later
+        # produced a false id-mismatch.
+        self.record("red", "test_moved", bead="kit-1", output="fail")
+        r = self.record("red", "test_moved", bead="kit-2", output="fail")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(json.loads(r.stdout).get("skipped"))
+        self.assertEqual(len(read_ledger(self.ledger)), 2)
+        self.record("green", "test_moved", bead="kit-2", output="pass")
+        v = self.verify()
+        self.assertEqual(v.returncode, 0, v.stdout + v.stderr)
+
     # --- Ledger path resolution ---
+
+    def test_default_ledger_path_is_repo_root_with_real_commit(self):
+        # Review finding: the no-flag/no-env default is the exact invocation
+        # CI uses, and it was untested — a resolution regression would
+        # silently neuter the gate (missing ledger verifies clean).
+        repo = self.dir / "repo"
+        subdir = repo / "src"
+        subdir.mkdir(parents=True)
+        env = {
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+        }
+        for cmd in (["git", "init", "-q"],
+                    ["git", "commit", "-q", "--allow-empty", "-m", "x"]):
+            subprocess.run(cmd, cwd=repo, env={**os.environ, **env},
+                           capture_output=True, check=True)
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        r = run_cli(["record-failing", "--test-id", "test_d", "--output", "x"],
+                    cwd=subdir)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        default_ledger = repo / ".tdd-ledger.jsonl"
+        self.assertTrue(default_ledger.exists(),
+                        "ledger must land at the git repo root")
+        e = read_ledger(default_ledger)[0]
+        self.assertEqual(e["commit"], head)
+        # Pin the CI invocation end-to-end: bare `verify` from inside the
+        # repo must find the same ledger (a red-only ledger is clean).
+        v = run_cli(["verify"], cwd=subdir)
+        self.assertEqual(v.returncode, 0, v.stdout + v.stderr)
+        self.assertEqual(json.loads(v.stdout)["entries"], 1)
 
     def test_env_var_overrides_default_ledger_path(self):
         env_ledger = self.dir / "env-ledger.jsonl"
@@ -181,6 +243,38 @@ class TddLedgerTest(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         err = json.loads(r.stderr)
         self.assertFalse(err["ok"])
+
+    def test_empty_test_id_is_usage_error(self):
+        # Realistic trigger: an unset shell variable (--test-id "$TEST_ID")
+        # would otherwise record evidence identifying no test.
+        r = self.record("red", "", output="x")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertFalse(json.loads(r.stderr)["ok"])
+
+    def test_empty_ledger_flag_is_usage_error(self):
+        # --ledger "" must not silently fall through to the default path.
+        r = run_cli(["verify", "--ledger", ""], cwd=self.dir)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertFalse(json.loads(r.stderr)["ok"])
+
+    def test_unreadable_ledger_is_json_io_error_not_traceback(self):
+        # Review finding: I/O failures leaked tracebacks with exit 1 —
+        # indistinguishable from a TDD violation to the CI gate.
+        r = run_cli(["verify", "--ledger", str(self.dir)], cwd=self.dir)
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "io")
+
+    def test_record_into_parent_that_is_a_file_is_json_io_error(self):
+        blocker = self.dir / "notadir"
+        blocker.write_text("i am a file")
+        r = self.record("red", "test_e", output="x",
+                        ledger=blocker / "ledger.jsonl")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "io")
 
     def test_help_exits_zero(self):
         r = run_cli(["--help"], cwd=self.dir)

@@ -1,3 +1,7 @@
+# TDD evidence-ledger CI gate — distributed by playbook-init.sh.
+# Verifies red-before-green ordering in .tdd-ledger.jsonl on every push/PR.
+# The CLI lives at scripts/tdd-ledger in this repo (also distributed by init).
+
 name: tdd-ledger verify
 
 on:
@@ -9,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run tdd-ledger test suite
-        run: python3 scripts/tests/test_tdd_ledger.py
       - name: Verify TDD evidence ledger
         # No existence guard: verify exits 0 on a missing ledger — the CLI
         # owns that policy, not the workflow.

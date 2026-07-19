@@ -25,6 +25,12 @@ The applicability policy (which bead types require tests, and the exceptions abo
 
 ## Core Process
 
+Where the evidence ledger is distributed (`scripts/tdd-ledger` in
+kit-bootstrapped repos), record every observed red and green as you go —
+`record-failing` the moment a required test fails, `record-passing` when it
+passes — not only in the recovery ceremony below. The happy path produces
+ledger evidence too.
+
 ### Bug beads — test first, always (O1–O5)
 
 1. Write a test that reproduces the bug (the test MUST fail on the current code) (O1)
