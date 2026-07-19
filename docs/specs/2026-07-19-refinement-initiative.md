@@ -34,15 +34,18 @@ Three linked outcomes, delivered as one sequenced initiative:
    mechanisms themselves — and produces an evidence-grounded **refinement
    proposal**. A proposal becomes a **plan revision** only after approval; no
    silent plan mutation. Core components:
-   - **Concept doc** (`docs/concepts` or alongside the skill): definition,
-     control loop, trigger taxonomy, findings taxonomy, two-axis change
-     classification (**magnitude** × **transformation**), operating-surface
-     model (canonical spec / rule / skill / hook / reviewer / human gate).
-   - **Refinement-proposal package template**: scope, initiator + reason,
-     evidence reviewed, confirmed/invalidated assumptions, findings (each with
-     evidence, affected dimension, magnitude, transformation, confidence,
-     urgency), change options with costs/risks/reversibility, recommendation,
-     affected artifacts, traceability record.
+   - **Concept doc** ([docs/refinement/concepts.md](../refinement/concepts.md)):
+     definition, control loop, trigger taxonomy, findings taxonomy, two-axis
+     change classification (**magnitude** × **transformation**),
+     operating-surface model (canonical spec / rule / skill / hook / reviewer
+     / human gate).
+   - **Refinement-proposal package template**
+     ([docs/refinement/proposal-template.md](../refinement/proposal-template.md)):
+     scope, initiator + reason, evidence reviewed, confirmed/invalidated
+     assumptions, findings (each with evidence, affected dimension, magnitude,
+     transformation, confidence, urgency), change options with
+     costs/risks/reversibility, recommendation, affected artifacts,
+     traceability record.
    - **Mechanism-placement audit reference**
      (`skills/refinement/references/mechanism-audit.md`): the audit questions
      for "is this capability in the right artifact, with the right activation,

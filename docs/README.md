@@ -17,6 +17,8 @@ Reference material for the kit. If you're new, read in this order:
 | [Governance](governance.md) | How the Agentic Covenant fits into the kit. |
 | [Agentic Covenant Adoption Guide](adoption-guide.md) | Step-by-step governance adoption for teams. |
 | [Rule Effectiveness Scorecard](rule-effectiveness-scorecard.md) | Measuring whether rule changes improve agent behavior. |
+| [Refinement Concepts](refinement/concepts.md) | The refinement control loop, trigger/findings taxonomies, magnitude × transformation classification, operating-surface model. |
+| [Refinement Proposal Template](refinement/proposal-template.md) | The package format a refinement produces; proposal becomes plan revision only after approval. |
 | [Blog draft: Agentic Covenant](blog-agentic-covenant.md) | Draft post on why open source needs the Covenant (publication candidate). |
 
 ## Key concepts (30-second version)
