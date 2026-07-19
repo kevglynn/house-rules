@@ -2,8 +2,9 @@
 name: tier1-review
 description: >-
   Run a Tier 1 same-model multi-lens review of a completed chunk of work:
-  dispatch three independent review subagents (code-reviewer,
-  architect-reviewer, simplify) in parallel with a complete five-element
+  dispatch independent review subagents (code-reviewer, architect-reviewer,
+  simplify, and — when the change involves tests or a no-test claim —
+  test-signal) in parallel with a complete five-element
   context package, triage findings into Critical/Important/Minor with a
   disposition per finding, land fixes as a separate commit, file beads for
   deferred minors, and emit a close-evidence line. Use when the user says
@@ -14,7 +15,7 @@ description: >-
 
 # Tier 1 Review
 
-Dispatch the three-lens same-model review that the multi-agent-review rule
+Dispatch the multi-lens same-model review that the multi-agent-review rule
 mandates, so every run is dispatch-complete (no lens forgotten, no context
 element dropped) and triage-consistent (every finding gets an explicit
 disposition). The rule states the law; this skill is the procedure.
@@ -61,9 +62,9 @@ an incomplete package is the most common cause of shallow reviews.
 Identify the changed-file set from the work's commits (`git diff
 <base>..HEAD --stat` on the feature branch), not from memory.
 
-### Phase 2 — Dispatch three lenses in parallel
+### Phase 2 — Dispatch the lenses in parallel
 
-Launch three subagents **in a single message**, one per lens, each with
+Launch the subagents **in a single message**, one per lens, each with
 independent context — no lens sees another's findings until triage:
 
 | Lens | Focus | Catches |
@@ -71,6 +72,13 @@ independent context — no lens sees another's findings until triage:
 | `code-reviewer` | Correctness, edge cases, race conditions, error paths | Logic bugs, state issues, missing guards |
 | `architect-reviewer` | Pattern consistency, boundaries, reusability | Architectural drift, duplication, wrong abstractions |
 | `simplify` | Over-engineering, unnecessary complexity | Gold-plating, dead code, YAGNI, stdlib replacements |
+| `test-signal` | Test quality: would each test catch the defect it guards? | Zero-signal tests, ACs with no failing-capable test, helper-only bug tests, non-credible red-first claims |
+
+The first three lenses always run. **Include `test-signal`** for
+feature/bug/story/refactor beads whose change set includes test files, or
+whose close will claim a no-test exception (the lens judges whether that
+exception is legitimate for the bead type). **Omit it** for
+docs/chore/config-only changes.
 
 Lens prompt templates live in [lenses.md](lenses.md). Each prompt embeds the
 full five-element package — subagents do not share the parent's context, so
@@ -80,7 +88,7 @@ Defaults: tool-native general-purpose subagents on the **same model as the
 parent** (same-model multi-lens is Tier 1's design — cross-model diversity
 is Tier 2's job). The overlay may override models per lens.
 
-**Fallback (no parallel subagents):** run the three passes sequentially,
+**Fallback (no parallel subagents):** run the passes sequentially,
 writing each pass's findings to a scratch file *before* starting the next,
 to prevent anchoring on your own prior findings.
 
@@ -136,7 +144,7 @@ the tension rather than letting the findings cancel out.
 3. Emit the close-evidence line for later use in `bd close --reason`:
 
 ```
-Tier 1 (3 lenses: code-reviewer, architect-reviewer, simplify):
+Tier 1 (N lenses: code-reviewer, architect-reviewer, simplify[, test-signal]):
 N Critical / N Important / N Minor — C/I fixed in <commit>,
 minors <fixed in <commit> | carried to <bead-ids> | accepted with rationale in notes>.
 ```
