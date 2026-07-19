@@ -173,9 +173,26 @@ Any surface is characterized on six axes:
 | **Meta-surfaces** | distribution (init/sync scripts, plugins, marketplaces, repo templates), measurement (scorecards, telemetry), parameterization (project overlays), persistence infra (memory/knowledge DBs) | Governing the governing mechanisms themselves |
 
 A **canonical specification** (authoritative definition a capability's other
-surfaces project from) remains available as a surface — introduce it only
-when drift between projections is actually observed; otherwise
-cross-referencing surfaces suffice.
+surfaces project from) remains available as a surface, in two forms with
+opposite economics:
+
+- **Prose spec** — a fourth hand-maintained document. Introduce only when
+  drift between projections is actually observed; until then,
+  cross-referencing surfaces suffice.
+- **Machine-readable profile** — for conventions that are *enumerable as
+  data* (paths, naming schemes, API lists, checklists, required sections,
+  evidence requirements). Projections are generated or read at runtime
+  (rendered rule with a CI drift gate, CLI reading the profile, thin MCP
+  over the same engine), and all surfaces share one violation-ID namespace
+  so advisory and deterministic layers agree by construction. Here the spec
+  is not a maintenance burden — it is the only copy, and drift is
+  structurally impossible. Reference implementation: the profile-driven
+  projection pattern in the
+  [surface catalog memo, Part 5](../research/2026-07-19-operating-surface-catalog.md).
+
+The boundary: profiles carry data-shaped conventions; judgment-shaped policy
+stays prose. A profile encoding judgment becomes config nobody can evaluate;
+prose carrying enumerable data becomes context bloat nothing enforces.
 
 ### Placement principles
 
@@ -203,7 +220,9 @@ an enforcement level it cannot deliver** (client-side git hooks presented as
 blocking; a devcontainer presented as a boundary); a hook measuring a proxy
 that rewards performative compliance; a workflow that depends on unreliable
 manual invocation; a specialist agent disconnected from the implementer's
-loop.
+loop; **data-shaped conventions living in always-on prose** (enumerable
+facts paying context cost every session while remaining unenforceable —
+candidates for a machine-readable profile with a deterministic checker).
 
 ## Design principles
 
@@ -244,3 +263,9 @@ version of the plan governed a given implementation decision*.
   levels; placement principles rewritten around the CLI-first enforcement
   stack. First live application of the two-axis change scheme (trigger:
   newly discovered requirement; magnitude: local; transformation: extend).
+- 2026-07-19 — Canonical-spec surface split into prose vs machine-readable
+  profile forms with opposite introduction economics, based on the
+  profile-driven projection pattern (surface catalog memo Part 5, bead
+  process-kit-8va.2). Added the data-shaped-conventions-in-prose
+  misplacement smell. (Trigger: discovery — first-party reference
+  implementation; magnitude: minor; transformation: correct + extend.)

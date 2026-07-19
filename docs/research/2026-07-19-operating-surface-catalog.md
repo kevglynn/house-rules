@@ -289,3 +289,83 @@ credential withholding, or cross-project aggregation.
 2. The concepts.md six-surface model omitted surfaces the kit itself already
    relies on (CLIs, templates, tracker, memory, distribution). Finding type:
    *newly discovered requirement*, magnitude: local, transformation: extend.
+
+## Part 5 — The profile-driven projection pattern (cursor-takehome-assignment)
+
+Added 2026-07-19 (bead process-kit-8va.1 follow-up, process-kit-8va.2), from
+a first-party reference implementation: `~/cursor-takehome-assignment`
+("Engineering Onboarding Copilot"). It demonstrates a pattern the catalog
+above names only abstractly — and partially corrects one of our own
+placement heuristics.
+
+### The verified mechanics
+
+One team-owned YAML profile (`profiles/scikit-image.yaml`: approved/forbidden
+paths, deprecated APIs with replacements, test conventions, docstring style,
+contribution checklist, naming/import conventions, a `rule_prefix` namespace
+for violation IDs, scaffold routing keywords, role-brief templates) is the
+single source of truth. Four surfaces project from it:
+
+| Projection | Mechanism | Enforcement |
+|---|---|---|
+| Cursor rule (`scikit-image-conventions.mdc`, glob-scoped to `*.py`) | **Generated** by `scripts/render_rules.py` with a "DO NOT EDIT" header; **CI fails if the rendered rule drifts from the profile** | advisory, but drift-proof |
+| CLI (`ob scaffold/check/brief`) | Reads the profile **at runtime**; 100% deterministic, zero LLM calls (ADR-001) | observable→blocking |
+| MCP server (FastMCP: 7 convention resources + a `check_workspace` tool) | Thin layer over the same engine, reads the same profile (ADR-002) — the wrap-the-CLI pattern from Part 3, implemented | observable |
+| CI | Runs the *same* `ob check` + the rule-drift gate | blocking |
+
+Three design details carry most of the value:
+
+1. **Shared violation namespace.** The generated rule instructs the agent to
+   report violations "using the SAME rule IDs the `ob check` CLI emits, so
+   the editor and CI agree" (`SK-D-001`, `SK-T-002`, …). The advisory surface
+   and the deterministic surface *agree by construction* — the "competing
+   sources of truth" misplacement smell is fixed mechanically, not by
+   discipline. Even the ID namespace is profile-owned (`rule_prefix`), so
+   swapping profiles re-themes the whole rule catalog (proven with a
+   `diffusers.yaml` stub: same violating workspace yields 5 `SK-*` findings
+   under one profile, 2 `DIFF-*` under the other).
+2. **Teaching and enforcement are projections of the same spec.** The
+   onboarding layer (scaffold, role briefs) and the guardrail layer (check,
+   CI) read one file. "Onboarding paradigm that is really an enforcement
+   layer" is exactly right — they can't diverge because neither owns the
+   conventions.
+3. **Stage-scoped rule activation.** The workspace's SDLC rules attach by
+   glob (planning on `PLAN.md`, implementation on `skimage/**/*.py`, testing
+   on `test_*.py`, review on `BRIEFS.md`) — near-zero context cost when the
+   stage isn't active. The kit, by contrast, carries ~12 `alwaysApply` rules.
+
+### What it corrects in our model
+
+concepts.md said: introduce a canonical specification "only when drift
+between projections is actually observed." That heuristic is right for
+**prose** specs — a fourth hand-maintained document is pure overhead until
+drift proves the need. It is wrong for **data-shaped** conventions. When the
+canonical layer is machine-readable and projections are *generated or read
+at runtime* with a CI drift gate, the spec isn't a fourth document to keep
+in sync — it's the only document, and drift is structurally impossible.
+The economics invert. (Finding type: *planning weakness* in our own model;
+magnitude: minor; transformation: correct + extend. concepts.md amended.)
+
+The boundary that keeps this honest: profiles fit conventions that are
+**enumerable as data** — paths, naming schemes, API lists, checklists,
+required sections, evidence requirements. Judgment-shaped policy ("prefer
+the smallest sufficient change") stays prose. A profile trying to encode
+judgment becomes config nobody can evaluate; prose trying to carry data
+becomes context bloat that nothing enforces.
+
+### Implications for the kit (routed to the audit, not actioned now)
+
+1. **Which kit conventions are data-shaped?** Candidates living in always-on
+   prose today: commit-message format and branch naming (operating-model),
+   the evidence-requirements-by-bead-type table (bead-completion), defer-
+   comment format (defer-convention), scorecard items, bead AC requirements
+   (partially machine-checked by `bd lint` already — the tracker is halfway
+   to a profile). Each is a candidate for profile + deterministic checker +
+   thin generated rule. → added to process-kit-l1h's audit questions.
+2. **Stage/glob-scoped activation** as a context-cost lever for the 12
+   always-on rules. → already within l1h's context-cost analysis.
+3. **For the pragmatic-tdd pilot (vvx):** the test-policy-by-bead-type and
+   evidence-requirements tables are data-shaped; if the pilot recommends the
+   evidence-ledger CLI, a profile section could parameterize it (which bead
+   types require red-then-green, what counts as evidence). Noted as an
+   option-shaping input, not a scope change.
