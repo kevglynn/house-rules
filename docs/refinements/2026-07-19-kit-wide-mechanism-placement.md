@@ -305,6 +305,40 @@ feedback).
   two that went through deliberate placement design.
 - **Confidence:** high
 
+### Appendix — per-artifact disposition table
+
+Consolidated from the lane reports (which hold the full evidence).
+
+| Artifact | Disposition | Magnitude × Transformation × Confidence |
+|---|---|---|
+| `operating-model.mdc` | split | major × split+relocate × high |
+| `multi-agent-review.mdc` | split | major × split+relocate+correct × high |
+| `bead-completion.mdc` | split | moderate × split+relocate × medium |
+| `beads-quality.mdc` | split | moderate × split+relocate × high |
+| `defer-convention.mdc` | split | moderate × split+relocate+add-enforcement × high |
+| `session-lifecycle.mdc` | keep; fix claim; hook it | moderate × add-enforcement+rewrite × high |
+| `design-docs.mdc` | split (template out) | minor × split × high |
+| `worktree-awareness.mdc` | split (command data out) | minor × split+rewrite × medium |
+| `agent-identity.mdc` | keep; token lists → checker | minor × relocate+confirm × medium |
+| `parallel-subagent-safety.mdc` | keep, shrink | minor × rewrite × medium |
+| `pragmatic-tdd.mdc` (post-split) | **confirm** | none × confirm × high |
+| `ponytail-playbook.mdc` | **confirm** | none × confirm × high |
+| skills: `pragmatic-tdd`, `refinement`, `tier1-review`, `tier2-handoff`, `packet`, `packet-deepdive`, `brainstorming`, `workspace-kickoff`, `systematic-debugging`, `ponytail-audit`, `ponytail-review`, `ponytail-debt` | keep (with the corrections in F3/F8: pointer fixes, dedup, convention repairs, deepdive fallback) | none-to-moderate × per F3/F8 × high |
+| skill: `ponytail-help` | retire or replace (kit-native index) | moderate × replace × high |
+| skill: `ponytail-gain` | retire | minor × retire × high |
+| skill: `council` | keep; slugs → overlay; convention repairs | minor × standardize × high |
+| hooks: `memory-capture.sh` | retire (or merge, §9) | moderate × retire/merge × high |
+| hooks: `subagent-wrapup.sh` | demote to advisory or retire | moderate × demote+merge × high |
+| hooks: `auto-recall.sh` | keep detection role; follows memory decision | moderate × merge+correct × high/medium |
+| `playbook-init.sh` | keep + extend (worktree pair, re-sync story) | moderate × extend × high |
+| `sync-rules.sh` | keep + extend + kit-CI check | moderate × extend+add-enforcement × high |
+| `playbook-doctor.sh` | **confirm** + extend (hook/AGENTS checks) | moderate × extend × high |
+| `global-safety-net/` | keep; Cursor-paste gap noted | moderate × extend × high |
+| `templates/` (PR template, ledger workflow) | keep; dedupe copies; clarify intent comment | minor × merge+clarify × high |
+| tracker core workflow | **confirm** | none × confirm × high |
+| scorecard | keep content; relocate scoring obligation; correct stale refs | moderate × relocate+correct × high/medium |
+| docs governance (README index, glossary, refinement/refinements) | extend + clarify | minor-moderate × extend × high |
+
 ### Routed elsewhere
 
 - Remote-rules distribution (Cursor) as a replacement for file-copy sync —
