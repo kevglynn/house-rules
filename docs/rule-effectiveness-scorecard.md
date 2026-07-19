@@ -56,6 +56,20 @@ Fill out after each agent session. Score each item: **Y** (yes, observed), **N**
 | 19 | Commit messages follow `<type>: <summary>` format | | |
 | 20 | Commits are atomic (not one giant commit at session end) | | |
 
+### Pragmatic TDD (pragmatic-tdd.mdc + skills/pragmatic-tdd)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 21 | Bug beads: failing test written BEFORE the fix (red observed, or red-proof ceremony run) | | |
+| 22 | Bug beads: pattern-class scan performed before close (all sites fixed or follow-up beads filed) | | |
+| 23 | Feature/story beads: each AC has a corresponding test asserting observable behavior | | |
+| 24 | No zero-signal tests shipped (any of the 5 taxonomy classes) | | |
+| 25 | Close reason includes red-then-green evidence (fails without fix, passes with) | | |
+| 26 | `pragmatic-tdd` skill invoked when a qualifying bead type (bug/feature/story/refactor) was implemented | | |
+| 27 | No-test exceptions claimed only for legitimate types (spike/decision/milestone/epic/chore/config/docs) | | |
+
+Item 26 is the mechanism-placement signal from the topology split (proposal finding F5): after the procedure moved out of the always-on rule, invocation is the behavior that must not regress.
+
 **Session score: __ / __ applicable items**
 
 ## How to Use
@@ -136,3 +150,15 @@ For a more rigorous evaluation of a specific rule change:
 **Result:** [TBD]
 **Conclusion:** [TBD]
 ```
+
+## Active Experiments
+
+### Experiment: pragmatic-tdd topology split (rule → thin rule + skill + lens)
+
+**Hypothesis:** Splitting the always-on rule into a thin obligations-only rule plus a `pragmatic-tdd` skill (commits ccc7bfa, 414953b; proposal `docs/refinements/2026-07-19-pragmatic-tdd-topology.md`) preserves or improves TDD adherence. The new metric to watch is skill-invocation rate (item 26) — the named regression risk (proposal F5) is that agents stop reaching the procedure now that it must be invoked rather than being always in context.
+**Metric:** Scorecard items 21-27, with item 26 as the primary signal.
+**Baseline:** 4 pre-split sessions scored (2026-07-19, all from this repo). Per-session: main pragmatic-tdd/refinement session 1/1 applicable (items 21-26 N/A, 27 Y); skill-creation subagent (bead 3ju) 1/1 (21-26 N/A, 27 Y); test-signal-lens subagent (bead 4ek) 1/1 (21-26 N/A, 27 Y); repo-setup session 0/0 (all N/A). Aggregate: 3/3 applicable item-scores were Y, but 25 of 28 item-scores were N/A — recent kit work is entirely docs/planning/research beads, so no test-requiring bead type has been exercised. Item 26 has no pre-split data by construction (the skill did not exist). The honest baseline finding: exception discipline (item 27) is clean, and items 21-26 are unmeasured until a bug/feature/story/refactor bead with code lands.
+**Target:** On the first 5 qualifying beads post-split: item 26 ≥ 4/5 (skill invoked), items 21-25 no worse than what the monolithic rule produced (no directly comparable pre-split data, so the practical target is ≥ 80% Y on applicable items).
+**Duration:** Until 5 post-split sessions implementing qualifying bead types (bug/feature/story/refactor) have been scored.
+**Result:** [TBD]
+**Conclusion:** [TBD]
