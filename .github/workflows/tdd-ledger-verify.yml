@@ -1,0 +1,20 @@
+name: tdd-ledger verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tdd-ledger test suite
+        run: python3 scripts/tests/test_tdd_ledger.py
+      - name: Verify TDD evidence ledger
+        run: |
+          if [ -f .tdd-ledger.jsonl ]; then
+            python3 scripts/tdd-ledger verify
+          else
+            echo "No .tdd-ledger.jsonl — nothing to verify."
+          fi

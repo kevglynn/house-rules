@@ -1,0 +1,2 @@
+{"bead": "process-kit-0ei", "commit": "21b0201", "event": "red", "output_digest": "a30e1943dbb7a2248d128e8d8dd75bc8fb266d52f1f0487810155e1a07abcb5d", "test_id": "scripts/tests/test_tdd_ledger.py", "ts": "2026-07-19T07:27:12+00:00"}
+{"bead": "process-kit-0ei", "commit": "21b0201", "event": "green", "output_digest": "b9de93c6169d9514fd4ef5cea7c6f126a257fe75da3509fe5ddb3eca355be936", "test_id": "scripts/tests/test_tdd_ledger.py", "ts": "2026-07-19T07:27:12+00:00"}

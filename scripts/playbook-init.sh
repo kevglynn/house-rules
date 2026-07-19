@@ -237,6 +237,27 @@ if $SKILLS; then
   fi
 fi
 
+# ---------- TDD evidence ledger CLI ----------
+#
+# Distributed (not run from the playbook root) because target-repo CI is the
+# verify gate — the CLI must live in the repo the workflow checks out.
+
+ledger_src="$PLAYBOOK_ROOT/scripts/tdd-ledger"
+ledger_dest="$PROJECT_ROOT/scripts/tdd-ledger"
+
+if [ -f "$ledger_src" ]; then
+  mkdir -p "$PROJECT_ROOT/scripts"
+  if ! cp -f "$ledger_src" "$ledger_dest" 2>/tmp/playbook-init.cp.err; then
+    echo "✗ Failed to copy tdd-ledger → scripts/"
+    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+    rm -f /tmp/playbook-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/playbook-init.cp.err
+  chmod +x "$ledger_dest"
+  echo "✓ Copied tdd-ledger CLI → scripts/tdd-ledger"
+fi
+
 # ---------- Beads init ----------
 
 if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
@@ -467,6 +488,7 @@ if $NO_HOOKS; then
 fi
 echo "  • Scratchpad for cross-session context"
 [ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
+[ -f "$ledger_dest" ] && echo "  • TDD evidence ledger CLI (scripts/tdd-ledger — record-failing / record-passing / verify)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
 echo "Next steps:"

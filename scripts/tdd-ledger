@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""tdd-ledger — durable red-then-green TDD evidence recorder.
+
+Records failing (red) and passing (green) test runs to an append-only
+JSONL ledger committed to the repo, and verifies the red-before-green
+invariant. Converts "the agent says it did TDD" into checkable data.
+
+Commands:
+  record-failing   Append a red entry (test observed failing)
+  record-passing   Append a green entry (test observed passing)
+  verify           Check invariants; exit 0 clean, 1 with violation JSON
+
+Exit codes: 0 ok · 1 invariant violation · 2 usage error.
+All output is JSON on stdout; errors are JSON on stderr. Non-interactive.
+
+Ledger path resolution: --ledger flag > TDD_LEDGER_PATH env >
+.tdd-ledger.jsonl at the git repo root (cwd if not in a repo).
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+DEFAULT_LEDGER_NAME = ".tdd-ledger.jsonl"
+
+# Fields that define a duplicate for idempotent re-record.
+DEDUP_FIELDS = ("event", "test_id", "output_digest", "commit")
+
+
+def emit(payload, stream=sys.stdout):
+    json.dump(payload, stream, sort_keys=True)
+    stream.write("\n")
+
+
+def die_usage(message):
+    emit({"ok": False, "error": message, "exit_code": 2}, sys.stderr)
+    sys.exit(2)
+
+
+def git_head_short():
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def repo_root():
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode == 0:
+            return Path(out.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path.cwd()
+
+
+def resolve_ledger_path(flag_value):
+    if flag_value:
+        return Path(flag_value)
+    env = os.environ.get("TDD_LEDGER_PATH")
+    if env:
+        return Path(env)
+    return repo_root() / DEFAULT_LEDGER_NAME
+
+
+def read_entries(ledger_path):
+    """Returns (entries, malformed) — malformed lines become violations, not crashes."""
+    entries, malformed = [], []
+    if not ledger_path.exists():
+        return entries, malformed
+    with open(ledger_path, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if not isinstance(obj, dict):
+                    raise ValueError("entry is not an object")
+                entries.append(obj)
+            except (json.JSONDecodeError, ValueError):
+                malformed.append({"line": lineno, "content": line[:200]})
+    return entries, malformed
+
+
+def output_digest(output_arg):
+    """Digest the test output: if the arg names a readable file, digest its bytes;
+    otherwise digest the literal string."""
+    if output_arg is None:
+        return None
+    p = Path(output_arg)
+    try:
+        if p.is_file():
+            return hashlib.sha256(p.read_bytes()).hexdigest()
+    except OSError:
+        pass
+    return hashlib.sha256(output_arg.encode("utf-8")).hexdigest()
+
+
+def cmd_record(event, args):
+    ledger_path = resolve_ledger_path(args.ledger)
+    entry = {
+        "event": event,
+        "test_id": args.test_id,
+        "bead": args.bead,
+        "output_digest": output_digest(args.output),
+        "commit": git_head_short(),
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+    existing, _ = read_entries(ledger_path)
+    for prior in existing:
+        if all(prior.get(f) == entry.get(f) for f in DEDUP_FIELDS):
+            emit({"ok": True, "skipped": True, "entry": prior})
+            return 0
+
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(ledger_path, "a", encoding="utf-8") as f:
+        json.dump(entry, f, sort_keys=True)
+        f.write("\n")
+    emit({"ok": True, "skipped": False, "entry": entry, "ledger": str(ledger_path)})
+    return 0
+
+
+def cmd_verify(args):
+    ledger_path = resolve_ledger_path(args.ledger)
+    entries, malformed = read_entries(ledger_path)
+    violations = []
+
+    for m in malformed:
+        violations.append({"reason": "malformed-entry", "entry": m})
+
+    # defer: ordering = file order, not timestamps. ceiling: a merge or hand
+    # edit that reorders lines can put a red "before" a green it didn't
+    # precede in time. upgrade when: cross-branch ledger merges appear in
+    # practice — then sort by ts and detect clock-order anomalies.
+    reds_seen = {}  # test_id -> list of red entries seen so far
+    for entry in entries:
+        event = entry.get("event")
+        test_id = entry.get("test_id")
+        if event == "red":
+            reds_seen.setdefault(test_id, []).append(entry)
+        elif event == "green":
+            prior_reds = reds_seen.get(test_id, [])
+            if not prior_reds:
+                # Distinguish "no red anywhere" from "red exists but later".
+                red_anywhere = any(
+                    e.get("event") == "red" and e.get("test_id") == test_id
+                    for e in entries
+                )
+                reason = "missing-red" if red_anywhere else "green-without-red"
+                violations.append({"reason": reason, "entry": entry})
+            elif entry.get("bead") not in {r.get("bead") for r in prior_reds}:
+                violations.append({
+                    "reason": "id-mismatch",
+                    "entry": entry,
+                    "detail": "green bead does not match any prior red for this test_id",
+                    "prior_red_beads": sorted(
+                        str(r.get("bead")) for r in prior_reds
+                    ),
+                })
+
+    ok = not violations
+    emit({
+        "ok": ok,
+        "ledger": str(ledger_path),
+        "entries": len(entries),
+        "violations": violations,
+    })
+    return 0 if ok else 1
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        die_usage(message)
+
+
+def build_parser():
+    parser = JsonArgumentParser(
+        prog="tdd-ledger",
+        description=(
+            "Durable red-then-green TDD evidence ledger. "
+            "Output is JSON on stdout. "
+            "Exit codes: 0 ok, 1 invariant violation, 2 usage error."
+        ),
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    def add_record(name, help_text):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("--test-id", required=True,
+                       help="Stable identifier for the test (e.g. test file::name)")
+        p.add_argument("--bead", default=None, help="Bead ID this evidence belongs to")
+        p.add_argument("--output", default=None,
+                       help="Test output: a literal string or a path to a file containing it")
+        p.add_argument("--ledger", default=None,
+                       help=f"Ledger path (default: {DEFAULT_LEDGER_NAME} at repo root, "
+                            "or TDD_LEDGER_PATH)")
+        return p
+
+    add_record("record-failing", "Record a red run: the test was observed failing")
+    add_record("record-passing", "Record a green run: the test was observed passing")
+
+    v = sub.add_parser(
+        "verify",
+        help="Verify invariants: every green has a prior red with the same "
+             "test_id (and matching bead). Exit 0 clean, 1 with violations "
+             "(green-without-red, missing-red, id-mismatch, malformed-entry).",
+    )
+    v.add_argument("--ledger", default=None, help="Ledger path override")
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    if args.command == "record-failing":
+        return cmd_record("red", args)
+    if args.command == "record-passing":
+        return cmd_record("green", args)
+    return cmd_verify(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
