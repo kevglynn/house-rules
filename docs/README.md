@@ -21,6 +21,17 @@ Reference material for the kit. If you're new, read in this order:
 | [Refinement Proposal Template](refinement/proposal-template.md) | The package format a refinement produces; proposal becomes plan revision only after approval. |
 | [Blog draft: Agentic Covenant](blog-agentic-covenant.md) | Draft post on why open source needs the Covenant (publication candidate). |
 
+## Directory index
+
+| Directory | Purpose |
+|-----------|---------|
+| [specs/](specs/) | Design docs for multi-bead initiatives — architecture, trade-offs, non-goals (see the design-docs rule). |
+| [research/](research/) | Research memos and spike findings that inform specs and refinements. |
+| [refinements/](refinements/) | Dated refinement proposals — the output of individual refinement runs. |
+| [decisions/](decisions/) | Numbered decision records for open project-level choices (naming, license, publication). |
+
+Naming note: `refinement/` (singular) holds the refinement *method* — concepts and the proposal template — while `refinements/` (plural) holds the *instances*: dated proposals produced by applying that method.
+
 ## Key concepts (30-second version)
 
 **Beads** — Structured, dependency-aware work items agents can read, claim, and close from the terminal. Acceptance criteria in, evidence out.
