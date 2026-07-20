@@ -142,9 +142,7 @@ bd update {BEAD_ID} --status=blocked
 
 ## Integration with Beads Workflow
 
-This skill follows the pragmatic-tdd rule for bug beads:
-1. Write a test that reproduces the bug (MUST fail)
-2. Verify it fails for the right reason
-3. Write the minimal fix
-4. Verify the test passes
-5. Scan for the pattern class across the codebase
+For bug beads, this skill's diagnosis feeds directly into the bug playbook —
+reproducing test first, red-proof, minimal fix, pattern-class scan, ledger.
+Follow [skills/pragmatic-tdd/SKILL.md](../pragmatic-tdd/SKILL.md) for the
+authoritative step-by-step; do not improvise the sequence from memory.

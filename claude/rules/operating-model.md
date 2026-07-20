@@ -206,7 +206,7 @@ When Jawnt MCP tools are available, agents have two ways to interact with beads.
 | `bd count --by-status` | Overall project health | Report to user if open count grows faster than closed |
 | `bd epic status <epic-id>` | Progress on the current epic | Note in scratchpad if approaching completion |
 | `ponytail-audit` (or invoke `/ponytail-audit` skill) | Repo-wide scan for over-engineering: dead code, stdlib replacements, YAGNI abstractions | Create beads for findings rated as Important or higher |
-| `defer-debt` (grep for `defer:` comments) | Harvest `defer:` comments into a ledger, flag entries with missing upgrade triggers | Address no-trigger entries, review ceilings approaching their upgrade conditions |
+| `ponytail-debt` (invoke the `ponytail-debt` skill) | Harvest `defer:` comments into a ledger, flag entries with missing upgrade triggers | Address no-trigger entries, review ceilings approaching their upgrade conditions |
 | Refinement trigger check (invoke `skills/refinement` if one fires) | Drift, invalidated assumptions, matured mechanisms, opened opportunities — the trigger taxonomy in `docs/refinement/concepts.md` | Run the refinement skill; output is a proposal for human approval, never a silent plan edit |
 
 ### Pre-PR (before creating a pull request)

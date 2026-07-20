@@ -33,11 +33,16 @@ Invocation examples:
 If the user specifies voices and/or models explicitly, use those.
 Otherwise, use the **Standard Council** (3 voices):
 
-| Voice | Default Model | Role |
-|-------|---------------|------|
-| Advocate | `claude-opus-4-7-thinking-xhigh` | Steelmans the approach. Finds strengths, identifies what's working, extends the idea. |
-| Skeptic | `gemini-3.1-pro` | Stress-tests assumptions. Finds failure modes, edge cases, hidden costs. |
-| Simplifier | `gpt-5.5-medium` | Asks "is this necessary?" Finds complexity that can be removed. Proposes the minimal path. |
+| Voice | Model archetype | Role |
+|-------|-----------------|------|
+| Advocate | Strongest available reasoning model | Steelmans the approach. Finds strengths, identifies what's working, extends the idea. |
+| Skeptic | A capable model from a **different family** than the Advocate's | Stress-tests assumptions. Finds failure modes, edge cases, hidden costs. |
+| Simplifier | A concise model from a **third family** where available | Asks "is this necessary?" Finds complexity that can be removed. Proposes the minimal path. |
+
+Resolve archetypes to concrete slugs in this order: (1) explicit user
+overrides, (2) the project overlay's `## council` roster (see below),
+(3) your judgment against the models currently available to the Task tool.
+Never invent a slug — pick from what the environment actually offers.
 
 For expanded councils (user requests more voices), draw from the
 [Extended Voices](voices.md) reference.
@@ -117,6 +122,30 @@ After all voices complete, the parent agent produces a **Council Briefing**:
 - **Namespaced scratch.** If a voice needs to write a temporary file, it uses `.council/{voice-name}/` relative to the workspace root.
 - **Parallel launch.** All voices launch in a single message (multiple Task calls). Do not serialize them.
 - **Model diversity matters.** The value comes from different models seeing the same problem differently. Avoid assigning the same model to multiple voices unless the user explicitly requests it.
+
+## Project Overlay
+
+Project-specific model rosters live in `.agents/overlay.md` in the consuming
+repo, under a `## council` section (shared overlay convention — one file,
+one section per skill). Keys this skill reads:
+
+| Key | Meaning | Default when absent |
+|---|---|---|
+| `models` | Per-voice model assignments, `voice: model-slug` lines | Archetype resolution against currently available models |
+
+Format (illustrative — substitute your environment's current slugs):
+
+```markdown
+## council
+
+models:
+  advocate: <strongest-reasoning-model-slug>
+  skeptic: <different-family-model-slug>
+  simplifier: <third-family-model-slug>
+```
+
+The skill behaves sensibly with no overlay file: archetype-level defaults
+resolved against whatever models the Task tool currently offers.
 
 ## Extended Usage
 

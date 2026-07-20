@@ -1,69 +1,52 @@
 ---
 name: ponytail-help
 description: >
-  Quick-reference card for all ponytail modes, skills, and commands.
-  One-shot display, not a persistent mode. Trigger: /ponytail-help,
-  "ponytail help", "what ponytail commands", "how do I use ponytail".
+  Quick-reference index for the ponytail family: which skill or rule to use
+  for over-engineering review, repo-wide audit, defer-ledger harvesting, or
+  minimal-implementation mode. One-shot display, not a persistent mode.
+  Trigger: "ponytail help", "use ponytail", "which ponytail skill",
+  "how do I use ponytail", "what ponytail commands".
 ---
 
 # Ponytail Help
 
-Display this reference card when invoked. One-shot, do NOT change mode,
-write flag files, or persist anything.
+Display this reference card when invoked. One-shot: do NOT change mode, write
+flag files, or persist anything.
 
-## Levels
+The ponytail family is the kit's over-engineering defense: one implementation
+mode (a rule) plus review, audit, and ledger lenses (skills).
 
-| Level | Trigger | What change |
-|-------|---------|-------------|
-| **Lite** | `/ponytail lite` | Build what's asked, name the lazier alternative in one line. |
-| **Full** | `/ponytail` | The ladder enforced: YAGNI → stdlib → native → one line → minimum. Default. |
-| **Ultra** | `/ponytail ultra` | YAGNI extremist. Deletion before addition. Challenges requirements before building. |
+## The family
 
-Level sticks until changed or session end.
+| Member | Kind | What it does |
+|--------|------|--------------|
+| **ponytail-playbook** | Rule (`ponytail-playbook.mdc`) | Implementation mode. The decision ladder for minimal, correct code: YAGNI → stdlib → native → one line → minimum. Use while writing code. Defers to `pragmatic-tdd.mdc` for test discipline. |
+| **ponytail-review** | Skill | Over-engineering review of a diff or file set. One line per finding: what to cut, what replaces it. |
+| **ponytail-audit** | Skill | Repo-wide scan for dead code, stdlib replacements, and YAGNI abstractions, ranked biggest cut first. |
+| **ponytail-debt** | Skill | Harvests `defer:` comments into a debt ledger and flags entries missing upgrade triggers. |
+| **ponytail-help** | Skill | This card. |
 
-## Skills
+`ponytail-gain` (a benchmark scoreboard imported from upstream) is retired.
+Its honesty boundary — never print a per-repo savings number, because the
+unbuilt version was never written — now lives in ponytail-audit.
 
-| Skill | Trigger | What it does |
-|-------|---------|--------------|
-| **ponytail** | `/ponytail` | Lazy mode itself. Simplest solution that works. |
-| **ponytail-review** | `/ponytail-review` | Over-engineering review: `L42: yagni: factory, one product. Inline.` |
-| **ponytail-gain** | `/ponytail-gain` | Measured-impact scoreboard: less code, less cost, more speed. |
-| **ponytail-help** | `/ponytail-help` | This card. |
+## Picking the right member
 
-Codex uses `@ponytail`, `@ponytail-review`, and `@ponytail-help`; Claude Code
-and OpenCode use the slash-command forms above (OpenCode ships `/ponytail` and
-`/ponytail-review`).
+- Writing (or about to write) code → activate the **ponytail-playbook** rule.
+- Reviewing a diff or PR for complexity → **ponytail-review**.
+- Periodic hygiene pass over the whole repo → **ponytail-audit**.
+- "What did we defer?" / ledger review → **ponytail-debt**.
 
-## Deactivate
+## Activation
 
-Say "stop ponytail" or "normal mode". Resume anytime with `/ponytail`.
-`/ponytail off` also works.
+These are kit skills and rules — there is no plugin marketplace, config file,
+or environment variable involved:
 
-## Configure Default Mode
+- **Skills:** invoke by name ("run ponytail-audit") or have the agent read
+  the skill file directly (`skills/<name>/SKILL.md` in the kit, or the copy
+  installed in the project).
+- **Rule:** `ponytail-playbook.mdc` is agent-requestable — say "use
+  ponytail-playbook" and the agent loads it for the session.
 
-Default mode = `full`, auto-active every session. Change it:
-
-**Environment variable** (highest priority):
-```bash
-export PONYTAIL_DEFAULT_MODE=ultra
-```
-
-**Config file** (`~/.config/ponytail/config.json`, Windows: `%APPDATA%\ponytail\config.json`):
-```json
-{ "defaultMode": "lite" }
-```
-
-Set `"off"` to disable auto-activation on session start, activate manually
-with `/ponytail` when wanted.
-
-Resolution: env var > config file > `full`.
-
-## Update
-
-Enable auto-update once: open `/plugin`, go to Marketplaces, pick ponytail, Enable auto-update. Claude Code then pulls new versions at startup (run `/reload-plugins` when it prompts). Manual refresh: `/plugin marketplace update ponytail` then `/reload-plugins`.
-
-If `/plugin` is not recognized, your Claude Code is out of date. Update it (`npm install -g @anthropic-ai/claude-code@latest`, or `brew upgrade claude-code`) and restart. Other hosts use their own update flow.
-
-## More
-
-Full docs + examples: https://github.com/DietrichGebert/ponytail
+Updates arrive through the kit's normal distribution: `sync-rules.sh` for
+rules, `playbook-init.sh` for skills.

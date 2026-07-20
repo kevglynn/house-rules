@@ -10,10 +10,9 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [systematic-debugging](systematic-debugging/SKILL.md) | Hypothesis-driven bug investigation | "debug this", "why is this broken", unexpected failures, failed fix attempts |
 | [council](council/SKILL.md) | Parallel multi-model analysis: diverse AI voices examine one task, synthesized into a briefing | "convene a council", "get perspectives", "diverse review" |
 | [workspace-kickoff](workspace-kickoff/SKILL.md) | Orient in a new or resumed workspace: read orientation files, report, wait for direction | "start this workspace", "pick up where we left off", "begin session" |
-| [ponytail-help](ponytail-help/SKILL.md) | Entry point for the ponytail family — pick the right lens | "use ponytail", unsure which ponytail skill applies |
+| [ponytail-help](ponytail-help/SKILL.md) | Index for the ponytail family: which skill or rule fits the task | "use ponytail", "ponytail help", unsure which ponytail skill applies |
 | [ponytail-review](ponytail-review/SKILL.md) | Simplification review of a diff or file set | "ponytail review", over-engineering suspicion on a change |
 | [ponytail-audit](ponytail-audit/SKILL.md) | Repo-wide over-engineering scan: dead code, stdlib replacements, YAGNI | "ponytail audit", periodic hygiene pass |
-| [ponytail-gain](ponytail-gain/SKILL.md) | Find high-leverage simplification wins | "ponytail gain", "what can we delete" |
 | [ponytail-debt](ponytail-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "ponytail debt", defer-ledger review |
 | [pragmatic-tdd](pragmatic-tdd/SKILL.md) | Per-bead-type TDD playbooks: bug/feature/story/refactor steps, red-proof ceremony, zero-signal taxonomy | "pragmatic tdd", starting a bug/feature/refactor bead, "write the failing test", "red-proof" |
 | [tier1-review](tier1-review/SKILL.md) | Three-lens same-model review: parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "three-lens review", feature/refactor bead reaches self-review-done |
