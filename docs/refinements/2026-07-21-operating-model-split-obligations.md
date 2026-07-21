@@ -32,7 +32,7 @@ pre-exist are not renumbered; placement only, no substance changes).
 | G4 | After each child close, run `bd epic status <epic-id>` and report progress | **Skill** (Phase 4) + **Rule** (one item in the compressed per-milestone hygiene line) |
 | G5 | Stuck children: if a child is blocked/deferred and no other children remain, decide — (a) defer the epic to match, (b) extract the stuck child and close the epic with adjusted success criteria, or (c) close the child as won't-do with rationale. Do not leave epics in limbo | **Skill** (Phase 4) |
 | G6 | Scope expansion: a requirement pushing an epic beyond 7 children → split the epic or create a sibling; never silently grow past the heuristic | **Skill** (Phase 4) |
-| G7 | Epic close = success criteria, not child count: before `bd epic close-eligible`, verify success criteria are actually met; unmet criterion → follow-up bead before closing | **Skill** (Phase 4) |
+| G7 | Epic close = success criteria, not child count: before `bd epic close-eligible`, verify success criteria are actually met; unmet criterion → follow-up bead before closing | **Skill** (Phase 4, as the Planner-side trigger) — canonical close-evidence law is the pre-existing Epic row of `bead-completion.mdc`'s evidence table; the skill points there. Recorded so the `n0w` split (which thins bead-completion) knows the skill holds a dependent pointer, not a copy |
 
 ## Everything else (document-local IDs)
 

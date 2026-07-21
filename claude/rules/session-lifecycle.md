@@ -1,6 +1,6 @@
 # Session Lifecycle — MANDATORY
 
-This protocol is non-negotiable. Every session. No exceptions.
+This protocol is non-negotiable. Every session. No exceptions. The numbered checklists are the mandatory core; the "Extended" sections run when their conditions apply.
 
 ## Session start — do this BEFORE any other work
 
@@ -14,7 +14,8 @@ If `bd` is not installed or `.beads/` is missing, ask the user before proceeding
 
 - Review injected memories — if any contradict what you see in the codebase, apply the staleness protocol in `bead-completion.md` (update or remove immediately)
 - `bd human list` — check for pending decisions that need user input before work can proceed
-- Starting from a fresh clone: `bd bootstrap` to ensure the DB is healthy
+- `bd doctor --agent` — same health check as the extended close (embedded-mode substitutes below apply)
+- Starting from a fresh clone: `bd bootstrap` (see `worktree-awareness.md` § Fresh clone setup)
 - If `bd ready` returns nothing: `bd blocked` to understand what's stuck, then report to the user
 
 ## Session close — do this BEFORE ending
@@ -30,6 +31,6 @@ If `bd` is not installed or `.beads/` is missing, ask the user before proceeding
 
 ## Prohibited task tracking tools
 
-**Do NOT use TodoWrite, CreatePlan, TaskCreate, markdown checklists, or any IDE-native task tool for tracking work.** These tools do not persist across sessions and are invisible to other agents. There are no exceptions — if work is worth tracking, it belongs in a bead.
+**Do NOT use TodoWrite, CreatePlan, TaskCreate, markdown checklists, or any IDE-native task tool for tracking work.** These tools do not persist across sessions and are invisible to other agents and other worktrees. There are no exceptions — if work is worth tracking, it belongs in a bead.
 
 Use `bd create` to track tasks. Use `bd close` to mark them done. Beads is the single source of truth.

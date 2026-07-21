@@ -7,11 +7,13 @@ description: Planner playbook for multi-bead breakdowns — decomposition heuris
 
 Planner-side procedure for turning an approved breakdown into a beads dependency graph and steering the resulting epic to an honest close. The `operating-model.mdc` rule states the obligations; this skill is how the Planner meets them.
 
-The G-IDs below are shared with the operating-model split's obligations checklist (`docs/refinements/2026-07-21-operating-model-split-obligations.md`), so the rule layer and this procedure agree by construction.
+The G-IDs below are shared with the split's obligations checklist in the kit repo.
+
+This skill reads no overlay keys.
 
 ## When to Use This Skill
 
-- A Planner breakdown produces **3+ beads** (`beads-quality.mdc`: multi-bead plans MUST have wired dependencies or a graph)
+- A Planner breakdown produces **3+ beads** (and `beads-quality.mdc` makes wired dependencies or a graph mandatory at 4+)
 - An epic is in flight and a child is stuck, scope is expanding, or the epic looks close-eligible
 
 **Skip when:** the work is 1–2 beads — plain `bd create` (plus `bd dep add` if needed) is enough, and an epic isn't justified. Skip for Executor-side work: picking up, verifying, and closing individual beads is `bead-completion.mdc`'s domain.
@@ -88,12 +90,10 @@ Planner responsibilities while the epic executes:
 - **Progress (G4):** after each child close, run `bd epic status <epic-id>` and report progress.
 - **Stuck children (G5):** if a child is blocked or deferred and no other children remain, decide: (a) defer the epic to match, (b) extract the stuck child to a standalone bead and close the epic with adjusted success criteria, or (c) close the child as won't-do with rationale. Do not leave epics in limbo.
 - **Scope expansion (G6):** if a new requirement would push an epic beyond 7 children, split the epic into two or create a sibling epic. Do not silently grow epics past the decomposition heuristic.
-- **Close = success criteria, not just child count (G7):** before closing an epic via `bd epic close-eligible`, verify the epic's success criteria are actually met — not just that all children are mechanically closed. If a success criterion is unmet despite all children closing, create a follow-up bead before closing.
+- **Close = success criteria, not just child count (G7):** before closing an epic via `bd epic close-eligible`, verify the epic's success criteria per the Epic row of `bead-completion.mdc`'s evidence table — that row is the canonical close-evidence law; this bullet is the Planner-side trigger.
 
 ## Anti-Patterns
 
 - **Graph-free multi-bead planning.** Creating 4+ beads with no dependency structure produces an unsequenced grab-bag (`beads-quality.mdc` anti-pattern 2). If you created more than 3 beads, wire them or use `--graph`.
-- **Bead explosion.** 8+ beads for work that could be 3; a bead whose only AC is "file X exists" is too small — fold it into a sibling.
+- **Bead explosion.** 8+ beads for work that could be 3 (`beads-quality.mdc` anti-pattern 1); a bead whose only AC is "file X exists" is too small — fold it into a sibling.
 - **Serializing the independent.** Chaining beads that don't actually block each other hides parallelism; Phase 3 exists to catch this.
-- **Epic limbo.** A stuck child left undecided while the epic sits half-closed — Phase 4's stuck-children decision is mandatory, not optional.
-- **Child-count closes.** Closing an epic because `bd epic close-eligible` says it can, without checking the success criteria (G7).
