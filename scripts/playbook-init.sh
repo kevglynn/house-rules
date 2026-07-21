@@ -183,35 +183,6 @@ if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
   echo "✓ Copied $count Claude Code rules → .claude/rules/"
 fi
 
-# ---------- Copy hooks (Claude Code) ----------
-
-if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
-  hooks_src="$PLAYBOOK_ROOT/.claude/hooks"
-  hooks_dest="$PROJECT_ROOT/.claude/hooks"
-  settings_src="$PLAYBOOK_ROOT/.claude/settings.json"
-  settings_dest="$PROJECT_ROOT/.claude/settings.json"
-
-  if [ -d "$hooks_src" ]; then
-    mkdir -p "$hooks_dest"
-    # Backup existing settings.json if present
-    if [ -f "$settings_dest" ]; then
-      command cp -f "$settings_dest" "${settings_dest}.bak"
-      echo "  ↳ backed up existing settings.json"
-    fi
-    if ! command cp -f "$settings_src" "$settings_dest" 2>/tmp/playbook-init.cp.err \
-       || ! command cp -f "$hooks_src"/*.sh "$hooks_dest/" 2>>/tmp/playbook-init.cp.err; then
-      echo "✗ Failed to copy Claude hooks/settings.json → $hooks_dest"
-      sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-      rm -f /tmp/playbook-init.cp.err
-      exit 1
-    fi
-    rm -f /tmp/playbook-init.cp.err
-    chmod +x "$hooks_dest"/*.sh
-    hooks_count=$(ls -1 "$hooks_dest/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-    echo "✓ Copied $hooks_count Claude Code hooks + settings.json → .claude/"
-  fi
-fi
-
 # ---------- Copy skills (opt-in) ----------
 
 if $SKILLS; then
@@ -490,7 +461,6 @@ echo ""
 echo "What's ready:"
 echo "  • $(ls -1 "$PROJECT_ROOT/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') Cursor rules" 2>/dev/null || true
 echo "  • $(ls -1 "$PROJECT_ROOT/.claude/rules/"*.md 2>/dev/null | wc -l | tr -d ' ') Claude rules" 2>/dev/null || true
-echo "  • $(ls -1 "$PROJECT_ROOT/.claude/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ') Claude hooks + settings.json" 2>/dev/null || true
 if $SKILLS; then
   echo "  • $(ls -1d "$PROJECT_ROOT/.cursor/skills/"*/ 2>/dev/null | wc -l | tr -d ' ') skills" 2>/dev/null || true
 fi
