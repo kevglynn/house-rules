@@ -18,10 +18,9 @@ to cut, what replaces it. The diff's best outcome is getting shorter.
 `L<line>: <tag> <what>. <replacement>.`, or `<file>:L<line>: ...` for
 multi-file diffs.
 
-Tags: `delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:`. The canonical
-definitions of these five tags live in the simplify template in
-`skills/tier1-review/lenses.md` — read them there; this skill does not
-redefine them. The examples below demonstrate usage.
+Tags: `delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:` — canonical
+definitions in the simplify template in `skills/tier1-review/lenses.md`.
+The examples below demonstrate usage.
 
 ## Examples
 

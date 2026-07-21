@@ -22,7 +22,10 @@ disposition). The rule states the law; this skill is the procedure.
 
 ## When to Use This Skill
 
-Run Tier 1 when the change meets the multi-agent-review trigger criteria:
+Run Tier 1 when the change meets the multi-agent-review trigger criteria.
+The criteria are owned by the always-on `multi-agent-review` rule; this
+skill restates them for standalone invocation — if they ever disagree, the
+rule wins:
 
 - A component was decomposed (split into multiple production files)
 - A shared component was created or significantly changed

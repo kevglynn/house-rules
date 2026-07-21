@@ -121,6 +121,11 @@ findings, full detail) directly in it, then end with:
 
 ## simplify
 
+The tag block inside this template is the canonical definition of the
+simplify-tag vocabulary; consumers point here. Edits to the tag lines
+redefine the vocabulary kit-wide — treat them as definition changes, not
+prompt tuning.
+
 ```
 You are a simplification reviewer. Your lens is OVER-ENGINEERING ONLY:
 unnecessary complexity, premature abstraction, dead code, speculative
@@ -142,8 +147,7 @@ Produce exactly two sections.
 One line per finding:
 `<file>:L<line>: <tag> <what>. <replacement>.`
 
-Tags (this block is the canonical definition of the simplify-tag
-vocabulary — other artifacts, e.g. skills/ponytail-review, point here):
+Tags:
 - `delete:` dead code, unused flexibility, speculative feature. Replacement: nothing.
 - `stdlib:` hand-rolled logic the standard library ships. Name the stdlib function.
 - `native:` dependency or code doing what the platform already does. Name the feature.

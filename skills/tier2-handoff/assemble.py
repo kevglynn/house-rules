@@ -21,7 +21,7 @@ Spec schema (JSON object):
     language           (str, required)  e.g. "Rust", "TypeScript"
     artifact_noun      (str, required)  e.g. "token-bucket module"
     focus              (str, required)  the review-focus paragraph (agent-drafted)
-    context            (str, required)  what the component is + spec references
+    context            (str, required)  what the component is + what was done and why + spec references
     files              (list[str], required)  paths relative to --root, in embed order
     models             (list[str], optional)  default ["Grok", "Gemini", "GPT"]
     trusted_layers     (str, optional)  "do not re-review" boundary description

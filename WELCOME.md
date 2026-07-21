@@ -156,7 +156,7 @@ You've done the sandbox. You've shipped something with the day-to-day loop. Here
 
 The playbook formalizes this in the [`multi-agent-review`](cursor/rules/multi-agent-review.mdc) rule. Two flavors:
 
-- **Same-model, multi-lens** (cheaper): one model, three independent review passes with different framing — correctness, architecture, simplicity. Catches the blind spots of any single framing.
+- **Same-model, multi-lens** (cheaper): one model, multiple independent review passes with different framing — correctness, architecture, simplicity, test signal (the roster lives in `skills/tier1-review`). Catches the blind spots of any single framing.
 - **Cross-model** (more expensive): the same change reviewed by different model families (Claude, GPT, Gemini, etc.). Different architectures have different blind spots — getting them to agree is strong signal.
 
 ### When to use it

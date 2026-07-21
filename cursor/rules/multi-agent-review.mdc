@@ -7,7 +7,7 @@ alwaysApply: true
 
 Structural code changes benefit from review by multiple independent perspectives. A single reviewer — human or AI — has blind spots. This rule defines a two-tier review protocol.
 
-**Procedure lives in the skills.** For Tier 1, invoke `skills/tier1-review` (lens roster and prompt templates, context-package assembly, dispatch mechanics, triage protocol). For Tier 2, invoke `skills/tier2-handoff` (prompt assembly via `assemble.py`, response triage). This rule states the obligations; the skills are how you meet them.
+**Procedure lives in the skills.** Invoke `skills/tier1-review` for Tier 1 and `skills/tier2-handoff` for Tier 2. This rule states the obligations; the skills are how you meet them.
 
 ## When to trigger
 
@@ -25,7 +25,7 @@ Within the bead completion workflow (`bead-completion.mdc`): implement → **sel
 
 ## Tier 1: Same-model multi-lens review (autonomous)
 
-The agent dispatches the full lens roster defined in `skills/tier1-review/SKILL.md` — the skill is the sole owner of which lenses run and their prompt templates (`skills/tier1-review/lenses.md`, also the canonical home of the simplify-tag vocabulary). Each pass runs with independent context; no pass sees another's findings until triage. Findings are triaged Critical / Important / Minor; Critical and Important are fixed immediately.
+The agent dispatches the full lens roster the skill defines — the rule states no count; the skill owns the roster and templates. Each pass runs with independent context; no pass sees another's findings until triage. Every finding is triaged and dispositioned per the skill; Critical and Important findings are fixed before close.
 
 ## Tier 2: Cross-model review (human-assisted)
 
@@ -34,7 +34,7 @@ Different models have different failure modes; same-model review misses model-sp
 - **Strongly recommended** for all structural changes. If deferred under time pressure, create a bead tracking the cross-model review before merge.
 - **Required** (not deferrable) when the change touches: shared primitives (design system components, shared hooks); app shell or navigation infrastructure; authentication, authorization, or security boundaries; state management architecture.
 - Prerequisite: the work is committed and pushed before handoff (reproducible snapshot, cross-worktree visibility).
-- The agent assembles the review prompt and triages the returned findings per `skills/tier2-handoff/SKILL.md`; the human pastes the prompt to 2-3 external models and collects responses.
+- The agent assembles the review prompt and triages the returned findings per `skills/tier2-handoff/SKILL.md`; the human pastes the prompt to the external models the skill names and collects responses.
 
 ## When reviewers disagree
 
@@ -46,4 +46,4 @@ The `bd close --reason` must note: whether Tier 1 ran and what finding categorie
 
 ## Knowledge capture and tracking
 
-When a finding from either tier reveals a pattern-level insight (hidden coupling, undocumented convention, recurring anti-pattern), capture it with `bd remember --key <area>-<topic>` after the finding is resolved. All deferred findings — from both tiers — become beads with proper descriptions and acceptance criteria per `beads-quality.mdc`.
+Pattern-level insights from findings are captured per `bead-completion.mdc`'s `bd remember` protocol. All deferred findings — from both tiers — become beads with proper descriptions and acceptance criteria per `beads-quality.mdc`.

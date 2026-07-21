@@ -27,7 +27,9 @@ Run Tier 2 after Tier 1, on changes that meet the multi-agent-review Tier 2
 bar — strongly recommended for all structural changes, and **required** for
 shared primitives (design-system components, shared hooks), app shell or
 navigation, auth/authorization/security boundaries, and state-management
-architecture.
+architecture. That bar is owned by the always-on `multi-agent-review` rule;
+this skill restates it for standalone invocation — if they ever disagree,
+the rule wins.
 
 **Skip it** (and say so) for narrow bug fixes, config/chore/docs, and
 mechanical migrations. If Tier 2 is warranted but deferred under pressure,
@@ -44,7 +46,10 @@ working tree.
 
 From the bead and the branch:
 
-1. **Bead context** — `bd show <id>`: description, ACs, type.
+1. **Bead context** — `bd show <id>`: description, ACs, type — plus a
+   fresh **change summary** (what was done and why, 2-3 sentences). Both
+   feed the spec's `context` field; reviewers must receive the change
+   description, not only the component description.
 2. **Changed/created files** — the exact set under review (`git diff
    <base>..HEAD --stat` on the feature branch). These become the verbatim
    embeds; keep the list tight (the reviewed surface, not its dependencies).
@@ -89,7 +94,7 @@ repeated runs. It reads nothing from the clock, environment, or network — the
 | `language` | ✓ | e.g. `Rust`, `TypeScript` |
 | `artifact_noun` | ✓ | e.g. `token-bucket module`, `write path` |
 | `focus` | ✓ | the Phase 2 focus paragraph (one string) |
-| `context` | ✓ | what the component is + spec references |
+| `context` | ✓ | what the component is + what was done and why (change summary) + spec references |
 | `files` | ✓ | list of paths relative to `--root`, in embed order |
 | `models` | | reviewer names; default `["Grok", "Gemini", "GPT"]` |
 | `trusted_layers` | | the "do not re-review" boundary description |

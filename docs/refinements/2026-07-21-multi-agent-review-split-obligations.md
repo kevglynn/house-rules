@@ -20,6 +20,10 @@ ID namespace: **M1–M29**, document-local. The pilot's shared-ID pattern
 (O1–O17 appearing identically in rule, skill, and lens) is *not* replicated
 here because the destination skills predate this split and renumbering
 their content is out of scope (placement only, no substance changes).
+**Template note for future splits:** this omission is the exception, not
+the norm — when a split *creates* its destination artifacts (as the pilot
+did), use the shared-ID pattern; when destinations pre-exist, a
+document-local namespace like this one is correct.
 
 | # | Pre-split obligation (rule text) | Destination | Exists? |
 |---|---|---|---|
@@ -39,7 +43,7 @@ their content is out of scope (placement only, no substance changes).
 | M14 | Simplify scope boundary: over-engineering only; correctness/security/performance routed to the other lenses | **lenses.md** (simplify template, "Out of scope" block) | ✓ |
 | M15 | After collecting results: categorize findings Critical / Important / Minor | **Skill-T1** (Phase 3 — superset: severities plus per-finding dispositions) | ✓ |
 | M16 | Fix Critical and Important findings immediately | **Rule** (one line) + **Skill-T1** (Phase 4.1) | ✓ |
-| M17 | Create beads for Minor/deferred findings per beads-quality.mdc | **Rule** (tracking clause, M29) + **Skill-T1** (Phase 4.4 + "Deferral IOUs" anti-pattern) | ✓ |
+| M17 | Create beads for Minor/deferred findings per beads-quality.mdc | **Rule** (tracking clause, M29) + **Skill-T1** (Phase 4.4 + "Deferral IOUs" anti-pattern). *Scoped narrowing, not full preservation:* the old rule beaded every Minor finding; the destination model beads only findings dispositioned **deferred** — a Minor closed as accepted/rejected gets a recorded disposition instead of a bead. Nothing is silently dropped; the disposition ledger replaces the blanket-bead obligation. | ✓ |
 | M18 | Commit review fixes as a separate commit, not amended into the original | **Rule** (one line) + **Skill-T1** (Phase 4.2 + anti-pattern) | ✓ |
 | M19 | Tier 2 rationale: different models have different architectures/training/failure modes; same-model review misses model-specific blind spots | **Rule** (kept as the section's framing line) + **Skill-T1** (Phase 2 "cross-model diversity is Tier 2's job") | ✓ |
 | M20 | Tier 2 strongly recommended for all structural changes; if deferred under time pressure, create a tracking bead before merge | **Rule** (kept) + **Skill-T2** (When to Use) | ✓ |
@@ -70,12 +74,16 @@ not lost obligations:
 
 ## Related dedup executed with this split (F3 slice)
 
-The simplify-tag vocabulary previously lived in three artifacts. After this
-split: `skills/tier1-review/lenses.md` is the single canonical home;
-`cursor/rules/multi-agent-review.mdc` no longer carries the tags at all
-(the rule points at the skill, which points at lenses.md);
-`skills/ponytail-review/SKILL.md` names the five tags and points at
-lenses.md for their definitions (its worked examples remain — they
+The simplify-tag vocabulary previously lived in **four** artifacts (the
+Tier 1 review of this split caught a fourth copy the original count
+missed: `skills/ponytail-audit/SKILL.md`, whose wording had already
+diverged from the canon — the exact drift class this dedup eliminates).
+After this split and its review-fix commit: `skills/tier1-review/lenses.md`
+is the single canonical home; `cursor/rules/multi-agent-review.mdc` no
+longer carries the tags at all (the rule points at the skill, which points
+at lenses.md); `skills/ponytail-review/SKILL.md` and
+`skills/ponytail-audit/SKILL.md` name the five tags and point at lenses.md
+for their definitions (ponytail-review's worked examples remain — they
 demonstrate usage, they don't define the vocabulary).
 
 ## Flagged for the coordinator (not changed — substance, not placement)
