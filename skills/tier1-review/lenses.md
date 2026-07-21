@@ -142,7 +142,8 @@ Produce exactly two sections.
 One line per finding:
 `<file>:L<line>: <tag> <what>. <replacement>.`
 
-Tags:
+Tags (this block is the canonical definition of the simplify-tag
+vocabulary — other artifacts, e.g. skills/ponytail-review, point here):
 - `delete:` dead code, unused flexibility, speculative feature. Replacement: nothing.
 - `stdlib:` hand-rolled logic the standard library ships. Name the stdlib function.
 - `native:` dependency or code doing what the platform already does. Name the feature.

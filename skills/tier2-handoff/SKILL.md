@@ -48,7 +48,7 @@ From the bead and the branch:
 2. **Changed/created files** — the exact set under review (`git diff
    <base>..HEAD --stat` on the feature branch). These become the verbatim
    embeds; keep the list tight (the reviewed surface, not its dependencies).
-3. **Tier 1 outcomes** — the *already-addressed* list: what the three-lens
+3. **Tier 1 outcomes** — the *already-addressed* list: what the multi-lens
    Tier 1 pass fixed or accepted, so external models don't re-report it.
    Pull from the bead notes / Tier 1 triage table.
 4. **Trusted boundary** — the layers below the change that reviewers should

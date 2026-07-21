@@ -72,6 +72,18 @@ Items 7, 12, and 17 assume `bd doctor` works — that requires **server mode**; 
 
 Item 26 is the mechanism-placement signal from the topology split (proposal finding F5): after the procedure moved out of the always-on rule, invocation is the behavior that must not regress.
 
+### Multi-Agent Review (multi-agent-review.mdc + skills/tier1-review + skills/tier2-handoff)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 28 | Tier 1 review ran on qualifying structural changes (and was skipped, with a stated reason, on non-qualifying ones) | | |
+| 29 | Lens roster taken from `skills/tier1-review` (skill invoked; all roster lenses dispatched — not a hardcoded count from memory) | | |
+| 30 | On reviewer disagreement (lenses or models), the more conservative finding was adopted as the starting position and the tension documented | | |
+| 31 | Close reason records Tier 1 status (ran + finding categories) and Tier 2 status (completed / deferred with bead ID / not required) | | |
+| 32 | Review fixes landed as a separate commit; deferred findings got beads at triage time | | |
+
+Item 29 is the mechanism-placement signal from the multi-agent-review split (kit-wide placement audit, finding F2): the rule no longer states a lens count, so reaching the skill's roster is the behavior that must not regress.
+
 **Session score: __ / __ applicable items**
 
 ## How to Use
