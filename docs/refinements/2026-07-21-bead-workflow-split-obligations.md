@@ -86,9 +86,9 @@ document-local namespaces **BC1–BC25** (bead-completion) and **BQ1–BQ18**
 | BQ10 | Related-bead triage: child / dependency / update-existing | **Rule-BQ** (one clause: "extending, parenting, or depending") + full question → **Skill** (B1) |
 | BQ11 | Skip-search escape hatch + embedded-mode doctor caveat ("server mode; in embedded mode doctor no-ops — run `bd lint` and `bd orphans` instead") | **Rule-BQ** (escape hatch kept) — the caveat's inline copy **replaced with a pointer** to `session-lifecycle.mdc` § Extended close, the canonical home (forward obligation 3 from the operating-model split's Tier 1 review — F3 dedup, one of ~5 copies retired). Same pointer used in Skill Phase 1 |
 | BQ12 | Worked good/bad `bd create` example | **Skill** (B2, verbatim) |
-| BQ13 | Parent-child structure: `--parent`, hierarchical IDs, prefer `--parent` over standalone `bd dep add` for containment, `bd epic status` | **Canonical home designated: `skills/graph-planning` Phase 2** (forward obligation 4 — one home picked, recorded here). Phase 2 already carried the `--parent` mechanics verbatim and Phase 4 (G4) carries `bd epic status`; Rule-BQ § Structure is now a pointer; the bead-authoring skill also points there rather than restating. The graph-planning skill was NOT edited — it already holds the content |
+| BQ13 | Parent-child structure: `--parent`, hierarchical IDs, prefer `--parent` over standalone `bd dep add` for containment, `bd epic status` | **Canonical home designated: `skills/graph-planning` Phase 2** (forward obligation 4 — one home picked, recorded here). Phase 2 already carried the `--parent` mechanics in substance-complete form (paraphrase — it drops the pre-split `bd-epic-123.1` literal example) and Phase 4 (G4) carries `bd epic status`; Rule-BQ § Structure is now a pointer; the bead-authoring skill also points there rather than restating. The graph-planning skill was NOT edited — it already holds the content |
 | BQ14 | Wisps: `--ephemeral`, TTL compaction, export exclusion, `bd promote` | **Skill** (B4); Rule-BQ keeps a pointer in § Structure |
-| BQ15 | Anti-patterns 1–7 (explosion, graph-free planning, stale accumulation, duplicate creation, orphaned in-progress, evidence-free closes, AC-as-steps) | **Rule-BQ** (all seven kept, compressed to one line each; **numbering preserved** — `skills/graph-planning` cites "anti-pattern 1" and "anti-pattern 2" by number, and the new skill cites 4 and 6). Anti-pattern 6 keeps its pointer to bead-completion § "Do not defer AC verification" |
+| BQ15 | Anti-patterns 1–7 (explosion, graph-free planning, stale accumulation, duplicate creation, orphaned in-progress, evidence-free closes, AC-as-steps) | **Rule-BQ** (all seven kept, compressed to one line each; **numbering preserved** — `skills/graph-planning` cites "anti-pattern 1" and "anti-pattern 2" by number, and the new skill cites 4). Anti-pattern 6 keeps its pointer to bead-completion § "Do not defer AC verification" |
 | BQ16 | "When closing beads": `--reason` maps to ACs; see bead-completion for the evidence policy | **Rule-BQ** (reduced to a pure cross-ref — the AC3 dedup; the restated obligation text is gone, the pointer remains) |
 | BQ17 | "Reference commit hash, branch name, or PR URL in every close reason" | **MOVED to Rule-BC** § Evidence policy (close law consolidated at the close-law home; this was the one close-side obligation that existed *only* in beads-quality). `experiments/profile-spike/profile.yaml` sources the commit-ref rule from beads-quality "When closing beads" — noted for the coordinator below |
 | BQ18 | Worked good/bad close-reason example | **Skill** (B8, verbatim) |
@@ -104,7 +104,9 @@ example relocated to the skill intact. Two textual consolidations:
    operating-model points at).
 2. **The embedded-mode doctor caveat's inline copy (BQ11).** Replaced with
    a pointer to its canonical home (session-lifecycle § Extended close).
-   The caveat text itself survives there verbatim.
+   The caveat's substance survives there (the canonical copy is a superset
+   of the retired inline wording — it adds `bd blocked` and the exit-0
+   explanation).
 
 ## Cross-rule dedup executed by this split (AC3 / F3 slice)
 
@@ -128,4 +130,22 @@ example relocated to the skill intact. Two textual consolidations:
 - **`.cursor/agents/*.md` rule summaries** (beads-strategist, rules-auditor, rule-efficacy-analyst) describe beads-quality as covering "parent-child, ephemeral, validation config" — now pointer/skill content. Descriptions are still truthy at the summary level; retitling is a docs touch-up, not done here.
 - **`docs/research/2026-07-19-operating-surface-catalog.md` and the placement audit** describe the pre-split composition of both rules — historical records, correctly left stale.
 - **`sandbox/project/.claude/rules/*.md`** are point-in-time bootstrap fixtures of the old rules; they regenerate on the next sandbox refresh, not edited here.
-- **QUICKSTART.md / README.md one-line rule descriptions** remain accurate post-split (verified — they describe obligations, not the relocated procedure).
+- **QUICKSTART.md / README.md one-line rule descriptions**: QUICKSTART.md's remains accurate. README.md's beads-quality row said "evidence on close" — exactly the obligation this split moved out of beads-quality (BQ16/BQ17); caught by the Tier 1 code-reviewer lens (the original entry here falsely recorded it as verified) and corrected during review to mirror the rule's new frontmatter.
+- **`scripts/playbook-init.sh` validation-config comment** attributed the `validation.on-create warn` prescription to beads-quality.mdc; post-split it lives skill-side (B3). Caught by the code-reviewer lens; comment re-attributed to the bead-authoring skill during review.
+
+## Tier 1 review corrections (post-split fix commit)
+
+The review pass also tightened the skill against re-drift: the Anti-Patterns
+table (all rows restated phases or cited rules) was removed, and the four
+paraphrased law copies (AC ownership, litmus test, "most closures produce
+no memory", staleness protocol) were reduced to section-name citations.
+
+**Template note for future splits:** a skill phase cites the law by
+section name, full stop — it never re-summarizes the law's content after
+the citation. Paraphrased law copies in skills are the same drift family
+the splits exist to retire, just at lower rent. Likewise, a skill's
+Anti-Patterns section exists only when it names failure modes the phases
+don't already state (see `skills/README.md` submission checklist).
+Rule citations inside skills are extension-neutral ("the `beads-quality`
+rule", never `.mdc`/`.md`) because one skill file distributes to both
+Cursor and Claude Code targets.

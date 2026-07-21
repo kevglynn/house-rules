@@ -90,7 +90,7 @@ Item 29 is the mechanism-placement signal from the multi-agent-review split (kit
 |---|----------|-------|-------|
 | 33 | Planning and command detail sourced from the live surfaces: `skills/graph-planning` invoked for 3+-bead breakdowns and epic decisions, and bd command usage taken from `bd prime` / `bd --help` — not quoted from memory of the old monolith | | |
 
-Item 33 is the mechanism-placement signal from the operating-model split (kit-wide placement audit, findings F1/F3): the rule no longer carries the graph-planning procedure or the bd command catalog, so reaching the skill and the live command context is the behavior that must not regress.
+Item 33 is the mechanism-placement signal from the operating-model split (kit-wide placement audit, findings F1/F3).
 
 ### Bead Workflow (bead-completion.mdc + beads-quality.mdc + skills/bead-authoring)
 
@@ -98,7 +98,7 @@ Item 33 is the mechanism-placement signal from the operating-model split (kit-wi
 |---|----------|-------|-------|
 | 34 | Bead lifecycle procedure sourced from `skills/bead-authoring` (skill invoked for the authoring/close worked examples, JIT and self-review step lists, and the `bd remember` when/when-not manual — not quoted from memory of the old monoliths) | | |
 
-Item 34 is the mechanism-placement signal from the bead-completion + beads-quality split (kit-wide placement audit, finding F1): the rules no longer carry the step lists, worked examples, or the memory manual, so reaching the skill is the behavior that must not regress.
+Item 34 is the mechanism-placement signal from the bead-completion + beads-quality split (kit-wide placement audit, finding F1).
 
 **Convention for future splits:** each topology split contributes its mechanism-placement signal item (the item-26 / item-29 pattern) — not a full per-rule hygiene block. Generic adherence behaviors are scored once where they first appear; the scorecard must not grow ~5 items per split.
 

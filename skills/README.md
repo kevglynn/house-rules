@@ -102,6 +102,6 @@ Reference files (if needed) go in `skills/<skill-name>/` alongside the SKILL.md 
 - [ ] Description includes trigger phrases
 - [ ] "When to Use" includes skip conditions (when NOT to use)
 - [ ] Process is structured with clear phases
-- [ ] Anti-patterns section exists
+- [ ] Anti-patterns section exists — only when it names failure modes the core process doesn't already state; omit it rather than restate phases or cited rules
 - [ ] No domain-specific assumptions (works for any project)
 - [ ] No project names, people, or project-specific parameters in the core (overlay-ready)

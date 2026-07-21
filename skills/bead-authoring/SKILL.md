@@ -5,7 +5,7 @@ description: Single-bead lifecycle playbook — authoring worked examples (bd cr
 
 # Bead Authoring
 
-The procedure for the single-bead lifecycle: writing a bead worth picking up cold, verifying it on pickup, and closing it with evidence. The always-on rules state the law — `beads-quality.mdc` owns the authoring standards (self-containment, What/Where/How/Why, AC-by-type), `bead-completion.mdc` owns the close-side law (AC ownership, evidence policy, the do-not-defer invariant, the memory litmus test). This skill is how you meet them.
+The procedure for the single-bead lifecycle: writing a bead worth picking up cold, verifying it on pickup, and closing it with evidence. The always-on rules state the law — the `beads-quality` rule owns the authoring standards (self-containment, What/Where/How/Why, AC-by-type), the `bead-completion` rule owns the close-side law (AC ownership, evidence policy, the do-not-defer invariant, the memory litmus test). This skill is how you meet them.
 
 The B-IDs below are shared with the split's obligations checklist in the kit repo.
 
@@ -18,13 +18,13 @@ This skill reads no overlay keys — the procedure is identical in every project
 - Closing a bead (the self-review pass, close-reason format and examples)
 - Deciding whether to `bd remember` after a close
 
-**Skip when:** the breakdown is 3+ beads needing a dependency graph — that is `skills/graph-planning`'s domain (this skill covers one bead at a time; graph-planning Phase 2 is the canonical home for parent-child and `--graph` mechanics). Test discipline by bead type is `pragmatic-tdd.mdc` + its skill. What counts as evidence and who owns ACs is rule law, not procedure — this skill never overrides `bead-completion.mdc`.
+**Skip when:** the concern is graph or epic management — dependency wiring, `--graph`, epic steering in a 3+-bead breakdown belong to `skills/graph-planning` (per-bead authoring within a multi-bead breakdown still uses Phases 1–3 here). Test discipline by bead type is the `pragmatic-tdd` rule + its skill.
 
 ## Core Process
 
 ### Phase 1 — Before creating: dedupe search (B1)
 
-Check that the work doesn't already have a bead (`beads-quality.mdc` anti-pattern 4 is the law here):
+Check that the work doesn't already have a bead (the `beads-quality` rule's anti-pattern 4 is the law here):
 
 ```bash
 bd search "loading indicator"     # text search for related beads
@@ -33,11 +33,11 @@ bd list --status=open             # scan open beads for overlap
 
 If a related bead exists, consider: should this be a child of that bead (`--parent`), a dependency (`bd dep add`), or an update to the existing bead's description?
 
-**When to skip the search:** if the beads DB isn't running (cold start, broken redirect) or you're creating the first beads on a new project, proceed without search and run `bd doctor` afterward (embedded-mode substitutes per `session-lifecycle.mdc` § Extended close).
+**When to skip the search:** if the beads DB isn't running (cold start, broken redirect) or you're creating the first beads on a new project, proceed without search and run `bd doctor` afterward (embedded-mode substitutes per the `session-lifecycle` rule § Extended close).
 
 ### Phase 2 — Author the bead (B2)
 
-Apply `beads-quality.mdc`'s standards: What/Where/How/Why description, ACs as observable outcomes, a Non-goals line. Worked example:
+Apply the `beads-quality` rule's standards: What/Where/How/Why description, ACs as observable outcomes, a Non-goals line. Worked example:
 
 ```bash
 # BAD — no ACs, no non-goals, description restates title
@@ -58,7 +58,7 @@ bd create "Add loading indicators to beads-ui tab switching" \
 
 ### Phase 4 — Structure: hierarchy and wisps (B4)
 
-**Parent-child and dependency-graph mechanics** (`--parent`, hierarchical IDs, `bd dep add` vs containment, `bd create --graph`) are owned by `skills/graph-planning` Phase 2 — go there; they are not restated here.
+**Parent-child and dependency-graph mechanics** (`--parent`, hierarchical IDs, `bd dep add` vs containment, `bd create --graph`) are owned by `skills/graph-planning` Phase 2.
 
 **Ephemeral issues (wisps):** use `--ephemeral` for short-lived tracking that doesn't warrant permanent storage — agent heartbeats, exploratory investigation notes, temporary coordination signals. Wisps are subject to TTL compaction and excluded from exports. To promote a wisp to a permanent bead: `bd promote <wisp-id> --reason "..."`.
 
@@ -70,7 +70,7 @@ Before writing any code, check what you're working on (`bd show --current`) and 
 - Do the APIs, interfaces, or patterns described still match the current codebase?
 - Has anything changed since the bead was created that affects the approach?
 
-If reality doesn't match: update the implementation approach, note the discrepancy, and proceed. **Never modify the acceptance criteria** — AC ownership is `bead-completion.mdc` law; a wrong or impossible AC means blocking the bead and escalating to the Planner.
+If reality doesn't match: update the implementation approach, note the discrepancy, and proceed. **Never modify the acceptance criteria** — ownership and escalation are the `bead-completion` rule's § AC ownership law.
 
 ### Phase 6 — During work: progress tracking (B6)
 
@@ -84,7 +84,7 @@ Use `bd note <id> "progress update"` to append implementation notes to the bead'
 2. For each AC, verify it is satisfied by the code as written
 3. If any AC is not met, fix it or escalate — do not declare done
 
-**Close reason (B8)** — evidence mapped to ACs, with a commit hash, branch name, or PR URL (the policy, per-type table, and do-not-defer invariant are `bead-completion.mdc` law):
+**Close reason (B8)** — evidence mapped to ACs, with a commit hash, branch name, or PR URL (the policy, per-type table, and do-not-defer invariant are the `bead-completion` rule's law):
 
 ```bash
 # BAD — vague
@@ -98,7 +98,7 @@ Continuation flags: `bd close ... --suggest-next` (show newly unblocked issues) 
 
 ### Phase 8 — After close: knowledge capture (B9)
 
-`bead-completion.mdc` owns the litmus test (would a fresh agent waste significant time or make a wrong assumption without this?). This phase is the manual for applying it. Most bead closures produce **no memory** — this step is for the exceptions.
+The `bead-completion` rule owns the litmus test; this phase is the manual for applying it.
 
 ```bash
 bd remember "AccountService.sync silently skips soft-deleted records — \
@@ -129,17 +129,4 @@ bd remember "AccountService.sync silently skips soft-deleted records — \
 - Check before creating: `bd memories <keyword>` to search for existing memories on the topic; update with `bd remember --key <existing-key> "corrected info"` rather than creating a parallel entry
 - One memory per bead, max — capturing more than two means the bead was too large or you're recording progress notes
 
-Staleness handling (a memory contradicts the codebase) is `bead-completion.mdc` law: update or remove immediately, never work around silently.
-
-## Anti-Patterns
-
-The seven bead anti-patterns are `beads-quality.mdc` law (cited by number below); these are the procedural failure modes this skill prevents:
-
-| Anti-Pattern | Why It Fails | Better Approach |
-|--------------|-------------|-----------------|
-| Skipping the dedupe search | Two beads tracking the same work confuse agents and users (`beads-quality.mdc` anti-pattern 4) | Phase 1 before every create |
-| Title-restating description | The bead is not self-contained; the next agent re-derives everything | Phase 2's worked example — What/Where/How/Why |
-| Coding before JIT verification | The bead's described approach may no longer match the codebase; work lands in the wrong place | Phase 5's question list before the first edit |
-| "Done" close reasons | Evidence-free closes (`beads-quality.mdc` anti-pattern 6) are indistinguishable from unverified work | Phase 7's format: commit ref + per-AC evidence |
-| Remembering progress notes | Memory pollution — task-specific context outlives its usefulness (`bd note` is the right home) | Phase 8's when-NOT list; apply the litmus test |
-| Keyless memories | Auto-generated keys defeat deduplication and pruning | Always `--key <area>-<topic>` |
+Staleness handling (a memory contradicts the codebase) is the `bead-completion` rule's law.

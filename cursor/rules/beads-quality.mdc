@@ -7,7 +7,7 @@ alwaysApply: true
 
 Every bead must be self-contained — a developer picking it up cold, without scratchpad or chat history, should have everything needed to understand, implement, and verify the work.
 
-**Authoring procedure lives in the `skills/bead-authoring` skill** (worked `bd create` examples, dedupe search, validation mechanics, wisps). This rule states the standards; the skill is how you meet them.
+**Authoring procedure lives in the `skills/bead-authoring` skill** (worked `bd create` examples, dedupe search, validation mechanics, wisps). This rule states the standards; the skill is how you meet them. Close-side law — evidence policy, do-not-defer, the commit/branch/PR reference requirement — lives in `bead-completion.mdc`; close-reason format and examples: the skill.
 
 ## Required in every bead
 
@@ -53,7 +53,3 @@ Parent-child hierarchy and dependency-graph mechanics (`--parent`, `bd dep add`,
 5. **Orphaned in-progress.** Claiming a bead and ending the session without closing it or leaving `bd note <id> "Progress: ..."`.
 6. **Evidence-free closes.** `bd close --reason "Done"` with no AC mapping; "will be verified later" is an IOU, not evidence — see `bead-completion.mdc` § "Do not defer AC verification" for the four legitimate options.
 7. **AC as implementation steps.** ACs describe observable outcomes ("Loading indicator appears when switching tabs"), not steps ("Add isLoading state variable").
-
-## When closing beads
-
-Close-side law — the evidence policy by bead type, the do-not-defer invariant, and the commit/branch/PR reference requirement — lives in `bead-completion.mdc`. Close-reason format and worked examples: the bead-authoring skill.

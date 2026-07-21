@@ -256,8 +256,9 @@ else
   fi
 fi
 
-# Bead-quality validation at creation time (beads-quality.mdc prescribes this;
-# without it the prescription is a silent no-op in fresh repos).
+# Bead-quality validation at creation time (the bead-authoring skill's
+# validation phase prescribes this; without it the prescription is a silent
+# no-op in fresh repos).
 if command -v bd &>/dev/null && { [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; }; then
   if bd config set validation.on-create warn >/dev/null 2>&1; then
     echo "✓ Set validation.on-create = warn"

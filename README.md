@@ -31,7 +31,7 @@ Canonical `.mdc` rule files. These are the single source — edit here, then syn
 
 | Rule | What it does |
 |------|-------------|
-| `beads-quality.mdc` | Bead creation standards: `--acceptance` required, non-goals, evidence on close |
+| `beads-quality.mdc` | Bead creation standards: self-contained descriptions, `--acceptance` required, non-goals (close-side law: `bead-completion.mdc`) |
 | `pragmatic-tdd.mdc` | Signal-first TDD by bead type, zero-signal test taxonomy |
 | `bead-completion.mdc` | JIT verification, self-review against ACs, AC ownership protocol, `bd remember` knowledge capture |
 | `design-docs.mdc` | When to create committed specs (3+ beads or high-risk areas) |

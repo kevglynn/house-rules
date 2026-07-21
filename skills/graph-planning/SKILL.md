@@ -5,7 +5,7 @@ description: Planner playbook for multi-bead breakdowns — decomposition heuris
 
 # Graph Planning
 
-Planner-side procedure for turning an approved breakdown into a beads dependency graph and steering the resulting epic to an honest close. The `operating-model.mdc` rule states the obligations; this skill is how the Planner meets them.
+Planner-side procedure for turning an approved breakdown into a beads dependency graph and steering the resulting epic to an honest close. The `operating-model` rule states the obligations; this skill is how the Planner meets them.
 
 The G-IDs below are shared with the split's obligations checklist in the kit repo.
 
@@ -13,10 +13,10 @@ This skill reads no overlay keys.
 
 ## When to Use This Skill
 
-- A Planner breakdown produces **3+ beads** (and `beads-quality.mdc` makes wired dependencies or a graph mandatory at 4+)
+- A Planner breakdown produces **3+ beads** (and the `beads-quality` rule makes wired dependencies or a graph mandatory at 4+)
 - An epic is in flight and a child is stuck, scope is expanding, or the epic looks close-eligible
 
-**Skip when:** the work is 1–2 beads — plain `bd create` (plus `bd dep add` if needed) is enough, and an epic isn't justified. Skip for Executor-side work: picking up, verifying, and closing individual beads is `bead-completion.mdc`'s domain.
+**Skip when:** the work is 1–2 beads — plain `bd create` (plus `bd dep add` if needed) is enough, and an epic isn't justified. Skip for Executor-side work: picking up, verifying, and closing individual beads is the `bead-completion` rule's domain. (Exception: Phase 2 also serves single-bead `--parent` use — the `beads-quality` rule and the bead-authoring skill point here for parent-child mechanics.)
 
 ## Core Process
 
@@ -29,7 +29,7 @@ Apply the decomposition heuristics before creating anything:
 - **Leaf beads: max 3 ACs.** More than 3 usually means the bead is doing too many things.
 - **Independent beads should not depend on each other** — check for unnecessary serialization in Phase 3.
 
-Every node still needs a full description and acceptance criteria per `beads-quality.mdc` (What/Where/How/Why, observable outcomes, non-goals).
+Every node still needs a full description and acceptance criteria per the `beads-quality` rule (What/Where/How/Why, observable outcomes, non-goals); the bead-authoring skill's Phase 2 has the worked example.
 
 ### Phase 2 — Create the graph atomically (G2)
 
@@ -90,10 +90,10 @@ Planner responsibilities while the epic executes:
 - **Progress (G4):** after each child close, run `bd epic status <epic-id>` and report progress.
 - **Stuck children (G5):** if a child is blocked or deferred and no other children remain, decide: (a) defer the epic to match, (b) extract the stuck child to a standalone bead and close the epic with adjusted success criteria, or (c) close the child as won't-do with rationale. Do not leave epics in limbo.
 - **Scope expansion (G6):** if a new requirement would push an epic beyond 7 children, split the epic into two or create a sibling epic. Do not silently grow epics past the decomposition heuristic.
-- **Close = success criteria, not just child count (G7):** before closing an epic via `bd epic close-eligible`, verify the epic's success criteria per the Epic row of `bead-completion.mdc`'s evidence table — that row is the canonical close-evidence law; this bullet is the Planner-side trigger.
+- **Close = success criteria, not just child count (G7):** before closing an epic via `bd epic close-eligible`, verify the epic's success criteria per the Epic row of the `bead-completion` rule's evidence table — that row is the canonical close-evidence law; this bullet is the Planner-side trigger.
 
 ## Anti-Patterns
 
-- **Graph-free multi-bead planning.** Creating 4+ beads with no dependency structure produces an unsequenced grab-bag (`beads-quality.mdc` anti-pattern 2). If you created more than 3 beads, wire them or use `--graph`.
-- **Bead explosion.** 8+ beads for work that could be 3 (`beads-quality.mdc` anti-pattern 1); a bead whose only AC is "file X exists" is too small — fold it into a sibling.
+- **Graph-free multi-bead planning.** Creating 4+ beads with no dependency structure produces an unsequenced grab-bag (`beads-quality` rule, anti-pattern 2). If you created more than 3 beads, wire them or use `--graph`.
+- **Bead explosion.** 8+ beads for work that could be 3 (`beads-quality` rule, anti-pattern 1); a bead whose only AC is "file X exists" is too small — fold it into a sibling.
 - **Serializing the independent.** Chaining beads that don't actually block each other hides parallelism; Phase 3 exists to catch this.
