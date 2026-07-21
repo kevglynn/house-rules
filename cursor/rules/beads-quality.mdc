@@ -51,7 +51,7 @@ bd list --status=open             # scan open beads for overlap
 
 If a related bead exists, consider: should this be a child of that bead (`--parent`), a dependency (`bd dep add`), or an update to the existing bead's description?
 
-**When to skip the search:** If the beads DB isn't running (cold start, broken redirect) or you're creating the first beads on a new project, proceed without search and run `bd doctor` afterward.
+**When to skip the search:** If the beads DB isn't running (cold start, broken redirect) or you're creating the first beads on a new project, proceed without search and run `bd doctor` afterward (server mode; in embedded mode doctor no-ops — run `bd lint` and `bd orphans` instead).
 
 ## Example
 

@@ -11,7 +11,7 @@ This repo is the **standalone distributable package for AI-native development**.
 
 ### The Measurement Landscape Today
 
-- **`docs/rule-effectiveness-scorecard.md`** — a manual 20-item scorecard for scoring agent sessions against expected behaviors. Organized by rule and Tier (session protocol, status transitions, error recovery, bead quality, hygiene, git conventions). Includes maturity thresholds (20-40% baseline → 90%+ excellent) and an experiment template.
+- **`docs/rule-effectiveness-scorecard.md`** — a manual 27-item scorecard for scoring agent sessions against expected behaviors (scored during experiment windows, not per-session). Organized by rule and Tier (session protocol, status transitions, error recovery, bead quality, hygiene, git conventions, pragmatic TDD). Includes maturity thresholds (20-40% baseline → 90%+ excellent) and an experiment template. Items 7/12/17 are server-mode-only (embedded-mode substitutes noted inline).
 - **`PLAN.md`** — initiatives and backlog (including future scorecard automation and session fingerprints when listed).
 - **`CHANGELOG.md`** — tracks what rule changes were made and when, providing the independent variable for before/after analysis.
 

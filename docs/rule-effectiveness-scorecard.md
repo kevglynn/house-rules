@@ -4,7 +4,9 @@ Lightweight measurement framework for evaluating whether playbook rules improve 
 
 ## Session Scorecard
 
-Fill out after each agent session. Score each item: **Y** (yes, observed), **N** (no, should have happened but didn't), **N/A** (not applicable this session).
+Score sessions **during active experiment windows** (see Active Experiments below) — per-session scoring outside an experiment is not required; that obligation was re-scoped at the 2026-07-20 refinement gate because it had no activation surface and its only real use was experiment-shaped. Score each item: **Y** (yes, observed), **N** (no, should have happened but didn't), **N/A** (not applicable this session).
+
+Items 7, 12, and 17 assume `bd doctor` works — that requires **server mode**; in embedded-mode repos score the substitute commands (`bd lint` / `bd orphans` / `bd blocked`) instead.
 
 ### Session Protocol (operating-model.mdc — Tier 1.1)
 
@@ -16,7 +18,7 @@ Fill out after each agent session. Score each item: **Y** (yes, observed), **N**
 | 4 | Agent checked `bd show --current` for in-progress work | | |
 | 5 | Agent used `bd ready` (not arbitrary task selection) | | |
 | 6 | Agent committed progress notes before session end (`bd note`) | | |
-| 7 | Agent ran `bd doctor --agent` at session close | | |
+| 7 | Agent ran `bd doctor --agent` at session close (server mode; embedded: `bd lint`+`bd orphans`+`bd blocked`) | | |
 
 ### Status Transitions (operating-model.mdc — Tier 1.2)
 
@@ -31,7 +33,7 @@ Fill out after each agent session. Score each item: **Y** (yes, observed), **N**
 | # | Behavior | Score | Notes |
 |---|----------|-------|-------|
 | 11 | On build/test failure, agent diagnosed before continuing | | |
-| 12 | On tool failure, agent checked error + ran `bd doctor` | | |
+| 12 | On tool failure, agent checked error + ran `bd doctor` (server mode; embedded: the substitute checks) | | |
 | 13 | Agent flagged uncertainty instead of shipping unconfident code | | |
 
 ### Bead Quality (beads-quality.mdc — Tier 1.4/1.5)
@@ -46,7 +48,7 @@ Fill out after each agent session. Score each item: **Y** (yes, observed), **N**
 
 | # | Behavior | Score | Notes |
 |---|----------|-------|-------|
-| 17 | Per-session hygiene happened (doctor at start/close) | | |
+| 17 | Per-session hygiene happened (doctor at start/close; embedded: the substitute checks) | | |
 | 18 | Stale beads addressed if milestone was reached | | |
 
 ### Git Conventions (operating-model.mdc — Tier 1.10)

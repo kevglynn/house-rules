@@ -256,6 +256,16 @@ else
   fi
 fi
 
+# Bead-quality validation at creation time (beads-quality.mdc prescribes this;
+# without it the prescription is a silent no-op in fresh repos).
+if command -v bd &>/dev/null && { [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; }; then
+  if bd config set validation.on-create warn >/dev/null 2>&1; then
+    echo "✓ Set validation.on-create = warn"
+  else
+    echo "  (could not set validation.on-create — set manually: bd config set validation.on-create warn)"
+  fi
+fi
+
 # ---------- Beads setup ----------
 
 # Note: we skip 'bd setup cursor/claude' here because the playbook's 8 rules

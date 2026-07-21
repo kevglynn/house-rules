@@ -109,7 +109,7 @@ After creation: `bd graph <epic-id>` to visualize and verify dependency order be
 When the Executor encounters an unexpected failure:
 
 1. **Build or test failure during implementation:** Stop, diagnose, fix. If the fix is outside the current bead's scope, create a new bead for it and mark the current bead blocked.
-2. **Tool failure** (`bd`, `git`, build tool): Check the error message. For beads: run `bd ping` first — if it fails, the database is unreachable. If `bd ping` succeeds, run `bd doctor --agent` for full diagnostics. If the tool is fundamentally broken, note it in "Executor's Feedback" and mark the bead blocked.
+2. **Tool failure** (`bd`, `git`, build tool): Check the error message. For beads: run `bd ping` first — if it fails, the database is unreachable. If `bd ping` succeeds, run `bd doctor --agent` for full diagnostics (embedded-mode DBs don't support doctor — it exits 0 with a note; use `bd lint` + `bd orphans` + `bd blocked` instead). If the tool is fundamentally broken, note it in "Executor's Feedback" and mark the bead blocked.
 3. **Multiple failed approaches** (3+ distinct attempts): Stop implementing. Document what was tried and why each failed in `bd note <id> "..."`. Mark the bead blocked and escalate to the Planner — the approach or ACs may need revision.
 4. **Uncertain about correctness:** Do not ship code you're not confident in. Flag the uncertainty in "Executor's Feedback" with specific questions. It is better to ask than guess.
 
@@ -150,7 +150,7 @@ When the Executor encounters an unexpected failure:
 
 ### Extended session close (after the mandatory checklist)
 
-- `bd doctor --agent` — quick health check (catches orphaned in-progress beads, broken deps)
+- `bd doctor --agent` — quick health check (catches orphaned in-progress beads, broken deps). **Embedded mode:** doctor is unsupported (exits 0 with a note, no diagnostics) — run `bd lint`, `bd orphans`, and `bd blocked` instead
 - `bd dolt pull && bd dolt push` — sync beads state with remote (if remote configured)
 
 ## Finding and Filtering Beads
@@ -193,7 +193,7 @@ When Jawnt MCP tools are available, agents have two ways to interact with beads.
 
 | Command | What it checks | Action on findings |
 |---------|---------------|-------------------|
-| `bd doctor --agent` | DB health, broken deps, orphaned in-progress, redirect integrity | Follow remediation commands in output |
+| `bd doctor --agent` (server mode) or `bd lint` + `bd orphans` + `bd blocked` (embedded mode — doctor no-ops there) | DB health, broken deps, orphaned in-progress, redirect integrity | Follow remediation commands in output |
 | `bd show --current` | Beads left in-progress from prior sessions | Resume, or `bd note` progress and un-claim if switching focus |
 
 ### Per-milestone (after closing 3+ beads or completing an epic child)
@@ -213,9 +213,11 @@ When Jawnt MCP tools are available, agents have two ways to interact with beads.
 
 | Command | What it checks | Action on findings |
 |---------|---------------|-------------------|
-| `bd preflight` | Open beads on this branch, uncommitted changes, lint | Address all blockers before PR |
-| `bd doctor --check=conventions` | Lint + stale + orphans in one pass | Fix convention violations |
+| `bd doctor --check=conventions` (server mode) or `bd lint` + `bd stale` + `bd orphans` (embedded mode) | Lint + stale + orphans in one pass | Fix convention violations |
 | `bd epic close-eligible` | Epics where all children are done | Close eligible epics |
+
+Do not use `bd preflight` for now: it emits upstream-project checklist content
+instead of this repo's conventions. Revisit when it reads per-repo config.
 
 ## Git Conventions
 

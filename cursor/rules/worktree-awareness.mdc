@@ -38,7 +38,7 @@ All worktrees share a single beads database via a redirect file (`.beads/redirec
 
 **How it works:** IDE-created worktrees (e.g. via a `postCreate` hook in `.cursor/worktrees.json` or equivalent IDE config) run `scripts/setup-worktree.sh` to create the redirect automatically. For CLI-based worktrees, use `bd worktree create` which handles the redirect natively.
 
-**If `bd list` fails in a worktree:** Run `bd doctor --agent` for diagnostics with remediation commands. Alternatively, run `bash scripts/setup-worktree.sh` manually from the worktree root.
+**If `bd list` fails in a worktree:** Run `bd doctor --agent` for diagnostics with remediation commands (server mode only — in embedded mode doctor no-ops; check `.beads/redirect` and run `bd where` instead). Alternatively, run `bash scripts/setup-worktree.sh` manually from the worktree root.
 
 **Do not run `bd init` in worktrees.** That creates a separate isolated database, which is the opposite of the shared model. If a worktree already has a local DB from a previous `bd init`, the setup script will detect it and warn — follow its instructions to migrate.
 
