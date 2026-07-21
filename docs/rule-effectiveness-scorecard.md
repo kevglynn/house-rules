@@ -100,6 +100,14 @@ Item 33 is the mechanism-placement signal from the operating-model split (kit-wi
 
 Item 34 is the mechanism-placement signal from the bead-completion + beads-quality split (kit-wide placement audit, finding F1).
 
+### Defer Convention (defer-convention.mdc + scripts/defer-lint)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 35 | Defer-comment auditing ran through `scripts/defer-lint` (checker invoked for harvest/rot checks — not the detection grep quoted from memory of the old rule's Harvesting section) | | |
+
+Item 35 is the mechanism-placement signal from the defer-convention split (kit-wide placement audit, findings F1/F4): the rule no longer carries the detection procedure; reaching the checker is the behavior that must not regress.
+
 **Convention for future splits:** each topology split contributes its mechanism-placement signal item (the item-26 / item-29 pattern) — not a full per-rule hygiene block. Generic adherence behaviors are scored once where they first appear; the scorecard must not grow ~5 items per split.
 
 **Session score: __ / __ applicable items**

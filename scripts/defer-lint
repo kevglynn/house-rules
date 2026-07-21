@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""defer-lint — mechanical check for the defer-convention rule.
+
+Scans a source tree for `defer:` comments and flags entries that violate
+the no-trigger law: every defer MUST carry an "upgrade when:" clause.
+Missing "ceiling:" is reported as a warning (lesser severity, does not
+fail the scan). Converts the rule's most checkable MUST from advisory
+prose into an observable exit code.
+
+Multi-line aware: ceiling/upgrade-when clauses often continue on the
+following comment line(s); continuation lines are scanned before a clause
+is declared missing.
+
+Exit codes: 0 clean (warnings allowed) · 1 violations · 2 usage error ·
+3 I/O error. Human-readable output by default; --json for agents.
+I/O and usage errors are JSON on stderr. Non-interactive.
+"""
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+# Comment marker immediately (modulo whitespace) before `defer:` — the
+# marker requirement keeps prose that merely mentions the convention out.
+DEFER_RE = re.compile(r"(?P<marker>#+|//+|/\*+|--+|\*+)[ \t]*defer:[ \t]*(?P<rest>.*)")
+# Continuation: a line that is itself a comment (any single-line marker).
+CONT_RE = re.compile(r"^[ \t]*(?:#+|//+|--+|\*+)[ \t]?(?P<rest>.*)")
+
+CEILING_RE = re.compile(r"ceiling:", re.IGNORECASE)
+UPGRADE_RE = re.compile(r"upgrade\s+when:", re.IGNORECASE)
+
+SKIP_DIRS = {
+    ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
+    "dist", "build", "target", "vendor", ".beads", ".dolt", ".next",
+    ".cache", ".mypy_cache", ".pytest_cache",
+}
+
+# Source files only: docs/markdown quote defer examples as prose and are
+# deliberately not scanned. Extensionless files are scanned when they
+# start with a shebang.
+SOURCE_EXTS = {
+    ".py", ".pyi", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".rs",
+    ".go", ".java", ".kt", ".kts", ".scala", ".c", ".h", ".cc", ".cpp",
+    ".hpp", ".cs", ".m", ".mm", ".swift", ".rb", ".php", ".pl", ".pm",
+    ".lua", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".r", ".jl", ".ex",
+    ".exs", ".erl", ".hs", ".elm", ".clj", ".cljs", ".dart", ".groovy",
+    ".tf", ".hcl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css",
+    ".scss", ".less", ".vue", ".svelte",
+}
+
+EPILOG = """\
+the convention (defer-convention rule):
+  defer: <what was simplified>. ceiling: <known limitation>. upgrade when: <trigger condition>.
+
+  Any comment prefix (#, //, /* */, --); clauses may continue on the
+  following comment line(s).
+
+good — names ceiling and trigger (two-line form):
+  # defer: global lock on config reload. ceiling: blocks all requests during reload (~50ms).
+  # upgrade when: reload frequency exceeds 1/minute or p99 latency matters.
+
+  // defer: O(n^2) duplicate check. ceiling: scans full list on every insert.
+  // upgrade when: list exceeds ~1000 items (profile first).
+
+  # defer: naive retry with fixed delay. ceiling: no backoff, no jitter, max 3 retries.
+  # upgrade when: upstream starts throttling or retry storms appear in logs.
+
+bad — no trigger (violation, exit 1):
+  # defer: simplified validation.
+  # defer: in-memory cache. ceiling: lost on restart.
+
+  A deferral without a trigger is just a TODO with a fancier name.
+
+marker comparison:
+  defer:  deliberate simplification; ceiling + trigger required; low rot risk
+  TODO    unstructured reminder; no ceiling, no trigger; "later" = never
+  FIXME   actually broken; urgency implied but not quantified
+
+exit codes:
+  0  clean (missing-ceiling warnings allowed)
+  1  violations found (a defer lacks its upgrade-when clause)
+  2  usage error
+  3  I/O error (root missing or not a directory)
+"""
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+def nonempty(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must be a non-empty string")
+    return value
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "exit_code": 2},
+                  sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(2)
+
+
+def is_excluded(rel, excludes):
+    rel_str = str(rel)
+    return any(rel_str == e or rel_str.startswith(e + "/") for e in excludes)
+
+
+def iter_source_files(root, excludes):
+    self_path = Path(__file__).resolve()
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            children = sorted(d.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            rel = child.relative_to(root)
+            if is_excluded(rel, excludes):
+                continue
+            if child.is_symlink():
+                continue
+            if child.is_dir():
+                if child.name not in SKIP_DIRS:
+                    stack.append(child)
+                continue
+            if not child.is_file():
+                continue
+            # The running checker never scans itself: its --help epilog
+            # carries worked bad examples (path identity, not content).
+            if child.resolve() == self_path:
+                continue
+            if child.suffix.lower() in SOURCE_EXTS:
+                yield child, rel
+            elif not child.suffix:
+                try:
+                    with open(child, "rb") as f:
+                        if f.read(2) == b"#!":
+                            yield child, rel
+                except OSError:
+                    continue
+
+
+def read_text(path):
+    """Returns decoded text, or None for binary/unreadable files."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if b"\x00" in raw[:8192]:
+        return None
+    return raw.decode("utf-8", errors="replace")
+
+
+def collect_defers(lines):
+    """Yields (lineno, defer_text) with continuation comment lines folded in."""
+    i = 0
+    n = len(lines)
+    while i < n:
+        m = DEFER_RE.search(lines[i])
+        if not m:
+            i += 1
+            continue
+        lineno = i + 1
+        parts = [m.group("rest")]
+        in_block = m.group("marker").startswith("/*") and "*/" not in m.group("rest")
+        j = i + 1
+        while j < n:
+            line = lines[j]
+            if DEFER_RE.search(line):
+                break  # a new defer starts; it gets its own entry
+            if in_block:
+                part = line.strip()
+                closed = "*/" in part
+                part = re.sub(r"^\*+[ \t]?", "", part).replace("*/", "")
+                parts.append(part)
+                j += 1
+                if closed:
+                    break
+                continue
+            c = CONT_RE.match(line)
+            if not c:
+                break
+            parts.append(c.group("rest"))
+            j += 1
+        yield lineno, " ".join(p.strip() for p in parts).strip()
+        i = j if j > i else i + 1
+
+
+def scan_tree(root, excludes):
+    files_scanned = 0
+    defer_count = 0
+    findings = []
+    for path, rel in iter_source_files(root, excludes):
+        text = read_text(path)
+        if text is None:
+            continue
+        files_scanned += 1
+        for lineno, defer_text in collect_defers(text.splitlines()):
+            defer_count += 1
+            missing = []
+            if not UPGRADE_RE.search(defer_text):
+                missing.append("upgrade-when")
+            if not CEILING_RE.search(defer_text):
+                missing.append("ceiling")
+            if not missing:
+                continue
+            severity = "error" if "upgrade-when" in missing else "warning"
+            snippet = ("defer: " + defer_text.rstrip(" */")).strip()
+            findings.append({
+                "file": str(rel),
+                "line": lineno,
+                "text": snippet[:200],
+                "missing": missing,
+                "severity": severity,
+            })
+    return files_scanned, defer_count, findings
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="defer-lint",
+        description=(
+            "Scan for defer: comments violating the no-trigger law "
+            "(missing 'upgrade when:' clause). Multi-line comment "
+            "continuations are honored. Exit codes: 0 clean, 1 violations, "
+            "2 usage error, 3 I/O error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--root", default=".", type=nonempty,
+                        help="Directory tree to scan (default: current directory)")
+    parser.add_argument("--exclude", action="append", default=[], type=nonempty,
+                        metavar="PATH",
+                        help="Path (relative to root) to skip; repeatable")
+    parser.add_argument("--json", action="store_true",
+                        help="Structured JSON output on stdout")
+    args = parser.parse_args(argv)
+
+    root = Path(args.root)
+    if not root.is_dir():
+        emit_error(f"root is not a directory: {root}", "io", 3)
+    root = root.resolve()
+    excludes = [e.strip("/") for e in args.exclude]
+
+    files_scanned, defer_count, findings = scan_tree(root, excludes)
+    errors = [f for f in findings if f["severity"] == "error"]
+    warnings = [f for f in findings if f["severity"] == "warning"]
+    exit_code = 1 if errors else 0
+
+    if args.json:
+        json.dump({
+            "ok": not errors,
+            "root": str(root),
+            "files_scanned": files_scanned,
+            "defer_comments": defer_count,
+            "findings": findings,
+            "exit_code": exit_code,
+        }, sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return exit_code
+
+    for f in findings:
+        label = ("missing upgrade-when clause" if f["severity"] == "error"
+                 else "missing ceiling clause (warning)")
+        print(f"{f['file']}:{f['line']}: {label} — {f['text']}")
+    status = ("clean" if not findings
+              else f"{len(errors)} violation(s), {len(warnings)} warning(s)")
+    print(f"Scanned {files_scanned} files, {defer_count} defer comment(s): {status}.")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

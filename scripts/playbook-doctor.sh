@@ -18,12 +18,14 @@ set -uo pipefail
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
 #   3 = drift (kit-managed files present but stale vs playbook source:
-#       rules_drift_* or ledger_drift — dispatch on the SUMMARY key)
+#       rules_drift_*, ledger_drift, or defer_lint_drift — dispatch on
+#       the SUMMARY key)
 #   1 = generic error / other failure
 #
 # SUMMARY keys (--agent mode) for rules_drift carry the format that needs
 # remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
-# ledger_drift means scripts/tdd-ledger is stale vs the kit copy.
+# ledger_drift means scripts/tdd-ledger is stale vs the kit copy;
+# defer_lint_drift means scripts/defer-lint is stale vs the kit copy.
 # Agents must dispatch on the specific key, not the generic exit code, to
 # avoid running sync-rules.sh with the wrong --format.
 
@@ -44,6 +46,7 @@ Checks:
   • bd (beads) is on PATH
   • Agent rules are present and match the canonical source
   • tdd-ledger CLI (if distributed) matches the kit copy
+  • defer-lint CLI (if distributed) matches the kit copy
   • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
@@ -56,8 +59,10 @@ Flags:
   --agent   Emit a machine-consumable SUMMARY line and use structured
             exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
             Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
-            rules_drift_both (stale rules) or ledger_drift (stale
-            scripts/tdd-ledger; only emitted when rules are current).
+            rules_drift_both (stale rules), ledger_drift (stale
+            scripts/tdd-ledger; only emitted when rules are current), or
+            defer_lint_drift (stale scripts/defer-lint; only emitted when
+            rules and ledger are current).
   --help    Show this help.
 
 Exit codes (human mode): 0 = all pass, 1 = issues found.
@@ -107,6 +112,7 @@ bootstrap_missing=0
 cursor_stale=0
 claude_stale=0
 ledger_stale=0
+defer_lint_stale=0
 
 check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
 check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
@@ -262,6 +268,34 @@ else
   # can inspect, so this is a reminder line rather than a check.
   if [ -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
     echo "  – Reminder: the CI workflow only blocks merges if 'tdd-ledger verify' is a required status check in branch protection (cannot be verified locally)"
+  fi
+fi
+
+echo ""
+
+# ---------- Defer-lint checker ----------
+#
+# scripts/defer-lint is kit-managed the same way as tdd-ledger:
+# playbook-init.sh copies it with cp -f, so it drift-checks against the
+# kit copy. It ships no CI workflow, so there is no gate check here.
+
+echo "Defer-lint:"
+
+defer_lint_src="$PLAYBOOK_ROOT/scripts/defer-lint"
+defer_lint_dest="$PROJECT_ROOT/scripts/defer-lint"
+
+if [ ! -f "$defer_lint_src" ]; then
+  check_warn "Kit copy missing at $defer_lint_src — cannot drift-check defer-lint"
+elif [ ! -f "$defer_lint_dest" ]; then
+  # Informational, not a failure: the repo may predate the checker or not use it.
+  echo "  – defer-lint not distributed here (optional — re-run playbook-init.sh to add it)"
+else
+  if diff -q "$defer_lint_src" "$defer_lint_dest" > /dev/null 2>&1; then
+    check_pass "defer-lint CLI matches the kit copy"
+  else
+    check_fail "defer-lint CLI is stale vs the kit copy — detection rules may have evolved" \
+      "cp -f \"$defer_lint_src\" \"$defer_lint_dest\" && chmod +x \"$defer_lint_dest\""
+    defer_lint_stale=1
   fi
 fi
 
@@ -459,7 +493,8 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 
 # --- Agent-mode structured summary + exit ---
 #
-# Priority: bootstrap_needed > rules_drift > ledger_drift > error > ok.
+# Priority: bootstrap_needed > rules_drift > ledger_drift >
+# defer_lint_drift > error > ok.
 # The SUMMARY line is a stable contract; do not emit user-controlled paths
 # or free-form strings — only the fixed enum keys below.
 #
@@ -469,12 +504,12 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 # project would default to --format cursor (the script's default) and
 # silently create unwanted .cursor/rules/ files in the target.
 #
-# ledger_drift reuses exit 3 (drift class) with its own SUMMARY key rather
-# than a new exit code, so the agent-protocol exit table stays stable.
-# Ordering: rules drift wins the SUMMARY when both drift (existing agents
-# already dispatch on rules_drift_*); the ledger finding is still in the
-# text output above, and ledger_drift is the SUMMARY only when it is the
-# sole drift.
+# ledger_drift and defer_lint_drift reuse exit 3 (drift class) with their
+# own SUMMARY keys rather than new exit codes, so the agent-protocol exit
+# table stays stable.
+# Ordering: rules drift wins the SUMMARY when several drift (existing
+# agents already dispatch on rules_drift_*), then ledger, then defer-lint;
+# the losing findings are still in the text output above.
 if $AGENT_MODE; then
   if [ $bootstrap_missing -eq 1 ]; then
     echo ""
@@ -495,6 +530,10 @@ if $AGENT_MODE; then
   elif [ $ledger_stale -eq 1 ]; then
     echo ""
     echo "SUMMARY: ledger_drift"
+    exit 3
+  elif [ $defer_lint_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: defer_lint_drift"
     exit 3
   elif [ $fail -gt 0 ]; then
     echo ""

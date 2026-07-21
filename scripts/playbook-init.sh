@@ -244,6 +244,28 @@ if [ -f "$ledger_wf_src" ] && [ -f "$ledger_dest" ]; then
   fi
 fi
 
+# ---------- Defer-lint checker CLI ----------
+#
+# Distributed for the same reason as tdd-ledger: the defer-convention rule's
+# no-trigger law is checked against the target repo's source, so the checker
+# must live there. No CI workflow for it in this pass.
+
+defer_lint_src="$PLAYBOOK_ROOT/scripts/defer-lint"
+defer_lint_dest="$PROJECT_ROOT/scripts/defer-lint"
+
+if [ -f "$defer_lint_src" ]; then
+  mkdir -p "$PROJECT_ROOT/scripts"
+  if ! cp -f "$defer_lint_src" "$defer_lint_dest" 2>/tmp/playbook-init.cp.err; then
+    echo "✗ Failed to copy defer-lint → scripts/"
+    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+    rm -f /tmp/playbook-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/playbook-init.cp.err
+  chmod +x "$defer_lint_dest"
+  echo "✓ Copied defer-lint CLI → scripts/defer-lint"
+fi
+
 # ---------- Beads init ----------
 
 if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
@@ -519,6 +541,7 @@ echo "  • Scratchpad for cross-session context"
 [ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
 [ -f "$ledger_dest" ] && echo "  • TDD evidence ledger CLI (scripts/tdd-ledger — record-failing / record-passing / verify)"
 [ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
+[ -f "$defer_lint_dest" ] && echo "  • Defer-comment checker (scripts/defer-lint — flags defer: comments missing upgrade-when triggers)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
 echo "Next steps:"

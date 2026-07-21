@@ -14,10 +14,15 @@ quietly become permanent.
 
 ## Scan
 
-Grep the repo for comment markers, skipping `node_modules`, `.git`, and build
-output:
+Where the checker is distributed (kit-bootstrapped repos), use it — it
+handles all comment prefixes, multi-line continuation clauses, and noise
+dirs, and tags the rot rows for you:
 
-`grep -rnE '(#|//) ?defer:' .`  (add other comment prefixes if your stack uses them)
+`scripts/defer-lint --json`
+
+Fallback where it isn't:
+`grep -rnE '(#|//) ?defer:' .`  (skip `node_modules`, `.git`, build output;
+add other comment prefixes if your stack uses them)
 
 Each hit is one ledger row. The comment prefix keeps prose that merely mentions
 the convention out of the ledger.
