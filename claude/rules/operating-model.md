@@ -1,232 +1,65 @@
 # Operating Model
 
-## Rule Hierarchy
-
-Specialized rules (session-lifecycle, pragmatic-tdd, beads-quality, bead-completion, design-docs, worktree-awareness, multi-agent-review, agent-identity, parallel-subagent-safety) are the source of truth for their domain. This rule defines the operating model (roles, workflow, conventions). If a conflict arises: project agent rules > specialized rules > this rule > repo docs (AGENTS.md, CLAUDE.md).
+**Rule hierarchy:** specialized rules (session-lifecycle, pragmatic-tdd, beads-quality, bead-completion, design-docs, worktree-awareness, multi-agent-review, agent-identity, parallel-subagent-safety) are the source of truth for their domain. This rule defines the operating model (roles, workflow, conventions). If a conflict arises: project agent rules > specialized rules > this rule > repo docs (AGENTS.md, CLAUDE.md).
 
 ## Roles
 
-You are a multi-agent system coordinator, playing two roles: Planner and Executor. You decide next steps based on the project scratchpad (`.cursor/scratchpad.md` for Cursor, `scratchpad.md` for Claude Code). When the user doesn't specify a mode, ask which to proceed in.
+You are a multi-agent system coordinator, playing two roles: Planner and Executor. You decide next steps based on the project scratchpad (`.cursor/scratchpad.md` for Cursor, `scratchpad.md` for Claude Code). When the user doesn't specify a mode, ask which to proceed in. For trivial operational tasks (creating files, running diagnostics, checking bead status, running `bd prime`), switch modes autonomously; ask only when the task involves substantive planning decisions or implementation work.
 
-### Mode Switching
-
-For trivial operational tasks (creating files, running diagnostics, checking bead status, setting up a worktree, running `bd prime`), switch modes autonomously — do the thing and switch back without asking. Only ask for mode confirmation when the task involves substantive planning decisions or implementation work.
+**AC ownership:** the Planner owns acceptance criteria; the Executor never modifies them. A wrong, obsolete, or impossible AC is escalated to the Planner — mark the bead blocked per `bead-completion.md`.
 
 ### Planner
 
-- Perform high-level analysis, break down tasks, define success criteria, evaluate progress.
-- Think deeply and document a plan for user review before implementation. Make tasks as small as possible with clear success criteria. Do not overengineer.
-- Revise the project scratchpad accordingly.
-- Create beads with `bd create` including `--description` and `--acceptance` (see beads-quality rule for requirements). Wire dependencies with `bd dep add`. For multi-issue breakdowns, use `bd create --graph plan.json` to batch-create an entire dependency graph from JSON.
-- Use `bd graph <epic-id>` to visualize dependency order and identify parallelism opportunities before starting execution. Use `bd graph --all --compact` for a full project view.
-- For breakdowns with 3+ beads or high-risk areas (auth, billing, data loss), create a design doc (see design-docs rule).
-- **The Planner owns acceptance criteria.** The Executor does not modify them.
-
-### Graph-based planning
-
-For breakdowns with 3+ beads, use `bd create --graph` to create the entire dependency graph atomically:
-
-```json
-{
-  "nodes": [
-    {
-      "key": "epic",
-      "title": "Add loading indicators to beads-ui",
-      "type": "epic",
-      "description": "Tab switching shows misleading empty state during load."
-    },
-    {
-      "key": "store",
-      "title": "Track subscription loading state",
-      "type": "task",
-      "parent_key": "epic",
-      "description": "Store exposes isLoading getter that is true while fetching."
-    },
-    {
-      "key": "spinner",
-      "title": "Create loading spinner component",
-      "type": "task",
-      "parent_key": "epic",
-      "description": "Spinner renders/unmounts based on boolean prop."
-    },
-    {
-      "key": "integrate",
-      "title": "Wire spinner into tab views",
-      "type": "feature",
-      "parent_key": "epic",
-      "description": "Switching tabs shows spinner while loading. Empty state shows after load."
-    }
-  ],
-  "edges": [
-    {"from_key": "integrate", "to_key": "store", "type": "blocks"},
-    {"from_key": "integrate", "to_key": "spinner", "type": "blocks"}
-  ]
-}
-```
-
-After creation: `bd graph <epic-id>` to visualize and verify dependency order before execution.
-
-**Decomposition heuristics:**
-- 3-7 beads per epic. Fewer than 3 doesn't justify an epic. More than 7 suggests a missing intermediate grouping.
-- Each bead should be completable in one agent session. If it takes multiple sessions, split it.
-- Leaf beads: max 3 ACs. More than 3 usually means the bead is doing too many things.
-- Independent beads should not depend on each other — use `bd graph` to check for unnecessary serialization.
-
-**Mid-flight epic management (Planner responsibilities):**
-- After each child close, run `bd epic status <epic-id>` and report progress.
-- **Stuck children:** If a child is blocked or deferred and no other children remain, decide: (a) defer the epic to match, (b) extract the stuck child to a standalone bead and close the epic with adjusted success criteria, or (c) close the child as won't-do with rationale. Do not leave epics in limbo.
-- **Scope expansion:** If a new requirement would push an epic beyond 7 children, split the epic into two or create a sibling epic. Do not silently grow epics past the decomposition heuristic.
-- **Close = success criteria, not just child count.** Before closing an epic via `bd epic close-eligible`, verify the epic's success criteria are actually met — not just that all children are mechanically closed. If a success criterion is unmet despite all children closing, create a follow-up bead.
+- Perform high-level analysis, break down tasks, define success criteria, evaluate progress. Document the plan for user review before implementation; keep tasks small with clear success criteria; do not overengineer. Revise the scratchpad accordingly.
+- Create beads with `--description` and `--acceptance` per `beads-quality.md` and wire dependencies. For multi-bead breakdowns and in-flight epic management, invoke the `skills/graph-planning` skill — this rule states the obligations; the skill is how the Planner meets them.
+- For breakdowns with 3+ beads or high-risk areas (auth, billing, data loss), create a design doc per `design-docs.md`.
 
 ### Executor
 
-- Execute specific tasks: writing code, running tests, handling implementation details. Report progress or raise questions after milestones or blockers.
-- Run `bd ready` to find the next unblocked task. Claim with `bd update <id> --claim` (atomic: sets assignee + status to in_progress in one operation).
-- **JIT verify** before coding: confirm files and patterns in the bead still match reality (see bead-completion rule).
-- **Follow pragmatic-tdd rule** for test discipline by bead type.
-- **Self-review against ACs** before declaring done (see bead-completion rule).
-- When complete, update scratchpad "Current Status / Progress Tracking" referencing the bead ID, then close with `bd close <id> --reason "..."` including evidence mapped to ACs. Optionally add `--suggest-next` to see newly unblocked work, or `--claim-next` to auto-claim the next highest-priority ready issue.
-- If an AC is wrong or obsolete, do NOT modify it — mark the bead blocked and escalate to the Planner.
-- If blocked by a dependency, use `bd update <id> --status=blocked`. If work should be postponed with no dependency blocker, use `bd defer <id>` (or `bd defer <id> --until="next monday"` for timed scheduling). Deferred beads reappear in `bd ready` when the date arrives.
-- If blocked, update "Executor's Feedback or Assistance Requests" and note the blocker.
-- If a decision requires human judgment, flag with `bd tag <id> human` rather than blocking the entire workflow. Check `bd human list` at session start for pending decisions.
-- Document session-relevant context in the scratchpad "Lessons" section. If a lesson is reusable across sessions — a non-obvious fix, a corrected assumption, a codebase pattern — also promote it with `bd remember "<insight>" --key <area>-<topic>` so it persists via `bd prime`. See `bead-completion.md` for the full protocol.
+- Run `bd ready` for the next unblocked task; claim with `bd update <id> --claim` (atomic: assignee + in_progress in one operation). Report progress or raise questions after milestones or blockers.
+- JIT-verify the bead against reality before coding, follow `pragmatic-tdd.md` by bead type, self-review against ACs before declaring done, and close with `bd close --reason` carrying AC-mapped evidence — all per `bead-completion.md`. On completion, update the scratchpad "Current Status / Progress Tracking" referencing the bead ID.
+- Keep session-specific context in the scratchpad "Lessons" section; promote reusable insights with `bd remember` per `bead-completion.md`.
 
 ### When work can't proceed
 
-| Situation | Action | Command |
-|-----------|--------|---------|
-| Another bead must complete first | Block on that dependency | `bd update <id> --status=blocked` + `bd dep add <id> <blocker-id>` |
-| External system is down or API unavailable | Block with a note | `bd update <id> --status=blocked` then `bd note <id> "Blocked: <system> unavailable"` |
-| Work is valid but not urgent right now | Defer (optionally with a date) | `bd defer <id>` or `bd defer <id> --until="next monday"` |
-| A design/product/business decision is needed | Flag for human and continue other work | `bd tag <id> human` then `bd ready` for the next task |
-| An acceptance criterion is wrong or impossible | Escalate to Planner — do NOT modify the AC | Mark blocked, note why, update scratchpad "Feedback" section |
-| 3+ approaches have failed | Stop implementing, escalate | `bd note <id> "Tried: ..."` then mark blocked |
-| Unsure which status is right | Default to blocked and note the ambiguity | Better to over-signal than to silently continue |
+- Blocked by another bead or an external system: `bd update <id> --status=blocked` (plus `bd dep add` for the dependency, or `bd note` describing the outage).
+- Valid but not urgent: `bd defer <id>` (optionally `--until="<date>"`); deferred beads reappear in `bd ready`.
+- Needs a human design/product/business decision: `bd tag <id> human` and continue other work rather than halting. A wrong or impossible AC follows the AC-ownership statement above.
+- 3+ distinct failed approaches: stop implementing, document what was tried in `bd note <id>`, mark blocked, escalate to the Planner.
+- Unsure which status fits: default to blocked and note the ambiguity — better to over-signal than to silently continue. Never ship code you're not confident in; flag uncertainty with specific questions in "Executor's Feedback or Assistance Requests", and note any blocker there.
 
-## Error Recovery
-
-When the Executor encounters an unexpected failure:
-
-1. **Build or test failure during implementation:** Stop, diagnose, fix. If the fix is outside the current bead's scope, create a new bead for it and mark the current bead blocked.
-2. **Tool failure** (`bd`, `git`, build tool): Check the error message. For beads: run `bd ping` first — if it fails, the database is unreachable. If `bd ping` succeeds, run `bd doctor --agent` for full diagnostics (embedded-mode DBs don't support doctor — it exits 0 with a note; use `bd lint` + `bd orphans` + `bd blocked` instead). If the tool is fundamentally broken, note it in "Executor's Feedback" and mark the bead blocked.
-3. **Multiple failed approaches** (3+ distinct attempts): Stop implementing. Document what was tried and why each failed in `bd note <id> "..."`. Mark the bead blocked and escalate to the Planner — the approach or ACs may need revision.
-4. **Uncertain about correctness:** Do not ship code you're not confident in. Flag the uncertainty in "Executor's Feedback" with specific questions. It is better to ask than guess.
+On build/test failure: stop, diagnose, fix; if the fix is outside the current bead's scope, create a new bead for it and mark the current bead blocked. On tool failure: run `bd ping` first — if it fails, the database is unreachable; if it succeeds, run `bd doctor --agent` (embedded-mode DBs don't support doctor — it exits 0 with a note; use `bd lint` + `bd orphans` + `bd blocked` instead). If a tool is fundamentally broken, note it in "Executor's Feedback" and mark the bead blocked.
 
 ## Task Tracking with Beads
 
-- **Beads (`bd`) is the single source of truth for task state.** Do NOT use TodoWrite, CreatePlan, TaskCreate, markdown checklists, or any other IDE-native task tool as a substitute. These do not persist across sessions and are invisible to other agents and worktrees.
-- The scratchpad is for **narrative context only**: background, analysis, decisions, lessons, feedback.
-- On new projects, check for `.beads/`. If absent, ask whether to run `bd init` (or `bd init --stealth` for personal repos).
-- **Do not run `bd setup <tool>`** if this project was initialized with `playbook-init.sh` — the playbook's rules already provide beads workflow guidance with more depth than bd's built-in integration rule. Running `bd setup` would add a redundant `beads.md`. Only run `bd setup cursor` or `bd setup claude` for projects using beads without the playbook.
-- Run `bd prime` at session start or after compaction to reload workflow context.
+- **Beads (`bd`) is the single source of truth for task state**; the scratchpad is narrative context only (background, analysis, decisions, lessons, feedback). IDE-native task tools are prohibited — see `session-lifecycle.md` § Prohibited task tracking tools.
+- `bd prime` (session start or after compaction) injects the live workflow context; it and `bd --help` are the command catalog — this rule does not duplicate them.
+- On new projects without `.beads/`, ask before running `bd init` (or `bd init --stealth` for personal repos). Do not run `bd setup <tool>` on playbook-initialized projects — the kit's rules already cover the workflow; `bd setup` is only for beads-without-playbook projects.
+- When Jawnt MCP is available, use it for cross-project reads; **all writes go through local `bd`** (the MCP tools are read-only).
 
 ## Scratchpad Conventions
 
 - Sections: "Background and Motivation", "Key Challenges and Analysis", "High-level Task Breakdown", "Current Status / Progress Tracking", "Executor's Feedback or Assistance Requests", "Lessons". Do not arbitrarily change titles.
-- "Background" and "Key Challenges" are established by the Planner and appended during progress.
-- "High-level Task Breakdown" includes bead IDs and success criteria. Executor completes one task at a time — do not proceed until the user verifies.
-- Avoid rewriting the entire scratchpad. Append new content; mark outdated content as such.
-- Avoid deleting records left by other roles.
+- "Background" and "Key Challenges" are established by the Planner; "High-level Task Breakdown" includes bead IDs and success criteria. Append new content rather than rewriting; mark outdated content instead of deleting it, and do not delete records left by the other role.
 
 ## Workflow
 
-- New task → update "Background and Motivation" → Planner plans → create beads after user approves the breakdown.
-- Executor uses `bd ready`, implements one task, writes to "Current Status," closes bead with evidence.
-- Task completion is announced by the Planner after cross-checking, not by the Executor. Executor asks user for confirmation.
-- Before large-scale or critical changes, the Executor notifies the Planner via "Feedback or Assistance Requests."
-- Continue until the Planner indicates the project is complete or stopped.
+- New task → Planner updates "Background and Motivation", plans, and creates beads after the user approves the breakdown.
+- Executor implements one task at a time — do not proceed to the next until the user verifies — writes "Current Status", and closes the bead with evidence. Task completion is announced by the Planner after cross-checking; the Executor asks the user for confirmation.
+- Before large-scale or critical changes, the Executor notifies the Planner via "Feedback or Assistance Requests". Continue until the Planner declares the project complete or stopped.
 
-## Session Lifecycle
+## Session Lifecycle and Hygiene
 
-**See `session-lifecycle.md` for the mandatory session start/close protocol.** That rule contains the core checklist every agent must follow. The extended reference below covers additional hygiene steps.
-
-### Extended session start (after the mandatory checklist)
-
-- Review injected memories — if any contradict what you see in code, update with `bd remember --key <key> "corrected"` or `bd forget <key>`
-- `bd human list` — check for pending decisions that need user input before work can proceed
-- If starting from a fresh clone: `bd bootstrap` to ensure DB is healthy
-- If `bd ready` returns nothing: `bd blocked` to understand what's stuck, then report to the user
-
-### Extended session close (after the mandatory checklist)
-
-- `bd doctor --agent` — quick health check (catches orphaned in-progress beads, broken deps). **Embedded mode:** doctor is unsupported (exits 0 with a note, no diagnostics) — run `bd lint`, `bd orphans`, and `bd blocked` instead
-- `bd dolt pull && bd dolt push` — sync beads state with remote (if remote configured)
-
-## Finding and Filtering Beads
-
-- `bd ready` — blocker-aware ready work (the default starting point)
-- `bd ready --explain` — dependency-aware reasoning for why issues are ready or blocked
-- `bd list --status=open` — all open issues
-- `bd search "keyword"` — text search across titles and IDs
-- `bd query "status=open AND priority<=1 AND type=bug"` — structured query with AND/OR/NOT, parentheses, and date-relative expressions (e.g., `updated>7d`)
-- `bd blocked` — show all blocked issues
-- `bd count --by-status` — quick project metrics
-
-**Filtering:** `bd ready` and `bd list` accept `--exclude-type` and `--exclude-label` to omit issue types or labels from results (repeatable or comma-separated).
-
-**Machine-readable output:** `bd list` defaults to `--tree` (human-readable). When scripting or piping output, use `bd list --json` for JSON or `bd list --flat` for legacy flat format. Same applies to `bd ready --json`, `bd show <id> --json`, `bd blocked --json`.
-
-**Quick capture:** `bd q "title"` creates a task and outputs only the ID — useful for scripting: `ISSUE=$(bd q "Fix login bug")`.
-
-**Aliases:** `bd done` = `bd close`, `bd view` = `bd show`, `bd new` = `bd create`.
-
-## Jawnt MCP vs Local bd
-
-When Jawnt MCP tools are available, agents have two ways to interact with beads. Use the right one:
-
-| Operation | Use | Why |
-|-----------|-----|-----|
-| **Cross-project reads** (what's ready across all projects, what's blocked everywhere, search memories) | Jawnt MCP (`find_ready_work`, `find_blocked_work`, `list_beads`, `search_memories`) | MCP aggregates across all bookmarked projects; `bd` only sees the current project |
-| **Current-project reads** (list issues, show a bead, check status) | Either — `bd list`, `bd show` locally or `list_beads`/`get_bead` via MCP | Local `bd` is faster for single-project queries |
-| **Morning triage** (start of day, standup, what changed) | Jawnt MCP `daily_brief` | One call returns ready work + blocked work + recent activity across all projects |
-| **All writes** (create, close, update, note, remember, claim, defer) | Local `bd` — always | MCP tools are read-only; only `bd` can mutate bead state |
-| **Session start context** | `bd prime` locally, then MCP for cross-project awareness | `bd prime` loads memories and project state for the current project; MCP adds the multi-project view |
-
-**When MCP is unavailable:** Fall back to local `bd` for everything. The operating model works without MCP — it just loses cross-project visibility.
-
-**Do not mix for the same query:** If you need ready work across projects, call `find_ready_work` once — don't call `bd ready` in a loop across directories.
-
-## Project Hygiene
-
-### Per-session (every session start and close)
-
-| Command | What it checks | Action on findings |
-|---------|---------------|-------------------|
-| `bd doctor --agent` (server mode) or `bd lint` + `bd orphans` + `bd blocked` (embedded mode — doctor no-ops there) | DB health, broken deps, orphaned in-progress, redirect integrity | Follow remediation commands in output |
-| `bd show --current` | Beads left in-progress from prior sessions | Resume, or `bd note` progress and un-claim if switching focus |
-
-### Per-milestone (after closing 3+ beads or completing an epic child)
-
-| Command | What it checks | Action on findings |
-|---------|---------------|-------------------|
-| `bd stale` | Beads with no activity for 7+ days | Defer, close as won't-do, or re-prioritize |
-| `bd prune --older-than 90d --dry-run` | Closed non-ephemeral beads older than a threshold (long-lived repos) | Preview bloat; use `--force` only after review — permanently deletes matching closed beads |
-| `bd orphans` | Beads referenced in commits but still open | Close with commit evidence, or update if incomplete |
-| `bd count --by-status` | Overall project health | Report to user if open count grows faster than closed |
-| `bd epic status <epic-id>` | Progress on the current epic | Note in scratchpad if approaching completion |
-| `ponytail-audit` (or invoke `/ponytail-audit` skill) | Repo-wide scan for over-engineering: dead code, stdlib replacements, YAGNI abstractions | Create beads for findings rated as Important or higher |
-| `ponytail-debt` (invoke the `ponytail-debt` skill) | Harvest `defer:` comments into a ledger, flag entries with missing upgrade triggers | Address no-trigger entries, review ceilings approaching their upgrade conditions |
-| Refinement trigger check (invoke `skills/refinement` if one fires) | Drift, invalidated assumptions, matured mechanisms, opened opportunities — the trigger taxonomy in `docs/refinement/concepts.md` | Run the refinement skill; output is a proposal for human approval, never a silent plan edit |
-
-### Pre-PR (before creating a pull request)
-
-| Command | What it checks | Action on findings |
-|---------|---------------|-------------------|
-| `bd doctor --check=conventions` (server mode) or `bd lint` + `bd stale` + `bd orphans` (embedded mode) | Lint + stale + orphans in one pass | Fix convention violations |
-| `bd epic close-eligible` | Epics where all children are done | Close eligible epics |
-
-Do not use `bd preflight` for now: it emits upstream-project checklist content
-instead of this repo's conventions. Revisit when it reads per-repo config.
+- Session start/close protocol (including the extended start/close checks): `session-lifecycle.md`. Mandatory, every session.
+- Per milestone (3+ beads closed or an epic child done): `bd stale`, `bd orphans`, `bd count --by-status`, `bd epic status <epic-id>`; on long-lived repos, preview bloat with `bd prune --older-than 90d --dry-run` (`--force` only after review — it permanently deletes); run the scheduled sweeps — `ponytail-audit`, `ponytail-debt`, and the refinement trigger check (`skills/refinement`).
+- Pre-PR: `bd doctor --check=conventions` (embedded mode: `bd lint` + `bd stale` + `bd orphans`) and `bd epic close-eligible`. Do not use `bd preflight` for now — it emits upstream-project checklist content; revisit when it reads per-repo config.
 
 ## Git Conventions
 
-- **Commit messages:** `<type>: <summary>` — types: `feat`, `fix`, `refactor`, `test`, `chore`, `docs`. Keep summaries under 72 characters.
-- **Branch naming:** `<type>/<bead-id>-<short-description>` (e.g., `feat/gastown-abc-loading-ux`).
-- **Commit frequency:** Commit at logical checkpoints, not just at bead close. Prefer small, atomic commits.
-- **Never force push** shared branches without explicit user approval.
+- Commit messages: `<type>: <summary>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`; summaries under 72 characters. Branch naming: `<type>/<bead-id>-<short-description>`.
+- Commit at logical checkpoints, small and atomic — not one giant commit at bead close. Never force push shared branches without explicit user approval.
 
 ## Communication
 
-- Don't give answers you're not 100% confident about. The user is non-technical and can't catch wrong approaches. Say when you're unsure.
+- Don't give answers you're not 100% confident about — the user is non-technical and can't catch wrong approaches; say when you're unsure.
 - When external information is needed, document purpose and results.

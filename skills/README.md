@@ -20,6 +20,7 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [packet](packet/SKILL.md) | Gate/sprint packet authoring: committed blueprint template + `render.py` (self-contained HTML share + headless blueprint/anchor verify) | "build the packet", "gate packet", "sprint packet" |
 | [packet-deepdive](packet-deepdive/SKILL.md) | Four-lane packet validation (accuracy/cold-read/receipts/structure) + convergence, orchestrator-wrapped, with a resilience protocol and dispositions report | "deep-dive the packet", "validate the packet", "cold-read the gate packet" |
 | [refinement](refinement/SKILL.md) | Evidence-grounded audit of intent/plan/execution/mechanisms producing a classified refinement proposal; includes retrospective mode and mechanism-placement audits | "run a refinement", "refine this epic/plan/rule", "is this still the right shape", "mechanism placement audit", "retro on this capability" |
+| [graph-planning](graph-planning/SKILL.md) | Planner playbook for multi-bead breakdowns: decomposition heuristics, `bd create --graph`, graph verification, mid-flight epic management | "plan this epic", "break down this initiative", "graph planning", a breakdown reaching 3+ beads |
 
 ## Project Overlay Convention
 

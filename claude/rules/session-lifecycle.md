@@ -10,11 +10,23 @@ This protocol is non-negotiable. Every session. No exceptions.
 
 If `bd` is not installed or `.beads/` is missing, ask the user before proceeding.
 
+### Extended start (after the checklist)
+
+- Review injected memories — if any contradict what you see in the codebase, apply the staleness protocol in `bead-completion.md` (update or remove immediately)
+- `bd human list` — check for pending decisions that need user input before work can proceed
+- Starting from a fresh clone: `bd bootstrap` to ensure the DB is healthy
+- If `bd ready` returns nothing: `bd blocked` to understand what's stuck, then report to the user
+
 ## Session close — do this BEFORE ending
 
 1. If a bead is in-progress but not done: `bd note <id> "Progress: <what's done, what remains>"`
 2. `git status` — check for uncommitted changes; commit if needed
-3. **Knowledge capture check**: Answer this question honestly — did this session surface something a future agent would waste time rediscovering? If yes: `bd remember --key <area>-<topic> "<insight>"`. If no, skip.
+3. **Knowledge capture check**: Answer this question honestly — did this session surface something a future agent would waste time rediscovering? If yes: `bd remember --key <area>-<topic> "<insight>"`. If no, skip. (Full protocol and litmus test: `bead-completion.md`.)
+
+### Extended close (after the checklist)
+
+- `bd doctor --agent` — quick health check (catches orphaned in-progress beads, broken deps). **Embedded mode:** doctor is unsupported (exits 0 with a note, no diagnostics) — run `bd lint`, `bd orphans`, and `bd blocked` instead
+- `bd dolt pull && bd dolt push` — sync beads state with remote (if remote configured)
 
 ## Prohibited task tracking tools
 

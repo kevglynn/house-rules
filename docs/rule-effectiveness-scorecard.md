@@ -84,6 +84,14 @@ Item 26 is the mechanism-placement signal from the topology split (proposal find
 
 Item 29 is the mechanism-placement signal from the multi-agent-review split (kit-wide placement audit, finding F2): the rule no longer states a lens count, so reaching the skill's roster is the behavior that must not regress.
 
+### Operating Model (operating-model.mdc + skills/graph-planning + bd prime)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 33 | Planning and command detail sourced from the live surfaces: `skills/graph-planning` invoked for 3+-bead breakdowns and epic decisions, and bd command usage taken from `bd prime` / `bd --help` — not quoted from memory of the old monolith | | |
+
+Item 33 is the mechanism-placement signal from the operating-model split (kit-wide placement audit, findings F1/F3): the rule no longer carries the graph-planning procedure or the bd command catalog, so reaching the skill and the live command context is the behavior that must not regress.
+
 **Convention for future splits:** each topology split contributes its mechanism-placement signal item (the item-26 / item-29 pattern) — not a full per-rule hygiene block. Generic adherence behaviors are scored once where they first appear; the scorecard must not grow ~5 items per split.
 
 **Session score: __ / __ applicable items**
