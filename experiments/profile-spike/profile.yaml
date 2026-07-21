@@ -1,0 +1,129 @@
+# process-kit conventions profile — SPIKE PROTOTYPE (process-kit-vgz, F10)
+#
+# Machine-readable encoding of two conventions that currently live as prose:
+#   1. Git grammar        — cursor/rules/operating-model.mdc § Git Conventions
+#   2. Close-evidence shape — cursor/rules/bead-completion.mdc (evidence table)
+#                             + cursor/rules/beads-quality.mdc (commit-ref rule,
+#                               IOU anti-pattern 6)
+#
+# Honesty rule: this file encodes what the prose PRESCRIBES TODAY. It does not
+# invent policy. Where the prose is ambiguous or judgment-shaped, the field
+# says so explicitly (see `judgment:` lists) rather than pretending a regex
+# covers it.
+
+schema_version: 1
+profile: process-kit
+
+# ---------------------------------------------------------------------------
+# 1a. Commit-message grammar
+# Prose: "**Commit messages:** `<type>: <summary>` — types: `feat`, `fix`,
+#         `refactor`, `test`, `chore`, `docs`. Keep summaries under 72
+#         characters."
+# ---------------------------------------------------------------------------
+commit:
+  source: cursor/rules/operating-model.mdc#git-conventions
+  format: "<type>: <summary>"
+  types: [feat, fix, refactor, test, chore, docs]
+  # "under 72" read strictly: len(summary) < 72. The prose says "summaries",
+  # not "subject line", so the cap applies to the part after "<type>: ".
+  summary_max_chars: 72
+
+# ---------------------------------------------------------------------------
+# 1b. Branch-naming grammar
+# Prose: "**Branch naming:** `<type>/<bead-id>-<short-description>`
+#         (e.g., `feat/gastown-abc-loading-ux`)."
+# Note: the prose grammar is NOT deterministically parseable — both <bead-id>
+# and <short-description> are kebab-case, so the boundary between them is
+# ambiguous (`feat/gastown-abc-loading-ux` could split three ways). The
+# checker validates the checkable envelope: known type prefix + "/" +
+# lowercase kebab slug with >= 2 hyphen-separated segments (bead id + at
+# least one description word). This is a finding, not a fix.
+branch:
+  source: cursor/rules/operating-model.mdc#git-conventions
+  format: "<type>/<bead-id>-<short-description>"
+  types: [feat, fix, refactor, test, chore, docs]   # prose gives no separate list; example uses `feat`
+  slug_pattern: "^[a-z0-9]+(-[a-z0-9]+)+$"
+
+# ---------------------------------------------------------------------------
+# 2. Close-evidence shape, per bead type
+# Prose sources:
+#   - bead-completion.mdc "Evidence policy" table (per-type required evidence)
+#   - beads-quality.mdc "When closing beads": "Reference commit hash, branch
+#     name, or PR URL in every close reason."
+#   - bead-completion.mdc § "Do not defer AC verification" + beads-quality
+#     anti-pattern 6: IOU phrases are not evidence.
+#
+# Element library: each element has a deterministic detector (regex, applied
+# case-insensitively). Per-type blocks say which elements are REQUIRED.
+# `judgment:` lists the parts of the prose requirement that a deterministic
+# checker CANNOT verify (quality of evidence, truthfulness) — kept visible so
+# the profile never overclaims.
+# ---------------------------------------------------------------------------
+close_evidence:
+  source: cursor/rules/bead-completion.mdc#evidence-policy
+  elements:
+    commit_ref:
+      description: "commit hash (7-40 hex), branch name reference, or PR URL"
+      pattern: '\b[0-9a-f]{7,40}\b|\bbranch\b|https?://\S*/pull/\d+'
+    ac_mapping:
+      description: "explicit mapping to acceptance criteria (AC1:, AC 2, per AC ...)"
+      pattern: '\bACs?\s*\d|\bper[- ]AC\b|\ball ACs\b|\bacceptance criteri'
+    na_marker:
+      description: "explicit N/A marker for types whose table row prescribes it"
+      pattern: 'N/A'
+    findings_summary:
+      description: "spike: summary of findings / whether the question was answered"
+      pattern: '\bfinding|\banswer|\bconclusion|\brecommend|\bwon.t.do\b|\bobsolete\b'
+    children_closed:
+      description: "epic/milestone: statement that children are closed/verified"
+      pattern: '\bchild(?:ren)?\b.*\bclos|\bclos\w*\b.*\bchild(?:ren)?\b'
+
+  # Phrases that mark an IOU instead of evidence — banned in every close
+  # reason (bead-completion "Do not defer AC verification"; the one sanctioned
+  # deferral form is "deferred to bead <id>", which the checker exempts).
+  iou_phrases:
+    - "will be verified later"
+    - "will be re-verified"
+    - "deferred to PR review"
+    - "deferred to integration"
+    - "to be re-checked"
+    - "verified later"
+  iou_exempt_pattern: 'deferred to bead \S+'
+
+  by_type:
+    bug:
+      requires: [commit_ref, ac_mapping]
+      judgment: ["test output actually shows the bug reproduced and fixed"]
+    feature:
+      requires: [commit_ref, ac_mapping]
+      judgment: ["test output / manual verification genuinely covers each AC"]
+    story:
+      requires: [commit_ref, ac_mapping]
+      judgment: ["same as feature"]
+    task:
+      requires: [commit_ref, ac_mapping]
+      judgment: ["verification notes genuinely cover each AC"]
+    refactor:
+      requires: [commit_ref]
+      judgment: ["build/lint clean; behavioral tests actually passed"]
+    spike:
+      requires: [findings_summary]
+      judgment: ["findings are real; the spike question was actually answered"]
+    chore:
+      requires: [commit_ref]
+      judgment: ["summary reflects what was done"]
+    config:
+      requires: [commit_ref]
+      judgment: ["summary reflects what was done"]
+    docs:
+      requires: [na_marker]
+      judgment: []
+    decision:
+      requires: [na_marker]
+      judgment: []
+    milestone:
+      requires: [na_marker]
+      judgment: ["children actually closed"]
+    epic:
+      requires: [children_closed]
+      judgment: ["each success criterion genuinely met by the closed children"]

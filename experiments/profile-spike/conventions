@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""conventions — SPIKE prototype (process-kit-vgz, F10).
+
+Deterministic checker + rule-text generator, both driven by one profile
+(profile.yaml). Validates commit messages, branch names, and bead
+close-reasons against the machine-readable encoding of the conventions
+that currently live as prose in operating-model.mdc / bead-completion.mdc.
+
+Commands:
+  check-commit MESSAGE            Validate a commit message
+  check-branch NAME               Validate a branch name
+  check-close --type TYPE REASON  Validate a close reason for a bead type
+  render-rule                     Render the profile as rule-text prose
+
+Exit codes: 0 ok · 1 violation · 2 usage error · 3 I/O error.
+Check output is JSON on stdout; render-rule emits markdown. Non-interactive.
+
+Profile path resolution: --profile flag > CONVENTIONS_PROFILE env >
+profile.yaml next to this script.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+
+def emit(payload, stream=sys.stdout):
+    json.dump(payload, stream, sort_keys=True)
+    stream.write("\n")
+
+
+def die_io(message):
+    emit({"ok": False, "error": message, "error_kind": "io", "exit_code": 3},
+         sys.stderr)
+    sys.exit(3)
+
+
+def load_profile(flag_value):
+    path = Path(
+        flag_value
+        or os.environ.get("CONVENTIONS_PROFILE")
+        or Path(__file__).resolve().parent / "profile.yaml"
+    )
+    try:
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as exc:
+        die_io(f"cannot load profile {path}: {exc}")
+
+
+# --------------------------------------------------------------------------
+# Checkers — every violation carries the profile field that produced it, so
+# the finding is traceable back to the single source of truth.
+# --------------------------------------------------------------------------
+
+def check_commit(profile, message):
+    spec = profile["commit"]
+    violations = []
+    m = re.match(r"^([a-z]+): (.+)$", message, re.DOTALL)
+    if not m:
+        violations.append({
+            "code": "commit-format",
+            "detail": f"message does not match `{spec['format']}`",
+        })
+        return violations
+    ctype, summary = m.group(1), m.group(2)
+    if ctype not in spec["types"]:
+        violations.append({
+            "code": "commit-type",
+            "detail": f"type `{ctype}` not in allowed types {spec['types']}",
+        })
+    summary_first_line = summary.splitlines()[0]
+    if len(summary_first_line) >= spec["summary_max_chars"]:
+        violations.append({
+            "code": "commit-summary-length",
+            "detail": (f"summary is {len(summary_first_line)} chars; "
+                       f"cap is under {spec['summary_max_chars']}"),
+        })
+    return violations
+
+
+def check_branch(profile, name):
+    spec = profile["branch"]
+    violations = []
+    parts = name.split("/", 1)
+    if len(parts) != 2:
+        violations.append({
+            "code": "branch-format",
+            "detail": f"branch does not match `{spec['format']}`",
+        })
+        return violations
+    btype, slug = parts
+    if btype not in spec["types"]:
+        violations.append({
+            "code": "branch-type",
+            "detail": f"type `{btype}` not in allowed types {spec['types']}",
+        })
+    if not re.match(spec["slug_pattern"], slug):
+        violations.append({
+            "code": "branch-slug",
+            "detail": (f"`{slug}` does not match slug pattern "
+                       f"`{spec['slug_pattern']}` "
+                       "(kebab-case, bead id + description)"),
+        })
+    return violations
+
+
+def check_close(profile, bead_type, reason):
+    spec = profile["close_evidence"]
+    violations = []
+    type_spec = spec["by_type"].get(bead_type)
+    if type_spec is None:
+        return [{
+            "code": "close-unknown-type",
+            "detail": (f"bead type `{bead_type}` has no evidence spec; "
+                       f"known: {sorted(spec['by_type'])}"),
+        }]
+    for element in type_spec["requires"]:
+        pattern = spec["elements"][element]["pattern"]
+        if not re.search(pattern, reason, re.IGNORECASE):
+            violations.append({
+                "code": f"close-missing-{element.replace('_', '-')}",
+                "detail": (f"close reason lacks required element "
+                           f"`{element}`: "
+                           f"{spec['elements'][element]['description']}"),
+            })
+    exempt = re.compile(spec["iou_exempt_pattern"], re.IGNORECASE)
+    scrubbed = exempt.sub("", reason)
+    for phrase in spec["iou_phrases"]:
+        if phrase.lower() in scrubbed.lower():
+            violations.append({
+                "code": "close-iou-phrase",
+                "detail": (f"`{phrase}` is an IOU, not evidence "
+                           "(bead-completion: do not defer AC verification)"),
+            })
+    return violations
+
+
+# --------------------------------------------------------------------------
+# Generator — renders the SAME profile as rule-text prose comparable to the
+# current § Git Conventions section + bead-completion evidence table.
+# --------------------------------------------------------------------------
+
+def render_rule(profile):
+    c, b, ce = profile["commit"], profile["branch"], profile["close_evidence"]
+    lines = [
+        "<!-- GENERATED from experiments/profile-spike/profile.yaml — "
+        "DO NOT EDIT. Edit the profile and re-run "
+        "`conventions render-rule`. -->",
+        "",
+        "## Git Conventions",
+        "",
+        f"- **Commit messages:** `{c['format']}` — types: "
+        + ", ".join(f"`{t}`" for t in c["types"])
+        + f". Keep summaries under {c['summary_max_chars']} characters.",
+        f"- **Branch naming:** `{b['format']}` — same types; "
+        "kebab-case bead id + short description "
+        f"(e.g., `{b['types'][0]}/gastown-abc-loading-ux`).",
+        "",
+        "## Close-evidence requirements",
+        "",
+        "Every `bd close --reason` must contain the required elements for "
+        "its bead type. Deterministic elements are machine-checkable "
+        "(`conventions check-close`); judgment columns remain the agent's "
+        "obligation.",
+        "",
+        "| Bead type | Required (machine-checked) | Judgment (not machine-checkable) |",
+        "|---|---|---|",
+    ]
+    for bead_type, type_spec in ce["by_type"].items():
+        required = ", ".join(
+            ce["elements"][e]["description"] for e in type_spec["requires"]
+        )
+        judgment = "; ".join(type_spec["judgment"]) or "—"
+        lines.append(f"| {bead_type} | {required} | {judgment} |")
+    lines += [
+        "",
+        "**IOU phrases are never evidence** — the checker rejects: "
+        + ", ".join(f'"{p}"' for p in ce["iou_phrases"])
+        + ". The only sanctioned deferral form is `deferred to bead <id>` "
+        "(the follow-up bead must exist at close time).",
+    ]
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+
+
+def run_check(kind, violations, subject):
+    ok = not violations
+    emit({"ok": ok, "check": kind, "subject": subject,
+          "violations": violations})
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="conventions",
+                                     description=__doc__.splitlines()[0])
+    parser.add_argument("--profile", help="path to profile YAML")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("check-commit", help="validate a commit message")
+    p.add_argument("message")
+
+    p = sub.add_parser("check-branch", help="validate a branch name")
+    p.add_argument("name")
+
+    p = sub.add_parser("check-close", help="validate a close reason")
+    p.add_argument("--type", required=True, dest="bead_type",
+                   help="bead type (bug, feature, spike, ...)")
+    p.add_argument("reason")
+
+    sub.add_parser("render-rule", help="render profile as rule-text prose")
+
+    args = parser.parse_args(argv)
+    profile = load_profile(args.profile)
+
+    if args.command == "check-commit":
+        return run_check("commit", check_commit(profile, args.message),
+                         args.message)
+    if args.command == "check-branch":
+        return run_check("branch", check_branch(profile, args.name),
+                         args.name)
+    if args.command == "check-close":
+        return run_check(
+            "close",
+            check_close(profile, args.bead_type, args.reason),
+            {"type": args.bead_type, "reason": args.reason},
+        )
+    if args.command == "render-rule":
+        print(render_rule(profile))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
