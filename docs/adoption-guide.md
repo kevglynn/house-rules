@@ -30,7 +30,7 @@ If you already bootstrapped but don't have the PR template:
 
 ```bash
 mkdir -p .github
-cp ~/process-kit/templates/pull_request_template.md .github/pull_request_template.md
+cp ~/process-kit/.github/pull_request_template.md .github/pull_request_template.md
 ```
 
 ## Step 2: Customize the Code of Conduct
@@ -131,7 +131,7 @@ while IFS= read -r project; do
   fi
   if [ ! -f "$project/.github/pull_request_template.md" ]; then
     mkdir -p "$project/.github"
-    cp ~/process-kit/templates/pull_request_template.md "$project/.github/pull_request_template.md"
+    cp ~/process-kit/.github/pull_request_template.md "$project/.github/pull_request_template.md"
     echo "Added PR template: $project"
   fi
 done < ~/.playbook-sync-targets

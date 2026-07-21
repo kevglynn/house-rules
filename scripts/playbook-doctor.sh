@@ -385,7 +385,7 @@ if [ -f "$TARGETS_FILE" ]; then
     check_fail "Project not in ~/.playbook-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.playbook-sync-targets"
   fi
 else
-  check_fail "~/.playbook-sync-targets doesn't exist" "echo \"$PROJECT_ROOT\" >> ~/.playbook-sync-targets"
+  check_fail "\$HOME/.playbook-sync-targets doesn't exist" "echo \"$PROJECT_ROOT\" >> \$HOME/.playbook-sync-targets"
 fi
 
 echo ""

@@ -1,6 +1,11 @@
 # TDD evidence-ledger CI gate — distributed by playbook-init.sh.
 # Verifies red-before-green ordering in .tdd-ledger.jsonl on every push/PR.
 # The CLI lives at scripts/tdd-ledger in this repo (also distributed by init).
+#
+# Intent note: this template deliberately diverges from the kit's own
+# .github/workflows/tdd-ledger-verify.yml — the kit's copy also runs the
+# CLI's Python test suite (scripts/tests/test_tdd_ledger.py), which is not
+# distributed to target repos. Same gate, minus the kit-internal tests.
 
 name: tdd-ledger verify
 

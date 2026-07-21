@@ -31,7 +31,6 @@ DRY_RUN=false
 # overwrite (rarely correct; kept for parity with prior behavior).
 SAFE_MODE=true
 PIN_VERSION=""
-USE_VERSIONED_SRC=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -127,7 +126,6 @@ if [ -n "$PIN_VERSION" ]; then
   fi
 
   SRC="$VERSIONED_TMPDIR"
-  USE_VERSIONED_SRC=true
   echo "Using rules from $PIN_VERSION ($file_count files)"
   echo ""
 fi

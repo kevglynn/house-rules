@@ -352,7 +352,9 @@ if [ -f "$coc_src" ]; then
   fi
 fi
 
-pr_template_src="$PLAYBOOK_ROOT/templates/pull_request_template.md"
+# Canonical source is the kit's own .github/ copy (single source: GitHub
+# reads it live on the kit repo, and init distributes the same file).
+pr_template_src="$PLAYBOOK_ROOT/.github/pull_request_template.md"
 pr_template_dest="$PROJECT_ROOT/.github/pull_request_template.md"
 
 if [ -f "$pr_template_src" ]; then

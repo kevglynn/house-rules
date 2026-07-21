@@ -1,0 +1,35 @@
+# Kit self-enforcement — the kit runs the checks its doctrine prescribes.
+# Two gates: (1) the claude/rules projection must match the cursor/rules
+# canon (sync-rules.sh --check --local), (2) all shell scripts pass
+# shellcheck at warning severity.
+
+name: kit ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  projection-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude projection matches cursor canon
+        run: ./scripts/sync-rules.sh --format claude --check --local
+      - name: Gate self-test — seeded drift must fail the check
+        run: |
+          echo "# seeded drift" >> claude/rules/pragmatic-tdd.md
+          if ./scripts/sync-rules.sh --format claude --check --local; then
+            echo "seeded projection drift did NOT fail the gate" >&2
+            exit 1
+          fi
+          git checkout -- claude/rules/pragmatic-tdd.md
+          echo "gate correctly rejects seeded drift"
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts/*.sh
+        # -S warning: fail on warnings and errors; info/style stay advisory.
+        run: shellcheck -S warning scripts/*.sh
