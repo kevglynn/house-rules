@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- **packet skill:** `render.py --verify`'s divergence-strip check scanned a fixed 1800 characters past the grid heading, false-WARNing template-conformant packets whose grid rows carry rich linked evidence (found live on the G2 packet, segnolabs-cga). The window is now structural — the "Status at a glance" section through the end of the grid table plus a margin — and accepts the strip above or below the grid. Behavioral tests added at `skills/packet/tests/test_render_verify.py`.
+
 ### Carried over (identity refresh)
 - **Maintenance subagents** in `.cursor/agents/`: `rules-auditor`, `rule-efficacy-analyst`, `beads-strategist`, `docs-automation-architect`, `x-factor-innovator` — rewritten for process-kit (12 rules, no predecessor/org-specific references); documented again in CONTRIBUTING
 - **`docs/blog-agentic-covenant.md`** — org-neutral Agentic Covenant blog draft, with draft-status note for publication readiness

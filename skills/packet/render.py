@@ -209,9 +209,16 @@ def verify(md_text: str, page_html: str) -> int:
     elif not receipts:
         errors.append("no Receipts section found")
 
-    # divergence strip: a blockquote in the ~15 lines after the grid heading
-    grid_pos = md_text.lower().find("status at a glance")
-    strip_zone = md_text[grid_pos: grid_pos + 1800] if grid_pos >= 0 else ""
+    # divergence strip: a blockquote in the grid's eye-span. The window is
+    # structural — the "Status at a glance" section from its heading through
+    # the END of the grid table plus a short margin — never a fixed character
+    # offset: grid rows carry linked evidence of arbitrary width, and a fixed
+    # 1800-char window false-WARNed template-conformant packets, which trains
+    # authors to ignore the verifier (segnolabs-cga). A strip placed above
+    # the grid (equally in the eye-span; the G2 packet's order) sits inside
+    # the same window.
+    grid_lines = [m.end() for m in re.finditer(r"^\|.*$", grid, flags=re.M)]
+    strip_zone = grid[: (grid_lines[-1] + 600) if grid_lines else 0]
     if not re.search(r"^>\s+\S", strip_zone, flags=re.M):
         warns.append("no divergence strip (blockquote) in the grid's eye-span")
 
