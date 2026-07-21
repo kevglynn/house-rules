@@ -21,6 +21,7 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [packet-deepdive](packet-deepdive/SKILL.md) | Four-lane packet validation (accuracy/cold-read/receipts/structure) + convergence, orchestrator-wrapped, with a resilience protocol and dispositions report | "deep-dive the packet", "validate the packet", "cold-read the gate packet" |
 | [refinement](refinement/SKILL.md) | Evidence-grounded audit of intent/plan/execution/mechanisms producing a classified refinement proposal; includes retrospective mode and mechanism-placement audits | "run a refinement", "refine this epic/plan/rule", "is this still the right shape", "mechanism placement audit", "retro on this capability" |
 | [graph-planning](graph-planning/SKILL.md) | Planner playbook for multi-bead breakdowns: decomposition heuristics, `bd create --graph`, graph verification, mid-flight epic management | "plan this epic", "break down this initiative", "graph planning", a breakdown reaching 3+ beads |
+| [bead-authoring](bead-authoring/SKILL.md) | Single-bead lifecycle playbook: authoring worked examples, dedupe search, validation mechanics, wisps, JIT verification, self-review, close-reason format, the `bd remember` when/when-not manual | "write this bead", "draft the bd create", "close this bead", "should I remember this" |
 
 ## Project Overlay Convention
 
