@@ -17,7 +17,7 @@ If the user invokes the playbook ("use the playbook", "bootstrap this repo",
    | `3` | `ledger_drift` | `scripts/tdd-ledger` stale vs kit copy | `cp -f "${PROCESS_KIT:-$HOME/process-kit}/scripts/tdd-ledger" scripts/tdd-ledger && chmod +x scripts/tdd-ledger` |
    | `1` | `error` | Generic error | Show the doctor's full text output to the user |
 
-   Rules drift wins the SUMMARY when both rules and the ledger drift; the ledger finding still appears in the doctor's text output, so check it after fixing rules drift.
+   Rules drift wins the SUMMARY when both rules and the ledger drift; the ledger finding still appears in the doctor's text output, so check it after fixing rules drift. Some findings are text-only and never affect the SUMMARY or exit code (e.g. a stale AGENTS.md section version stamp, or the unverifiable Cursor user-rules paste) — scan the doctor's warning lines for these, don't rely on the exit code alone.
 
 3. Do not invoke `sync-rules.sh` without `--format` on a Claude-only project. The script defaults to `--format cursor` and will create unwanted `.cursor/rules/` files in the target.
 

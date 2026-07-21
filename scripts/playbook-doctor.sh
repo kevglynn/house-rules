@@ -44,6 +44,7 @@ Checks:
   • bd (beads) is on PATH
   • Agent rules are present and match the canonical source
   • tdd-ledger CLI (if distributed) matches the kit copy
+  • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
   • Scratchpad exists with correct sections
@@ -256,6 +257,50 @@ else
   if ! $is_playbook_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
     check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
   fi
+  # Last-mile reminder: the workflow only actually gates merges if branch
+  # protection marks it required — a state on the forge that no local tool
+  # can inspect, so this is a reminder line rather than a check.
+  if [ -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+    echo "  – Reminder: the CI workflow only blocks merges if 'tdd-ledger verify' is a required status check in branch protection (cannot be verified locally)"
+  fi
+fi
+
+echo ""
+
+# ---------- AGENTS.md playbook section ----------
+#
+# playbook-init.sh stamps the AGENTS.md playbook section with a
+# machine-parseable version marker (<!-- ai-dev-playbook:version X.Y.Z -->)
+# sourced from the kit's VERSION file. A stale stamp means the section's
+# doctor/sync instructions and exit-code contract may describe an older kit.
+#
+# Deliberately text-only (warn — no exit 3 / SUMMARY key): the section is
+# discovery documentation, not executable machinery like rules or the
+# tdd-ledger, so a stale stamp cannot break agent behavior mid-task. Keeping
+# it out of the SUMMARY enum also keeps the agent-protocol dispatch table
+# stable for existing agents.
+
+echo "AGENTS.md:"
+
+agents_md="$PROJECT_ROOT/AGENTS.md"
+agents_marker="<!-- BEGIN ai-dev-playbook:agents-md -->"
+kit_version=""
+[ -f "$PLAYBOOK_ROOT/VERSION" ] && kit_version="$(tr -d '[:space:]' < "$PLAYBOOK_ROOT/VERSION")"
+
+if $is_playbook_repo; then
+  echo "  – kit repo itself: AGENTS.md is authored, not generated (stamp check skipped)"
+elif [ ! -f "$agents_md" ] || ! grep -qF "$agents_marker" "$agents_md" 2>/dev/null; then
+  # Informational, not a failure: pre-AGENTS.md bootstraps are legitimate.
+  echo "  – No playbook section in AGENTS.md (re-run playbook-init.sh to add it)"
+elif [ -z "$kit_version" ]; then
+  check_warn "Kit VERSION file missing at $PLAYBOOK_ROOT/VERSION — cannot check the AGENTS.md section stamp"
+else
+  target_version="$(sed -n 's/.*<!-- ai-dev-playbook:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
+  if [ "$target_version" = "$kit_version" ]; then
+    check_pass "AGENTS.md playbook section current (v$kit_version)"
+  else
+    check_warn "AGENTS.md playbook section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both (refreshes the section in place)"
+  fi
 fi
 
 echo ""
@@ -381,6 +426,11 @@ if [ -x "$installer" ]; then
 else
   check_warn "Global safety net installer not found at $installer"
 fi
+
+# Explicitly unverifiable channel: the Cursor user-rules paste lives in app
+# settings, not a file — no tool can confirm it was pasted or is current.
+# Reminder line only (never pass/fail).
+echo "  – Cursor user-rules paste cannot be verified by tooling — if kit blocks changed, re-sync manually: bash $installer --print-cursor-snippet"
 
 echo ""
 

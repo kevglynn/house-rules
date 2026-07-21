@@ -73,7 +73,7 @@ Evidence, not penance. The goal is proving the test catches the problem — not 
 
 The evidence that matters: the test fails without the fix and passes with it. How you obtain that evidence is flexible; that you obtain it is not.
 
-**Durable form — the evidence ledger.** Record the red and green runs with `scripts/tdd-ledger` (distributed to `scripts/` in kit-bootstrapped repos): `tdd-ledger record-failing --test-id <id> --bead <bead-id> --output <test output>` at step 3, and `tdd-ledger record-passing` with the same ids at step 4. This appends to a committed `.tdd-ledger.jsonl`; `tdd-ledger verify` (run by CI where present) checks that every green has a prior red — converting the ceremony's evidence from close-reason prose into checkable data.
+**Durable form — the evidence ledger.** Record the red and green runs with `scripts/tdd-ledger` (distributed to `scripts/` in kit-bootstrapped repos): `tdd-ledger record-failing --test-id <id> --bead <bead-id> --output <test output>` at step 3, and `tdd-ledger record-passing` with the same ids at step 4. This appends to a committed `.tdd-ledger.jsonl`; `tdd-ledger verify` (run by CI where present) checks that every green has a prior red — converting the ceremony's evidence from close-reason prose into checkable data. Note: the CI workflow only actually blocks merges if the repo marks it as a required status check via branch protection — otherwise a red `verify` is advisory.
 
 ## Zero-signal test taxonomy — DO NOT WRITE THESE (O14)
 
