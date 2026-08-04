@@ -1,0 +1,7 @@
+# Prose Voice
+
+When producing prose a human will read or forward — positioning docs, pre-whitepapers, packets, deck copy, primers, emails, briefs, or any artifact described as "ready to send" — read and follow `skills/prose-voice` before writing. The skill carries the pattern catalog (contrastive pivots, mic-drop closers, triplet escalation, gravitas inflation, parallel openers, complement framing, length inflation), budgets per pattern, worked before/after examples, and a mechanical self-correction protocol to run before finalizing.
+
+Lexical economy is not optional. Messages, chats, and emails carry word ceilings, and depth is held in reserve for follow-ups instead of pre-loaded — a reader should absorb the whole thing without delay, friction, or hesitation. Documents may be comprehensive, and still face the skill's cut test.
+
+Does NOT apply to code comments, commit messages, bead descriptions, or agent-to-agent notes.
