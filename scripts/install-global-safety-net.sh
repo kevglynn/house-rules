@@ -219,11 +219,25 @@ print_cursor_instructions() {
   cat <<EOF
 
 ──────────────────────────────────────────────────────────────────────────
-  CURSOR USER RULES — MANUAL STEP (once per machine)
+  CURSOR USER RULES — CHECK BEFORE PASTING (once per machine)
 ──────────────────────────────────────────────────────────────────────────
 
-Cursor's Global Preferences user rule lives in app settings, not a file
-this script can safely edit. Paste the combined block below into:
+FIRST check whether Cursor is already importing ~/CLAUDE.md for you:
+open Cursor → Settings → Rules and look for an auto-imported rule named
+"CLAUDE" whose content matches ~/CLAUDE.md. It appears when the setting
+"Include Third-Party Plugins, Skills, and Other Configs" is enabled.
+
+If that rule is PRESENT, skip the paste entirely. The import already
+carries these blocks into every Cursor conversation and re-reads
+~/CLAUDE.md when Cursor restarts, so a manual paste would inject a
+duplicate copy that goes stale after every kit update. Never edit and
+save the imported rule in the settings UI (save semantics are
+undocumented and may fork it from the file) — edit ~/CLAUDE.md via this
+script and restart Cursor. Note the import is undocumented Cursor
+behavior (observed 2026-08); if a future release drops it and the
+CLAUDE rule disappears from settings, fall back to the paste below.
+
+If that rule is ABSENT, paste the combined block below into:
 
   Cursor → Settings → Rules for AI → User Rules
 
@@ -244,10 +258,11 @@ EOF
   cat <<'EOF'
 ────────────────── PASTE ABOVE THIS LINE ───────────────────────
 
-You only need to paste once per machine. The ~/CLAUDE.md blocks above
-stay in sync via this script. If you re-run the installer and block
-content has drifted, update the Cursor paste by hand — re-run with
---print-cursor-snippet to grab the fresh combined text.
+The paste (when needed at all) is once per machine. The ~/CLAUDE.md
+blocks above stay in sync via this script; the auto-imported CLAUDE
+rule follows them on Cursor restart. Only a manual paste needs hand
+maintenance: if you re-run the installer and block content has
+drifted, re-run with --print-cursor-snippet to grab the fresh text.
 
 EOF
 }
@@ -305,6 +320,8 @@ case "$MODE" in
     echo ""
     echo "Note: if you previously pasted the snippet into Cursor's user"
     echo "rules, remove it manually via Cursor → Settings → Rules for AI."
+    echo "(An auto-imported CLAUDE rule needs no action — it follows"
+    echo "~/CLAUDE.md on the next Cursor restart.)"
     exit 0
     ;;
 

@@ -461,10 +461,12 @@ else
   check_warn "Global safety net installer not found at $installer"
 fi
 
-# Explicitly unverifiable channel: the Cursor user-rules paste lives in app
-# settings, not a file — no tool can confirm it was pasted or is current.
-# Reminder line only (never pass/fail).
-echo "  – Cursor user-rules paste cannot be verified by tooling — if kit blocks changed, re-sync manually: bash $installer --print-cursor-snippet"
+# Explicitly unverifiable channel: Cursor either auto-imports ~/CLAUDE.md as
+# an always-applied rule (settings toggle "Include Third-Party Plugins,
+# Skills, and Other Configs" — undocumented behavior, toggle state not
+# readable from disk) or needs the manual user-rules paste. Neither is
+# verifiable by tooling. Reminder line only (never pass/fail).
+echo "  – Cursor channel not verifiable by tooling — check Settings → Rules for the auto-imported CLAUDE rule (tracks ~/CLAUDE.md on restart); only if it's absent, paste manually: bash $installer --print-cursor-snippet"
 
 echo ""
 
