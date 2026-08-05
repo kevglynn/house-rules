@@ -84,8 +84,8 @@ def _word_re(token, flags=re.IGNORECASE):
     return re.compile(r"\b" + esc + r"\b", flags)
 
 
-def _entry(cls, display, pattern=None, flags=re.IGNORECASE):
-    return (cls, display, pattern or _word_re(display, flags))
+def _entry(cls, display, pattern=None):
+    return (cls, display, pattern or _word_re(display))
 
 
 # Longest display first within a class so overlap dedupe keeps the most
@@ -109,7 +109,8 @@ TOKENS = [
     _entry(CLS_TEAM, _a_developer),
     _entry(CLS_TEAM, _small_team),
     _entry(CLS_TEAM, _team_of + " N",
-           re.compile(r"\b" + _team_of + r"\s+" + NUM + r"\b", re.IGNORECASE)),
+           re.compile(r"\b" + _team_of.replace(" ", r"\s+") + r"\s+" + NUM
+                      + r"\b", re.IGNORECASE)),
     _entry(CLS_TEAM, "N " + _engineers,
            re.compile(r"\b" + NUM + r"(?:\s*[-–]\s*" + NUM + r")?\s+"
                       + _engineers + r"\b", re.IGNORECASE)),
@@ -167,6 +168,9 @@ known limitations:
   - whole-word matching only: inflected forms ("{_schedule}d",
     "{_schedule}s") are not flagged
   - matching is case-insensitive except {_eta} (uppercase acronym only)
+  - matching is per-line: a phrase wrapped across a line break escapes
+  - singular units ("day", "week") are not in the catalog — the rule
+    bans the plural forms
 """
 
 
@@ -221,7 +225,7 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("paths", nargs="*", metavar="FILE",
-                        help="Files to scan ('-' for stdin; default: stdin)")
+                        help="Files to scan (default: stdin)")
     parser.add_argument("--json", action="store_true",
                         help="Structured JSON output on stdout")
     args = parser.parse_args(argv)
@@ -234,9 +238,6 @@ def main(argv=None):
         sources.append(("<stdin>", sys.stdin.read()))
     else:
         for p in args.paths:
-            if p == "-":
-                sources.append(("<stdin>", sys.stdin.read()))
-                continue
             try:
                 text = Path(p).read_text(encoding="utf-8", errors="replace")
             except OSError as e:

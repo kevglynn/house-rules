@@ -132,6 +132,49 @@ class BannedTokenScanTest(unittest.TestCase):
         self.assertIn(C_EST, self.classes_hit(out))
         self.assertIn(C_TIME, self.classes_hit(out))
 
+    def test_every_catalog_token_is_flagged_with_its_class(self):
+        # Catalog-membership pin: one canonical fixture per token, so a
+        # silently dropped catalog entry fails exactly one subTest.
+        cases = [
+            (C_TIME, J(("hou", "rs"))), (C_TIME, J(("da", "ys"))),
+            (C_TIME, W_WEEKS), (C_TIME, J(("mon", "ths"))),
+            (C_TIME, J(("quar", "ters"))), (C_TIME, W_SPRINTS),
+            (C_TIME, "man-" + J(("hou", "rs"))),
+            (C_TIME, "person-" + J(("hou", "rs"))),
+            (C_TIME, "engineer-" + J(("hou", "rs"))),
+            (C_TIME, "dev-" + J(("hou", "rs"))),
+            (C_TIME, W_STORY_POINTS),
+            (C_TEAM, J(("one dev", "eloper"))), (C_TEAM, J(("a dev", "eloper"))),
+            (C_TEAM, "3 " + J(("engin", "eers"))), (C_TEAM, W_SMALL_TEAM),
+            (C_TEAM, W_TEAM_OF + " 3"),
+            (C_TEAM, J(("with more peo", "ple"))),
+            (C_TEAM, J(("engineering te", "am"))),
+            (C_SCHED, W_TIMELINE), (C_SCHED, W_SCHEDULE),
+            (C_SCHED, W_AMBITIOUS), (C_SCHED, J(("aggres", "sive"))),
+            (C_SCHED, W_ON_TRACK), (C_SCHED, W_ETA),
+            (C_SCHED, J(("by EO", "D"))), (C_SCHED, J(("by end of wee", "k"))),
+            (C_SCHED, J(("takes a whi", "le"))), (C_SCHED, J(("takes lo", "ng"))),
+            (C_SCHED, W_QUICK_WIN),
+            (C_EST, W_I_ESTIMATE), (C_EST, "I'd " + J(("esti", "mate"))),
+            (C_EST, W_ROUGH_ESTIMATE), (C_EST, W_BALLPARK),
+            (C_EST, f"{W_ROUGHLY} 3 " + W_WEEKS),
+        ]
+        self.assertEqual(len(cases), 34)
+        for cls, phrase in cases:
+            with self.subTest(token=phrase):
+                r, out = self.scan_json(f"the plan needs {phrase} overall\n")
+                self.assertEqual(r.returncode, 1,
+                                 f"{phrase}: {r.stdout}{r.stderr}")
+                self.assertIn(cls, self.classes_hit(out))
+
+    def test_phrase_whitespace_runs_are_normalized(self):
+        # Multi-word tokens must match across double spaces / odd wrapping,
+        # including inside the composed team-of-N pattern.
+        double = W_TEAM_OF.replace(" ", "  ")
+        r, out = self.scan_json(f"a {double}  3 could do it\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(C_TEAM, self.classes_hit(out))
+
     # --- Matching discipline ---
 
     def test_clean_text_is_exit_0(self):
@@ -189,10 +232,6 @@ class BannedTokenScanTest(unittest.TestCase):
         r, out = self.scan_json(f"take 2 {W_WEEKS}\n")
         self.assertEqual(out["findings"][0]["file"], "<stdin>")
 
-    def test_dash_reads_stdin(self):
-        r = run_cli(["-", "--json"], stdin_text=f"take 2 {W_WEEKS}\n")
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-
     def test_missing_file_is_io_error_exit_3(self):
         r = run_cli([str(self.root / "nope.md")])
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
@@ -201,19 +240,45 @@ class BannedTokenScanTest(unittest.TestCase):
         self.assertEqual(err["error_kind"], "io")
 
     def test_unknown_flag_is_usage_error_exit_2(self):
+        # The JSON-on-stderr contract must hold for usage errors too, not
+        # just I/O errors — exit code 2 alone is what stock argparse gives.
         r = run_cli(["--bogus"], stdin_text="x\n")
         self.assertEqual(r.returncode, 2)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
+
+    def test_unicode_text_is_scanned(self):
+        r, out = self.scan_json(f"café naïve — take 2 {W_WEEKS}\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["line"], 1)
+
+    def test_empty_stdin_is_clean_exit_0(self):
+        r, out = self.scan_json("")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
 
     # --- Content self-matching: the scanner's own source stays clean ---
 
     def test_scanning_own_source_file_is_clean(self):
         # Any copy of the scanner (kit or distributed) fed to itself must
         # report zero hits: every token in its source is assembled from
-        # parts, never present at rest.
+        # parts, never present at rest. files_scanned pins that the file
+        # was actually read, not name-skipped.
         r = run_cli([str(CLI), "--json"])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         out = json.loads(r.stdout)
         self.assertEqual(out["findings"], [])
+        self.assertEqual(out["files_scanned"], 1)
+
+    def test_token_laden_file_named_like_the_scanner_is_still_flagged(self):
+        # The self-clean guarantee is content-side, never path or filename
+        # special-casing (defer-lint cross-copy precedent).
+        p = self.write("banned-token-scan", f"take 2 {W_WEEKS}\n")
+        r = run_cli([str(p), "--json"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(len(out["findings"]), 1)
 
     def test_scanning_this_test_file_is_clean(self):
         r = run_cli([str(Path(__file__).resolve()), "--json"])

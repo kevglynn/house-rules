@@ -32,6 +32,8 @@ Every close reason must include evidence mapped to acceptance criteria and refer
 | Milestone | "N/A — milestone marker, verify children are closed" |
 | Epic | Verify all children closed (`bd epic close-eligible`), then confirm each success criterion is met by the closed children's outcomes. If a criterion is unmet, create a follow-up bead before closing. |
 
+**Checker:** `scripts/close-reason-lint` (kit-distributed) mechanizes the shape half of this policy — `bd list --status=closed --json | close-reason-lint` flags closed beads whose reasons lack a commit-ref or AC-mapping shape (`--json` for agents); whether the mapped evidence is any good stays with self-review and the review lenses. Shapes, exemptions, and worked examples in `close-reason-lint --help`.
+
 ### Do not defer AC verification
 
 Every AC must be verified with evidence **before close**, not scheduled for later. A close reason like "will be re-verified in the PR manual-check pass" or "deferred to integration testing" is an **IOU, not evidence** — indistinguishable to the reader from "this AC was not verified." Acceptance criteria that close on IOUs are how real-world failures reach users after 10/10 green unit tests.

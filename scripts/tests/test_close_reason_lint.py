@@ -15,7 +15,6 @@ Run: python3 scripts/tests/test_close_reason_lint.py
 
 import json
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -52,13 +51,6 @@ def run_cli(args, stdin_text=None):
 
 
 class CloseReasonLintTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
     def lint(self, beads, *extra):
         payload = json.dumps(beads)
         return run_cli(["--json", *extra], stdin_text=payload)
@@ -112,6 +104,32 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
 
+    def test_all_letter_hex_word_is_not_a_commit_ref(self):
+        # Near-miss guard: 7+ chars of pure hex alphabet with no digit is
+        # an English word, not a hash.
+        r, out = self.lint_json([bead(
+            reason="AC1: verified. Config was effaced deliberately.")])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("commit-ref", out["findings"][0]["missing"])
+
+    def test_file_path_is_not_a_commit_ref(self):
+        # docs/... and test/... file paths collide with the branch-type
+        # alternation; a dotted or hyphenless slug is a path, not a branch.
+        for path in ("docs/specs/plan.md", "test/utils.py"):
+            with self.subTest(path=path):
+                r, out = self.lint_json([bead(
+                    reason=f"AC1: verified via {path} walkthrough.")])
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn("commit-ref", out["findings"][0]["missing"])
+
+    def test_branch_keyword_followed_by_prose_is_not_a_ref(self):
+        # "the branch after merge" cites no branch; the keyword form only
+        # counts when followed by a branch-shaped name.
+        r, out = self.lint_json([bead(
+            reason="Deleted the branch after merge. AC1: verified.")])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("commit-ref", out["findings"][0]["missing"])
+
     # --- AC: flags closed beads whose reasons lack AC-mapping shape ---
 
     def test_reason_without_ac_mapping_is_flagged_exit_1(self):
@@ -139,6 +157,21 @@ class CloseReasonLintTest(unittest.TestCase):
             reason="Commit ab34f9e. Reached acid-test parity each way.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("ac-mapping", out["findings"][0]["missing"])
+
+    def test_standalone_lowercase_ac_word_is_not_mapping(self):
+        # Word-bounded lowercase "ac" (the English fragment, e.g. an AC
+        # unit) must not satisfy the shape — the token rule is case-
+        # sensitive by design.
+        r, out = self.lint_json([bead(
+            reason="Commit ab34f9e. Fixed the ac unit wiring.")])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("ac-mapping", out["findings"][0]["missing"])
+
+    def test_singular_acceptance_criterion_phrase_counts_as_mapping(self):
+        r, out = self.lint_json([bead(
+            reason="Commit ab34f9e. The single acceptance criterion is verified.")])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
 
     def test_bead_without_acceptance_criteria_skips_ac_mapping_check(self):
         # Cannot demand mapping to ACs that do not exist.
@@ -206,6 +239,20 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertIn("ac-mapping", f["missing"])
         self.assertEqual(f["severity"], "error")
 
+    def test_task_and_untyped_beads_are_checked_not_exempt(self):
+        # "task" is also the fallback for a missing issue_type; neither may
+        # silently join the exemption table.
+        beads = [
+            bead(id="pk-t", issue_type="task", reason=BARE_REASON, acs=""),
+            {"id": "pk-u", "status": "closed", "close_reason": BARE_REASON},
+        ]
+        r, out = self.lint_json(beads)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 2)
+        for f in out["findings"]:
+            self.assertEqual(f["severity"], "error")
+            self.assertIn("commit-ref", f["missing"])
+
     # --- Input handling ---
 
     def test_non_closed_beads_are_skipped(self):
@@ -216,25 +263,15 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(out["findings"], [])
         self.assertEqual(out["beads_skipped"], 2)
 
+    def test_status_matching_is_case_insensitive(self):
+        r, out = self.lint_json([bead(reason=BARE_REASON, status="Closed")])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 1)
+
     def test_single_object_input_is_accepted(self):
         r, out = self.lint_json(bead(reason=BARE_REASON))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(len(out["findings"]), 1)
-
-    def test_input_file_flag(self):
-        p = self.root / "closed.json"
-        p.write_text(json.dumps([bead(reason=BARE_REASON)]))
-        r = run_cli(["--input", str(p), "--json"])
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        out = json.loads(r.stdout)
-        self.assertEqual(len(out["findings"]), 1)
-
-    def test_missing_input_file_is_io_error_exit_3(self):
-        r = run_cli(["--input", str(self.root / "nope.json")])
-        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
-        err = json.loads(r.stderr)
-        self.assertFalse(err["ok"])
-        self.assertEqual(err["error_kind"], "io")
 
     def test_invalid_json_is_input_error_exit_3(self):
         r = run_cli(["--json"], stdin_text="this is not json")
@@ -242,9 +279,33 @@ class CloseReasonLintTest(unittest.TestCase):
         err = json.loads(r.stderr)
         self.assertFalse(err["ok"])
 
+    def test_empty_stdin_is_input_error_exit_3(self):
+        r = run_cli(["--json"], stdin_text="")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+
+    def test_scalar_json_is_input_error_exit_3(self):
+        r = run_cli(["--json"], stdin_text='"hello"')
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+
+    def test_non_dict_array_entry_is_input_error_exit_3(self):
+        r = run_cli(["--json"], stdin_text="[42]")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+
+    def test_empty_array_is_clean_exit_0(self):
+        r, out = self.lint_json([])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["beads_checked"], 0)
+
     def test_unknown_flag_is_usage_error_exit_2(self):
+        # The JSON-on-stderr contract must hold for usage errors too, not
+        # just I/O errors — exit code 2 alone is what stock argparse gives.
         r = run_cli(["--bogus"], stdin_text="[]")
         self.assertEqual(r.returncode, 2)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
 
     # --- Output shapes ---
 
