@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""close-reason-lint — mechanical shape check for bead close reasons.
+
+Checks closed beads (bd JSON on stdin or --input) for the two evidence
+shapes bead-completion.mdc requires of every close reason: a commit
+reference (hex hash, PR/MR URL, or branch name) and an AC-mapping shape
+(the reason visibly references acceptance criteria: "AC1", "ACs",
+"acceptance criteria"). Pattern presence only — whether the mapped
+evidence is any GOOD stays with the review lenses (tier1/tier2) and the
+reader; this tool converts the rule's most checkable MUST into an exit
+code.
+
+Data source is bd's JSON surface: pipe `bd list --status=closed --json`
+(array) or `bd show <id> --json` (one-element array); a single bead
+object is also accepted. Non-closed entries are skipped.
+
+Exit codes: 0 clean (warnings allowed) · 1 violations · 2 usage error ·
+3 I/O or input error. Human-readable output by default; --json for
+agents. I/O and usage errors are JSON on stderr in both output modes.
+Non-interactive.
+"""
+
+import argparse
+import json
+import re
+import sys
+
+# --- Commit-reference shapes -------------------------------------------
+# Hex hash: 7-40 lowercase hex chars containing at least one digit (an
+# all-letter hex-alphabet word like "effaced" would otherwise match).
+HASH_RE = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b")
+# PR / MR URL on any forge.
+PR_URL_RE = re.compile(
+    r"https?://\S+/(?:pull|pulls|pull-requests|merge_requests)/\d+")
+# Branch name: the kit convention <type>/<slug>, or an explicit
+# "branch <name>" phrase.
+BRANCH_RE = re.compile(
+    r"\b(?:feat|fix|refactor|test|chore|docs|feature|bugfix|hotfix|"
+    r"release|spike)/[A-Za-z0-9._-]+")
+BRANCH_KW_RE = re.compile(r"\bbranch\b[:\s]+[`'\"]?[A-Za-z0-9._/-]+",
+                          re.IGNORECASE)
+
+# --- AC-mapping shapes --------------------------------------------------
+# "AC1" / "AC 1" / "AC-1" (case-sensitive: lowercase "ac" is an English
+# fragment), the bare word "AC"/"ACs", or the spelled-out phrase.
+AC_NUM_RE = re.compile(r"\bAC\s*[-–]?\s*\d+")
+AC_WORD_RE = re.compile(r"\bACs?\b")
+AC_PHRASE_RE = re.compile(r"\bacceptance\s+criteri(?:a|on)", re.IGNORECASE)
+
+# Exempt per bead-completion.mdc's evidence table: docs/decision/milestone
+# close with canonical "N/A — ..." reasons; an epic's evidence is its
+# closed children, not a commit.
+EXEMPT_TYPES = {"docs", "doc", "decision", "milestone", "epic"}
+# The evidence table asks these types only for a brief summary / findings,
+# so a missing commit-ref is reported at warning severity (exit stays 0).
+SOFT_REF_TYPES = {"chore", "config", "spike"}
+
+EPILOG = """\
+usage with bd:
+  bd list --status=closed --json | close-reason-lint
+  bd show pk-123 --json | close-reason-lint --json
+  close-reason-lint --input closed-beads.json
+
+good close reason (commit-ref + AC mapping — passes):
+  "Commit ab34f9e on main. AC1: loading indicator verified by test run.
+   AC2: error state renders (scripts/tests/test_x.py green)."
+
+bad close reasons (exit 1):
+  "Done."                       — missing commit-ref and ac-mapping
+  "All ACs verified manually."  — missing commit-ref
+  "Fixed in ab34f9e."           — missing ac-mapping
+
+commit-ref shapes accepted: hex hash (7-40 chars, at least one digit),
+PR/MR URL (.../pull/N, .../merge_requests/N), branch name
+(<type>/<slug> or "branch <name>").
+
+ac-mapping shapes accepted: "AC1" / "AC 2" / "AC-3", "AC"/"ACs",
+"acceptance criteria". The check fires only when the bead carries
+acceptance criteria — there is nothing to map otherwise.
+
+exemptions and severities (bead-completion.mdc evidence table):
+  docs/decision/milestone/epic — exempt (canonical "N/A — ..." closes;
+    epic evidence is its closed children)
+  chore/config/spike           — missing commit-ref is a warning (their
+    required evidence is a brief summary / findings)
+  everything else              — missing commit-ref or AC mapping is a
+    violation
+
+known limitations:
+  - pattern check only: a reason can name "AC1" and still be hollow;
+    semantic quality stays with the review lenses and the reader
+  - a stray 7+-digit number (a date, an ID) counts as a hash candidate
+"""
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "exit_code": 2},
+                  sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(2)
+
+
+def has_commit_ref(reason):
+    return bool(HASH_RE.search(reason) or PR_URL_RE.search(reason)
+                or BRANCH_RE.search(reason) or BRANCH_KW_RE.search(reason))
+
+
+def has_ac_mapping(reason):
+    return bool(AC_NUM_RE.search(reason) or AC_WORD_RE.search(reason)
+                or AC_PHRASE_RE.search(reason))
+
+
+def lint_beads(beads):
+    checked = 0
+    exempt = 0
+    skipped = 0
+    findings = []
+    for b in beads:
+        if not isinstance(b, dict):
+            emit_error("malformed entry: expected a bead object", "input", 3)
+        status = (b.get("status") or "").lower()
+        if status != "closed":
+            skipped += 1
+            continue
+        issue_type = (b.get("issue_type") or "task").lower()
+        if issue_type in EXEMPT_TYPES:
+            exempt += 1
+            continue
+        checked += 1
+        reason = (b.get("close_reason") or "").strip()
+        acs = (b.get("acceptance_criteria") or "").strip()
+        missing = []
+        if not reason:
+            missing.append("close-reason")
+        else:
+            if not has_commit_ref(reason):
+                missing.append("commit-ref")
+            if acs and not has_ac_mapping(reason):
+                missing.append("ac-mapping")
+        if not missing:
+            continue
+        severity = ("warning"
+                    if missing == ["commit-ref"] and issue_type in SOFT_REF_TYPES
+                    else "error")
+        findings.append({
+            "id": b.get("id", "<no-id>"),
+            "issue_type": issue_type,
+            "missing": missing,
+            "severity": severity,
+            "reason": reason[:160],
+        })
+    return checked, exempt, skipped, findings
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="close-reason-lint",
+        description=(
+            "Check closed beads' close reasons for commit-ref and "
+            "AC-mapping shape (deterministic pattern presence, not "
+            "semantic quality). Reads bd JSON from stdin or --input. "
+            "Exit codes: 0 clean, 1 violations, 2 usage error, 3 I/O or "
+            "input error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--input", metavar="FILE",
+                        help="Read bd JSON from FILE instead of stdin")
+    parser.add_argument("--json", action="store_true",
+                        help="Structured JSON output on stdout")
+    args = parser.parse_args(argv)
+
+    if args.input:
+        try:
+            with open(args.input, encoding="utf-8") as f:
+                raw = f.read()
+        except OSError as e:
+            emit_error(f"cannot read input file: {e}", "io", 3)
+    else:
+        if sys.stdin.isatty():
+            emit_error("no input: pipe bd JSON (e.g. bd list "
+                       "--status=closed --json) or pass --input FILE",
+                       "usage", 2)
+        raw = sys.stdin.read()
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        emit_error(f"input is not valid JSON: {e}", "input", 3)
+    if isinstance(payload, dict):
+        payload = [payload]
+    if not isinstance(payload, list):
+        emit_error("input must be a bead object or an array of beads",
+                   "input", 3)
+
+    checked, exempt, skipped, findings = lint_beads(payload)
+    errors = [f for f in findings if f["severity"] == "error"]
+    warnings = [f for f in findings if f["severity"] == "warning"]
+    exit_code = 1 if errors else 0
+
+    if args.json:
+        json.dump({
+            "ok": not errors,
+            "beads_checked": checked,
+            "beads_exempt": exempt,
+            "beads_skipped": skipped,
+            "findings": findings,
+        }, sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return exit_code
+
+    for f in findings:
+        tag = " (warning)" if f["severity"] == "warning" else ""
+        print(f"{f['id']} ({f['issue_type']}): missing "
+              f"{', '.join(f['missing'])}{tag} — {f['reason'] or '<empty>'}")
+    status = ("clean" if not findings
+              else f"{len(errors)} violation(s), {len(warnings)} warning(s)")
+    extra = f" ({exempt} exempt, {skipped} skipped)" if exempt or skipped else ""
+    print(f"Checked {checked} closed bead(s){extra}: {status}.")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

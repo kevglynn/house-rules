@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""banned-token-scan — candidate reporter for agent-identity's banned tokens.
+
+Scans text (files or stdin) for the agent-identity rule's four banned
+token classes used to frame work-to-be-done and reports every candidate
+hit with its class and location. Deterministic reporter only: the rule's
+"not regressions" exceptions (historical facts, product/API behavior,
+quoted references, agent-process units) require reading intent, so that
+judgment stays with the reader and the review lenses — this tool never
+suppresses a hit on their behalf.
+
+Content self-matching: every token literal in this file — including one
+class name — is assembled from parts, so no copy of this scanner (the kit
+one or a distributed one) ever flags its own source. Content-side
+exclusion; no path special-casing (same idiom as scripts/defer-lint).
+
+Exit codes: 0 clean · 1 candidate hits · 2 usage error · 3 I/O error.
+Human-readable output by default; --json for agents. I/O and usage errors
+are JSON on stderr in both output modes. Non-interactive.
+"""
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+_J = "".join
+
+# --- Token literals, assembled from parts (see module docstring) --------
+_hours = _J(("hou", "rs"))
+_days = _J(("da", "ys"))
+_weeks = _J(("wee", "ks"))
+_months = _J(("mon", "ths"))
+_quarters = _J(("quar", "ters"))
+_sprints = _J(("spri", "nts"))
+_story_points = _J(("story poi", "nts"))
+_man_hours = "man-" + _hours
+_person_hours = "person-" + _hours
+_engineer_hours = "engineer-" + _hours
+_dev_hours = "dev-" + _hours
+
+_one_developer = _J(("one dev", "eloper"))
+_a_developer = _J(("a dev", "eloper"))
+_engineers = _J(("engin", "eers"))
+_small_team = _J(("small te", "am"))
+_team_of = _J(("team o", "f"))
+_with_more_people = _J(("with more peo", "ple"))
+_engineering_team = _J(("engineering te", "am"))
+
+_timeline = _J(("time", "line"))
+_schedule = _J(("sched", "ule"))
+_ambitious = _J(("ambi", "tious"))
+_aggressive = _J(("aggres", "sive"))
+_on_track = _J(("on tra", "ck"))
+_eta = _J(("ET", "A"))
+_by_eod = _J(("by EO", "D"))
+_by_end_of_week = _J(("by end of wee", "k"))
+_takes_a_while = _J(("takes a whi", "le"))
+_takes_long = _J(("takes lo", "ng"))
+_quick_win = _J(("quick w", "in"))
+
+_estimate = _J(("esti", "mate"))
+_i_estimate = "I " + _estimate
+_id_estimate = "I'd " + _estimate
+_rough_estimate = "rough " + _estimate
+_ballpark = _J(("ball", "park"))
+_roughly = _J(("roug", "hly"))
+
+# Class keys as reported in findings. One embeds a token, so it is
+# assembled too.
+CLS_TIME = "time-units"
+CLS_TEAM = "team-size"
+CLS_SCHED = _schedule + "-framing"
+CLS_EST = "estimation-verbs"
+
+# Digits or spelled-out small numbers, for "team of N" / "N <unit>" shapes.
+NUM = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+
+
+def _word_re(token, flags=re.IGNORECASE):
+    """Whole-word/phrase regex for a token; spaces match any whitespace run."""
+    esc = re.escape(token).replace("\\ ", " ").replace(" ", r"\s+")
+    return re.compile(r"\b" + esc + r"\b", flags)
+
+
+def _entry(cls, display, pattern=None, flags=re.IGNORECASE):
+    return (cls, display, pattern or _word_re(display, flags))
+
+
+# Longest display first within a class so overlap dedupe keeps the most
+# specific token (person-<unit> wins over the bare unit).
+TOKENS = [
+    _entry(CLS_TIME, _engineer_hours),
+    _entry(CLS_TIME, _person_hours),
+    _entry(CLS_TIME, _story_points),
+    _entry(CLS_TIME, _man_hours),
+    _entry(CLS_TIME, _dev_hours),
+    _entry(CLS_TIME, _quarters),
+    _entry(CLS_TIME, _sprints),
+    _entry(CLS_TIME, _months),
+    _entry(CLS_TIME, _hours),
+    _entry(CLS_TIME, _weeks),
+    _entry(CLS_TIME, _days),
+
+    _entry(CLS_TEAM, _with_more_people),
+    _entry(CLS_TEAM, _engineering_team),
+    _entry(CLS_TEAM, _one_developer),
+    _entry(CLS_TEAM, _a_developer),
+    _entry(CLS_TEAM, _small_team),
+    _entry(CLS_TEAM, _team_of + " N",
+           re.compile(r"\b" + _team_of + r"\s+" + NUM + r"\b", re.IGNORECASE)),
+    _entry(CLS_TEAM, "N " + _engineers,
+           re.compile(r"\b" + NUM + r"(?:\s*[-–]\s*" + NUM + r")?\s+"
+                      + _engineers + r"\b", re.IGNORECASE)),
+
+    _entry(CLS_SCHED, _by_end_of_week),
+    _entry(CLS_SCHED, _takes_a_while),
+    _entry(CLS_SCHED, _aggressive),
+    _entry(CLS_SCHED, _takes_long),
+    _entry(CLS_SCHED, _ambitious),
+    _entry(CLS_SCHED, _quick_win),
+    _entry(CLS_SCHED, _timeline),
+    _entry(CLS_SCHED, _schedule),
+    _entry(CLS_SCHED, _on_track),
+    _entry(CLS_SCHED, _by_eod),
+    # Uppercase only: lowercase "eta" is a Greek letter / word fragment.
+    _entry(CLS_SCHED, _eta, _word_re(_eta, 0)),
+
+    _entry(CLS_EST, _roughly + " N <unit>",
+           re.compile(r"\b" + _roughly + r"\s+" + NUM + r"\s+(?:" + _hours
+                      + "|" + _days + "|" + _weeks + r")\b", re.IGNORECASE)),
+    _entry(CLS_EST, _rough_estimate),
+    _entry(CLS_EST, _id_estimate,
+           re.compile(r"\bI['\u2019]d\s+" + _estimate + r"\b",
+                      re.IGNORECASE)),
+    _entry(CLS_EST, _i_estimate),
+    _entry(CLS_EST, _ballpark),
+]
+
+EPILOG = f"""\
+token classes (agent-identity rule, banned when framing work-to-be-done):
+  {CLS_TIME}: {_hours}, {_days}, {_weeks}, {_months}, {_quarters},
+    {_sprints}, {_man_hours}, {_person_hours}, {_engineer_hours},
+    {_dev_hours}, {_story_points}
+  {CLS_TEAM}: {_one_developer}, {_a_developer}, N {_engineers},
+    {_small_team}, {_team_of} N, {_with_more_people}, {_engineering_team}
+  {CLS_SCHED}: {_timeline}, {_schedule}, {_ambitious}, {_aggressive},
+    {_on_track}, {_eta}, {_by_eod}, {_by_end_of_week}, {_takes_a_while},
+    {_takes_long}, {_quick_win}
+  {CLS_EST}: {_i_estimate}, {_id_estimate}, {_rough_estimate},
+    {_ballpark}, {_roughly} N <unit>
+
+examples:
+  banned-token-scan transcript.md draft.md          # scan files
+  banned-token-scan --json < response.txt           # scan stdin, JSON out
+  echo "this will take 6 {_weeks}" | banned-token-scan   # exit 1
+
+judgment boundary — reporter, not judge:
+  the rule's "not regressions" exceptions (historical facts like "the bug
+  was open for 3 {_weeks}", product/API behavior like "a 30-second
+  timeout", quoted references, agent-process units) are deliberately NOT
+  detected — telling them apart requires reading intent. Every hit is a
+  candidate for the reader or the review lenses to triage.
+
+known limitations:
+  - whole-word matching only: inflected forms ("{_schedule}d",
+    "{_schedule}s") are not flagged
+  - matching is case-insensitive except {_eta} (uppercase acronym only)
+"""
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "exit_code": 2},
+                  sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(2)
+
+
+def scan_text(name, text):
+    findings = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        taken = {}  # class -> list of consumed (start, end) spans
+        for cls, display, pattern in TOKENS:
+            for m in pattern.finditer(line):
+                span = m.span()
+                spans = taken.setdefault(cls, [])
+                if any(span[0] < e and s < span[1] for s, e in spans):
+                    continue  # overlaps a longer token already reported
+                spans.append(span)
+                findings.append({
+                    "file": name,
+                    "line": lineno,
+                    "class": cls,
+                    "token": display,
+                    "text": line.strip()[:200],
+                })
+    return findings
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="banned-token-scan",
+        description=(
+            "Report candidate agent-identity banned-token hits (four "
+            "classes) in text from files or stdin. Deterministic reporter: "
+            "the rule's exception judgment stays with the reader. Exit "
+            "codes: 0 clean, 1 hits, 2 usage error, 3 I/O error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("paths", nargs="*", metavar="FILE",
+                        help="Files to scan ('-' for stdin; default: stdin)")
+    parser.add_argument("--json", action="store_true",
+                        help="Structured JSON output on stdout")
+    args = parser.parse_args(argv)
+
+    sources = []
+    if not args.paths:
+        if sys.stdin.isatty():
+            emit_error("no input: pass files or pipe text on stdin",
+                       "usage", 2)
+        sources.append(("<stdin>", sys.stdin.read()))
+    else:
+        for p in args.paths:
+            if p == "-":
+                sources.append(("<stdin>", sys.stdin.read()))
+                continue
+            try:
+                text = Path(p).read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                emit_error(f"cannot read file: {e}", "io", 3)
+            sources.append((p, text))
+
+    findings = []
+    for name, text in sources:
+        findings.extend(scan_text(name, text))
+    exit_code = 1 if findings else 0
+
+    if args.json:
+        json.dump({
+            "ok": not findings,
+            "files_scanned": len(sources),
+            "findings": findings,
+        }, sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return exit_code
+
+    for f in findings:
+        print(f"{f['file']}:{f['line']}: [{f['class']}] {f['token']} — "
+              f"{f['text']}")
+    status = "clean" if not findings else f"{len(findings)} candidate hit(s)"
+    print(f"Scanned {len(sources)} file(s): {status}.")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
