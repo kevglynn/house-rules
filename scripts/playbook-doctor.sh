@@ -563,15 +563,18 @@ if $AGENT_MODE; then
     echo ""
     echo "SUMMARY: bootstrap_needed"
     exit 2
-  elif [ $cursor_stale -eq 1 ] && [ $claude_stale -eq 1 ]; then
+  # -ge, not -eq: claude_stale is a per-file counter (the Claude rules
+  # check counts stale files), so two stale rules used to skip every
+  # rules_drift_* branch and fall through to SUMMARY: error.
+  elif [ $cursor_stale -ge 1 ] && [ $claude_stale -ge 1 ]; then
     echo ""
     echo "SUMMARY: rules_drift_both"
     exit 3
-  elif [ $cursor_stale -eq 1 ]; then
+  elif [ $cursor_stale -ge 1 ]; then
     echo ""
     echo "SUMMARY: rules_drift_cursor"
     exit 3
-  elif [ $claude_stale -eq 1 ]; then
+  elif [ $claude_stale -ge 1 ]; then
     echo ""
     echo "SUMMARY: rules_drift_claude"
     exit 3
