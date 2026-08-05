@@ -108,6 +108,22 @@ Item 34 is the mechanism-placement signal from the bead-completion + beads-quali
 
 Item 35 is the mechanism-placement signal from the defer-convention split (kit-wide placement audit, findings F1/F4): the rule no longer carries the detection procedure; reaching the checker is the behavior that must not regress.
 
+### Close Evidence (bead-completion.mdc + scripts/close-reason-lint)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 36 | Close-reason shape audited through `scripts/close-reason-lint` (pipe `bd list --status=closed --json` in; the checker's exit code and findings are the evidence — not a manual read of each reason) | | |
+
+Item 36 is the cheap-enforcement signal from the kit-wide placement audit (findings F4/F10): the checker converts bead-completion's commit-ref + AC-mapping MUST from advisory prose into an observable exit code. It scores the *shape* check only — item 15 (close reason maps to specific ACs) remains the reader's semantic judgment; a bead can pass the lint and still fail item 15.
+
+### Agent Identity (agent-identity.mdc + scripts/banned-token-scan)
+
+| # | Behavior | Score | Notes |
+|---|----------|-------|-------|
+| 37 | Human-baseline framing audited through `scripts/banned-token-scan` (outgoing prose or transcripts scanned; each candidate hit triaged against the rule's "not regressions" list — the scan reports, the reader judges) | | |
+
+Item 37 is the cheap-enforcement signal from the kit-wide placement audit (findings F4/F10): agent-identity's self-correction protocol prescribed a mechanical banned-token scan with no mechanism behind it; the scanner is that mechanism. Score Y when the scan ran and its hits were dispositioned (kept as findings or cleared as rule exceptions), N when the framing check was eyeballed instead. The scanner never suppresses the rule's exception classes — a hit count alone, untriaged, is not a Y.
+
 **Convention for future splits:** each topology split contributes its mechanism-placement signal item (the item-26 / item-29 pattern) — not a full per-rule hygiene block. Generic adherence behaviors are scored once where they first appear; the scorecard must not grow ~5 items per split.
 
 **Session score: __ / __ applicable items**
@@ -155,7 +171,7 @@ When the Playbook Scorecard (Tier 4.2) ships, these manual checks can be partial
 
 | Manual check | Automated equivalent |
 |--------------|---------------------|
-| Close reason maps to ACs | Parse `bd close` reasons for AC references |
+| Close reason maps to ACs | **Shipped (shape half):** `scripts/close-reason-lint` checks commit-ref + AC-mapping presence (item 36); semantic mapping quality (item 15) stays manual |
 | `bd search` before create | Check `bd` command log for search-before-create pattern |
 | Session start/close protocol | Check first/last `bd` commands per session |
 | Stale beads addressed | Compare `bd stale` count over time |
