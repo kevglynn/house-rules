@@ -1,0 +1,24 @@
+# Distributed-CLI manifest — the single registration point for kit CLIs
+# that must live in target repos (playbook-init.sh distributes every entry;
+# playbook-doctor.sh drift-checks the same list, in this order — line order
+# IS the SUMMARY precedence when several CLIs drift at once).
+#
+# Fields (|-delimited, one line per script):
+#   name         file under scripts/ (kit source and target destination)
+#   summary_key  doctor --agent SUMMARY key when this CLI is stale
+#   header       doctor section header
+#   stale_note   suffix for the doctor's stale-CLI failure line
+#   label        init "What you get" summary label
+#   note         init "What you get" summary detail
+#
+# Adding a script: add one line here. Everything else is generated — EXCEPT
+# the human-facing dispatch table in global-safety-net/agent-protocol.md,
+# which needs a matching row (doctor warns if a key here is missing there).
+#
+# Why distributed (not run from the kit clone): tdd-ledger's verify gate is
+# target-repo CI, and the three checkers run against the target's own
+# source/beads/prose, so each must live where it is invoked.
+tdd-ledger|ledger_drift|TDD ledger|verify invariants may have evolved|TDD evidence ledger CLI|record-failing / record-passing / verify
+defer-lint|defer_lint_drift|Defer-lint|detection rules may have evolved|Defer-comment checker|flags defer: comments missing upgrade-when triggers
+close-reason-lint|close_reason_lint_drift|Close-reason-lint|detection rules may have evolved|Close-reason checker|flags closed beads missing commit-ref / AC-mapping shape
+banned-token-scan|banned_token_scan_drift|Banned-token-scan|detection rules may have evolved|Banned-token scanner|reports agent-identity banned-token candidates in text

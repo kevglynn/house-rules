@@ -67,6 +67,7 @@ Optional user-level Cursor Settings UI rule for personal conventions (e.g., "alw
 | `defer-lint` | Mechanical check for the defer-convention rule (Python 3 stdlib, single file). Scans source files for `defer:` comments and flags entries missing their `upgrade when:` trigger (multi-line continuations honored; missing `ceiling:` is a warning). `--root`, `--json`; same exit-code contract as tdd-ledger (`0`=clean, `1`=violations, `2`=usage, `3`=I/O). Worked good/bad examples and the defer/TODO/FIXME comparison live in `defer-lint --help`. Distributed to target repos by `playbook-init.sh`. |
 | `close-reason-lint` | Mechanical shape check for bead close reasons (Python 3 stdlib, single file). Pipe `bd list --status=closed --json` in; flags closed beads whose reasons lack a commit-ref (hash, PR/MR URL, or branch) or AC-mapping shape (pattern presence only — semantic quality stays with the review lenses). Exemptions per bead-completion.mdc's evidence table (docs/decision/milestone/epic exempt; chore/config/spike get commit-ref warnings). Same exit-code contract as tdd-ledger; worked examples in `close-reason-lint --help`. Distributed to target repos by `playbook-init.sh`. |
 | `banned-token-scan` | Candidate reporter for agent-identity's four banned-token classes (Python 3 stdlib, single file). Scans files or stdin and reports each hit with class, token, and location; deliberately does NOT judge the rule's "not regressions" exceptions (historical facts, API behavior, quotes) — that stays with the reader. Every token in its own source is assembled from parts so no copy ever self-flags. Same exit-code contract as tdd-ledger; class catalog and judgment boundary in `banned-token-scan --help`. Distributed to target repos by `playbook-init.sh`. |
+| `distributed-clis.list` | Manifest of the kit CLIs above that ship to target repos — the single registration point. `playbook-init.sh` distributes every entry; `playbook-doctor.sh` drift-checks the same list (line order = SUMMARY precedence when several drift). Adding a distributed script = one manifest line plus a dispatch-table row in `global-safety-net/agent-protocol.md` (doctor warns if the row is missing). |
 
 ## Setup
 
@@ -108,7 +109,9 @@ The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-s
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 
-**Skills** (`skills/`) are copied on demand: `playbook-init.sh --skills` copies them into a project's `.cursor/skills/`, or symlink individual skills for Claude Code (see [skills/README.md](skills/README.md)).
+**Skills** (`skills/`) are copied on demand: `playbook-init.sh --skills` copies them into the tool-matching project dir (`.cursor/skills/` for Cursor, `.claude/skills/` for Claude Code, both for `--tool both`), or symlink individual skills for Claude Code (see [skills/README.md](skills/README.md)).
+
+**Templates** (`templates/`) carry two distribution semantics: `tdd-ledger-verify.yml` is distributed by `playbook-init.sh` (as a not-overwriting copy into `.github/workflows/`), while `design-doc.md` is kit-resident — you copy it into `docs/specs/` when authoring a spec; init never ships it.
 
 ## Workflow
 

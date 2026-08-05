@@ -187,46 +187,63 @@ fi
 
 if $SKILLS; then
   skills_src="$PLAYBOOK_ROOT/skills"
-  skills_dest="$PROJECT_ROOT/.cursor/skills"
+  # Tool-aware destinations: Claude Code reads .claude/skills/, Cursor reads
+  # .cursor/skills/. A single hardcoded .cursor/skills/ dest previously left
+  # --tool claude bootstraps with zero Claude-readable skills.
+  skills_dests=""
+  [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]] && skills_dests=".cursor/skills"
+  [[ "$TOOL" == "claude" || "$TOOL" == "both" ]] && skills_dests="$skills_dests .claude/skills"
   if [ -d "$skills_src" ]; then
-    mkdir -p "$skills_dest"
-    skills_count=0
-    for skill_dir in "$skills_src"/*/; do
-      [ -d "$skill_dir" ] || continue
-      skill_name="$(basename "$skill_dir")"
-      cp -rf "$skill_dir" "$skills_dest/"
-      echo "  ↳ $skill_name"
-      skills_count=$((skills_count + 1))
+    for skills_rel in $skills_dests; do
+      skills_dest="$PROJECT_ROOT/$skills_rel"
+      mkdir -p "$skills_dest"
+      skills_count=0
+      for skill_dir in "$skills_src"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_name="$(basename "$skill_dir")"
+        cp -rf "$skill_dir" "$skills_dest/"
+        echo "  ↳ $skill_name"
+        skills_count=$((skills_count + 1))
+      done
+      if [ "$skills_count" -gt 0 ]; then
+        echo "✓ Copied $skills_count skill(s) → $skills_rel/"
+      else
+        echo "  (no skill directories found in $skills_src)"
+      fi
     done
-    if [ "$skills_count" -gt 0 ]; then
-      echo "✓ Copied $skills_count skill(s) → .cursor/skills/"
-    else
-      echo "  (no skill directories found in $skills_src)"
-    fi
   else
     echo "  (no skills/ directory in playbook — skipping)"
   fi
 fi
 
-# ---------- TDD evidence ledger CLI ----------
+# ---------- Distributed CLIs (manifest-driven) ----------
 #
-# Distributed (not run from the playbook root) because target-repo CI is the
-# verify gate — the CLI must live in the repo the workflow checks out.
+# Every kit CLI that must live in the target repo is registered once in
+# scripts/distributed-clis.list; this loop distributes each entry and
+# playbook-doctor.sh drift-checks the same manifest. Per-script rationale
+# and the field layout live in the manifest's header comments.
 
-ledger_src="$PLAYBOOK_ROOT/scripts/tdd-ledger"
-ledger_dest="$PROJECT_ROOT/scripts/tdd-ledger"
+clis_manifest="$PLAYBOOK_ROOT/scripts/distributed-clis.list"
 
-if [ -f "$ledger_src" ]; then
-  mkdir -p "$PROJECT_ROOT/scripts"
-  if ! cp -f "$ledger_src" "$ledger_dest" 2>/tmp/playbook-init.cp.err; then
-    echo "✗ Failed to copy tdd-ledger → scripts/"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r cli_name _cli_rest; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    cli_src="$PLAYBOOK_ROOT/scripts/$cli_name"
+    cli_dest="$PROJECT_ROOT/scripts/$cli_name"
+    [ -f "$cli_src" ] || continue
+    mkdir -p "$PROJECT_ROOT/scripts"
+    if ! cp -f "$cli_src" "$cli_dest" 2>/tmp/playbook-init.cp.err; then
+      echo "✗ Failed to copy $cli_name → scripts/"
+      sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+      rm -f /tmp/playbook-init.cp.err
+      exit 1
+    fi
     rm -f /tmp/playbook-init.cp.err
-    exit 1
-  fi
-  rm -f /tmp/playbook-init.cp.err
-  chmod +x "$ledger_dest"
-  echo "✓ Copied tdd-ledger CLI → scripts/tdd-ledger"
+    chmod +x "$cli_dest"
+    echo "✓ Copied $cli_name CLI → scripts/$cli_name"
+  done < "$clis_manifest"
+else
+  echo "⚠ Distributed-CLI manifest missing at $clis_manifest — no kit CLIs distributed"
 fi
 
 # The CI gate that makes the ledger non-bypassable (not-overwriting, like
@@ -234,7 +251,7 @@ fi
 ledger_wf_src="$PLAYBOOK_ROOT/templates/tdd-ledger-verify.yml"
 ledger_wf_dest="$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml"
 
-if [ -f "$ledger_wf_src" ] && [ -f "$ledger_dest" ]; then
+if [ -f "$ledger_wf_src" ] && [ -f "$PROJECT_ROOT/scripts/tdd-ledger" ]; then
   if [ -f "$ledger_wf_dest" ]; then
     echo "✓ tdd-ledger CI workflow already exists (not overwriting)"
   else
@@ -242,73 +259,6 @@ if [ -f "$ledger_wf_src" ] && [ -f "$ledger_dest" ]; then
     cp -f "$ledger_wf_src" "$ledger_wf_dest"
     echo "✓ Copied tdd-ledger CI workflow → .github/workflows/"
   fi
-fi
-
-# ---------- Defer-lint checker CLI ----------
-#
-# Distributed for the same reason as tdd-ledger: the defer-convention rule's
-# no-trigger law is checked against the target repo's source, so the checker
-# must live there. No CI workflow for it in this pass.
-
-defer_lint_src="$PLAYBOOK_ROOT/scripts/defer-lint"
-defer_lint_dest="$PROJECT_ROOT/scripts/defer-lint"
-
-if [ -f "$defer_lint_src" ]; then
-  mkdir -p "$PROJECT_ROOT/scripts"
-  if ! cp -f "$defer_lint_src" "$defer_lint_dest" 2>/tmp/playbook-init.cp.err; then
-    echo "✗ Failed to copy defer-lint → scripts/"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
-    exit 1
-  fi
-  rm -f /tmp/playbook-init.cp.err
-  chmod +x "$defer_lint_dest"
-  echo "✓ Copied defer-lint CLI → scripts/defer-lint"
-fi
-
-# ---------- Close-reason-lint checker CLI ----------
-#
-# Distributed for the same reason as defer-lint: it checks the target
-# repo's beads (piped bd JSON), so the checker must live where bd runs.
-# No CI workflow for it in this pass.
-
-close_reason_lint_src="$PLAYBOOK_ROOT/scripts/close-reason-lint"
-close_reason_lint_dest="$PROJECT_ROOT/scripts/close-reason-lint"
-
-if [ -f "$close_reason_lint_src" ]; then
-  mkdir -p "$PROJECT_ROOT/scripts"
-  if ! cp -f "$close_reason_lint_src" "$close_reason_lint_dest" 2>/tmp/playbook-init.cp.err; then
-    echo "✗ Failed to copy close-reason-lint → scripts/"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
-    exit 1
-  fi
-  rm -f /tmp/playbook-init.cp.err
-  chmod +x "$close_reason_lint_dest"
-  echo "✓ Copied close-reason-lint CLI → scripts/close-reason-lint"
-fi
-
-# ---------- Banned-token-scan checker CLI ----------
-#
-# Distributed for the same reason as defer-lint: agent-identity's
-# banned-token classes are scanned against the target repo's transcripts
-# and prose, so the checker must live there. No CI workflow for it in
-# this pass.
-
-banned_token_scan_src="$PLAYBOOK_ROOT/scripts/banned-token-scan"
-banned_token_scan_dest="$PROJECT_ROOT/scripts/banned-token-scan"
-
-if [ -f "$banned_token_scan_src" ]; then
-  mkdir -p "$PROJECT_ROOT/scripts"
-  if ! cp -f "$banned_token_scan_src" "$banned_token_scan_dest" 2>/tmp/playbook-init.cp.err; then
-    echo "✗ Failed to copy banned-token-scan → scripts/"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
-    exit 1
-  fi
-  rm -f /tmp/playbook-init.cp.err
-  chmod +x "$banned_token_scan_dest"
-  echo "✓ Copied banned-token-scan CLI → scripts/banned-token-scan"
 fi
 
 # ---------- Beads init ----------
@@ -463,6 +413,16 @@ if [ -f "$PLAYBOOK_ROOT/VERSION" ]; then
 fi
 generated_on="$(date -u +%Y-%m-%d)"
 
+# Drift-key enumeration for the section text, generated from the manifest so
+# the AGENTS.md contract can never lag a newly registered CLI.
+cli_drift_keys_md=""
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r _cli_name cli_key _rest; do
+    case "$_cli_name" in ""|\#*) continue ;; esac
+    cli_drift_keys_md="${cli_drift_keys_md:+$cli_drift_keys_md | }\`$cli_key\`"
+  done < "$clis_manifest"
+fi
+
 render_playbook_agents_section() {
   cat <<AGENTS_SECTION
 $agents_begin
@@ -482,7 +442,7 @@ bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh"
 bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh" --agent
 \`\`\`
 
-Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=rules_drift, \`1\`=error. The \`rules_drift\` SUMMARY line carries the format that needs remediation (\`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\`). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full contract.
+Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=drift, \`1\`=error. On exit 3 the SUMMARY key names what drifted: \`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\` for stale rules, or ${cli_drift_keys_md:-a per-CLI drift key} for a stale distributed CLI (fix: re-copy from the kit). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full dispatch table.
 
 **Sync rules with upstream:**
 \`\`\`bash
@@ -573,7 +533,9 @@ echo "What's ready:"
 echo "  • $(ls -1 "$PROJECT_ROOT/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') Cursor rules" 2>/dev/null || true
 echo "  • $(ls -1 "$PROJECT_ROOT/.claude/rules/"*.md 2>/dev/null | wc -l | tr -d ' ') Claude rules" 2>/dev/null || true
 if $SKILLS; then
-  echo "  • $(ls -1d "$PROJECT_ROOT/.cursor/skills/"*/ 2>/dev/null | wc -l | tr -d ' ') skills" 2>/dev/null || true
+  for skills_rel in ${skills_dests:-}; do
+    echo "  • $(ls -1d "$PROJECT_ROOT/$skills_rel/"*/ 2>/dev/null | wc -l | tr -d ' ') skills ($skills_rel/)" 2>/dev/null || true
+  done
 fi
 echo "  • Beads task tracking (bd list, bd ready, bd create)"
 if $HOOKS_INSTALLED; then
@@ -584,11 +546,14 @@ if $NO_HOOKS; then
 fi
 echo "  • Scratchpad for cross-session context"
 [ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
-[ -f "$ledger_dest" ] && echo "  • TDD evidence ledger CLI (scripts/tdd-ledger — record-failing / record-passing / verify)"
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r cli_name _key _header _note cli_label cli_detail; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    [ -f "$PROJECT_ROOT/scripts/$cli_name" ] && \
+      echo "  • $cli_label (scripts/$cli_name — $cli_detail)"
+  done < "$clis_manifest"
+fi
 [ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
-[ -f "$defer_lint_dest" ] && echo "  • Defer-comment checker (scripts/defer-lint — flags defer: comments missing upgrade-when triggers)"
-[ -f "$close_reason_lint_dest" ] && echo "  • Close-reason checker (scripts/close-reason-lint — flags closed beads missing commit-ref / AC-mapping shape)"
-[ -f "$banned_token_scan_dest" ] && echo "  • Banned-token scanner (scripts/banned-token-scan — reports agent-identity banned-token candidates in text)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
 echo "Next steps:"

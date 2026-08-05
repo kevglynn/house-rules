@@ -18,19 +18,18 @@ set -uo pipefail
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
 #   3 = drift (kit-managed files present but stale vs playbook source:
-#       rules_drift_*, ledger_drift, defer_lint_drift,
-#       close_reason_lint_drift, or banned_token_scan_drift — dispatch on
-#       the SUMMARY key)
+#       rules_drift_*, or a per-CLI key from scripts/distributed-clis.list —
+#       dispatch on the SUMMARY key)
 #   1 = generic error / other failure
 #
 # SUMMARY keys (--agent mode) for rules_drift carry the format that needs
 # remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
-# ledger_drift means scripts/tdd-ledger is stale vs the kit copy;
-# defer_lint_drift means scripts/defer-lint is stale vs the kit copy;
-# close_reason_lint_drift means scripts/close-reason-lint is stale;
-# banned_token_scan_drift means scripts/banned-token-scan is stale.
-# Agents must dispatch on the specific key, not the generic exit code, to
-# avoid running sync-rules.sh with the wrong --format.
+# Each distributed CLI carries its own drift key, registered in
+# scripts/distributed-clis.list (currently ledger_drift, defer_lint_drift,
+# close_reason_lint_drift, banned_token_scan_drift — the manifest is the
+# source of truth); the key means that scripts/<name> is stale vs the kit
+# copy. Agents must dispatch on the specific key, not the generic exit
+# code, to avoid running sync-rules.sh with the wrong --format.
 
 PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_MODE=false
@@ -48,10 +47,10 @@ Usage: playbook-doctor.sh [project-path] [--agent]
 Checks:
   • bd (beads) is on PATH
   • Agent rules are present and match the canonical source
-  • tdd-ledger CLI (if distributed) matches the kit copy
-  • defer-lint CLI (if distributed) matches the kit copy
-  • close-reason-lint CLI (if distributed) matches the kit copy
-  • banned-token-scan CLI (if distributed) matches the kit copy
+  • Each distributed CLI in scripts/distributed-clis.list (if present in
+    the target) matches the kit copy
+  • Kit-resident references (skills/…, templates/…) cited by distributed
+    rules resolve somewhere on this machine (warn-only)
   • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
@@ -64,14 +63,9 @@ Flags:
   --agent   Emit a machine-consumable SUMMARY line and use structured
             exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
             Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
-            rules_drift_both (stale rules), ledger_drift (stale
-            scripts/tdd-ledger; only emitted when rules are current),
-            defer_lint_drift (stale scripts/defer-lint; only emitted when
-            rules and ledger are current), close_reason_lint_drift (stale
-            scripts/close-reason-lint; only emitted when the above are
-            current), or banned_token_scan_drift (stale
-            scripts/banned-token-scan; only emitted when the above are
-            current).
+            rules_drift_both (stale rules), or the stale CLI's drift key
+            from scripts/distributed-clis.list (rules drift wins when
+            several drift; CLI keys follow the manifest's line order).
   --help    Show this help.
 
 Exit codes (human mode): 0 = all pass, 1 = issues found.
@@ -120,10 +114,9 @@ warn=0
 bootstrap_missing=0
 cursor_stale=0
 claude_stale=0
-ledger_stale=0
-defer_lint_stale=0
-close_reason_lint_stale=0
-banned_token_scan_stale=0
+# Space-separated SUMMARY keys of stale distributed CLIs, appended in
+# manifest order — so the first entry is the highest-precedence CLI drift.
+cli_stale_keys=""
 
 check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
 check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
@@ -244,125 +237,109 @@ fi
 
 echo ""
 
-# ---------- TDD ledger ----------
+# ---------- Distributed CLIs (manifest-driven) ----------
 #
-# scripts/tdd-ledger is kit-managed: playbook-init.sh copies it with cp -f
-# (same semantics as rules), so it drift-checks against the kit copy the
-# same way rules do. The CI workflow (.github/workflows/tdd-ledger-verify.yml)
-# is NOT drift-checked — init treats it as not-overwriting, so target repos
-# may legitimately customize it. We only note its absence when the CLI is
-# present.
+# Every kit CLI registered in scripts/distributed-clis.list is kit-managed:
+# playbook-init.sh copies it with cp -f (same semantics as rules), so each
+# drift-checks against the kit copy the same way rules do. The tdd-ledger
+# CI workflow (.github/workflows/tdd-ledger-verify.yml) is NOT drift-checked
+# — init treats it as not-overwriting, so target repos may legitimately
+# customize it; we only note its absence when that CLI is present.
 
-echo "TDD ledger:"
+clis_manifest="$PLAYBOOK_ROOT/scripts/distributed-clis.list"
 
-ledger_src="$PLAYBOOK_ROOT/scripts/tdd-ledger"
-ledger_dest="$PROJECT_ROOT/scripts/tdd-ledger"
-
-if [ ! -f "$ledger_src" ]; then
-  check_warn "Kit copy missing at $ledger_src — cannot drift-check tdd-ledger"
-elif [ ! -f "$ledger_dest" ]; then
-  # Informational, not a failure: the repo may predate the ledger or not use it.
-  echo "  – tdd-ledger not distributed here (optional — re-run playbook-init.sh to add it)"
+if [ ! -f "$clis_manifest" ]; then
+  echo "Distributed CLIs:"
+  check_warn "Manifest missing at $clis_manifest — cannot drift-check kit CLIs"
+  echo ""
 else
-  if diff -q "$ledger_src" "$ledger_dest" > /dev/null 2>&1; then
-    check_pass "tdd-ledger CLI matches the kit copy"
-  else
-    check_fail "tdd-ledger CLI is stale vs the kit copy — verify invariants may have evolved" \
-      "cp -f \"$ledger_src\" \"$ledger_dest\" && chmod +x \"$ledger_dest\""
-    ledger_stale=1
-  fi
-  if ! $is_playbook_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
-    check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
-  fi
-  # Last-mile reminder: the workflow only actually gates merges if branch
-  # protection marks it required — a state on the forge that no local tool
-  # can inspect, so this is a reminder line rather than a check.
-  if [ -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
-    echo "  – Reminder: the CI workflow only blocks merges if 'tdd-ledger verify' is a required status check in branch protection (cannot be verified locally)"
-  fi
+  while IFS='|' read -r cli_name cli_key cli_header cli_note _label _detail; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    echo "$cli_header:"
+    cli_src="$PLAYBOOK_ROOT/scripts/$cli_name"
+    cli_dest="$PROJECT_ROOT/scripts/$cli_name"
+    if [ ! -f "$cli_src" ]; then
+      check_warn "Kit copy missing at $cli_src — cannot drift-check $cli_name"
+    elif [ ! -f "$cli_dest" ]; then
+      # Informational, not a failure: the repo may predate the CLI or not use it.
+      echo "  – $cli_name not distributed here (optional — re-run playbook-init.sh to add it)"
+    else
+      if diff -q "$cli_src" "$cli_dest" > /dev/null 2>&1; then
+        check_pass "$cli_name CLI matches the kit copy"
+      else
+        check_fail "$cli_name CLI is stale vs the kit copy — $cli_note" \
+          "cp -f \"$cli_src\" \"$cli_dest\" && chmod +x \"$cli_dest\""
+        cli_stale_keys="$cli_stale_keys $cli_key"
+      fi
+      if [ "$cli_name" = "tdd-ledger" ]; then
+        if ! $is_playbook_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+          check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
+        fi
+        # Last-mile reminder: the workflow only actually gates merges if branch
+        # protection marks it required — a state on the forge that no local tool
+        # can inspect, so this is a reminder line rather than a check.
+        if [ -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+          echo "  – Reminder: the CI workflow only blocks merges if 'tdd-ledger verify' is a required status check in branch protection (cannot be verified locally)"
+        fi
+      fi
+    fi
+    # Registration self-check: the human-facing dispatch table in
+    # global-safety-net/agent-protocol.md is the one site the manifest
+    # cannot generate — this warn is how a missing row gets caught
+    # (the gap that shipped twice before the manifest existed).
+    if [ -f "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md" ] && \
+       ! grep -qF "\`$cli_key\`" "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md"; then
+      check_warn "SUMMARY key $cli_key is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
+    fi
+    echo ""
+  done < "$clis_manifest"
 fi
 
-echo ""
-
-# ---------- Defer-lint checker ----------
+# ---------- Kit-resident references ----------
 #
-# scripts/defer-lint is kit-managed the same way as tdd-ledger:
-# playbook-init.sh copies it with cp -f, so it drift-checks against the
-# kit copy. It ships no CI workflow, so there is no gate check here.
+# Distributed rules cite skills/<name> and templates/<file> paths under the
+# resolution law in operating-model.mdc: in-project copy → machine-global
+# skills dir → kit clone. A pointer that resolves nowhere is a setup gap.
+# Warn-only: the rules themselves instruct agents to note-don't-skip.
 
-echo "Defer-lint:"
+echo "Kit-resident references:"
 
-defer_lint_src="$PLAYBOOK_ROOT/scripts/defer-lint"
-defer_lint_dest="$PROJECT_ROOT/scripts/defer-lint"
-
-if [ ! -f "$defer_lint_src" ]; then
-  check_warn "Kit copy missing at $defer_lint_src — cannot drift-check defer-lint"
-elif [ ! -f "$defer_lint_dest" ]; then
-  # Informational, not a failure: the repo may predate the checker or not use it.
-  echo "  – defer-lint not distributed here (optional — re-run playbook-init.sh to add it)"
+ref_total=0
+ref_unresolved=0
+refs="$(grep -rhoE '(skills|templates)/[A-Za-z0-9._-]+' \
+          "$PROJECT_ROOT/.cursor/rules" "$PROJECT_ROOT/.claude/rules" 2>/dev/null \
+        | sed 's/\.$//' | sort -u)"
+if [ -z "$refs" ]; then
+  echo "  – No kit-resident references cited by distributed rules (or no rules present)"
 else
-  if diff -q "$defer_lint_src" "$defer_lint_dest" > /dev/null 2>&1; then
-    check_pass "defer-lint CLI matches the kit copy"
-  else
-    check_fail "defer-lint CLI is stale vs the kit copy — detection rules may have evolved" \
-      "cp -f \"$defer_lint_src\" \"$defer_lint_dest\" && chmod +x \"$defer_lint_dest\""
-    defer_lint_stale=1
-  fi
-fi
-
-echo ""
-
-# ---------- Close-reason-lint checker ----------
-#
-# scripts/close-reason-lint is kit-managed the same way as defer-lint:
-# playbook-init.sh copies it with cp -f, so it drift-checks against the
-# kit copy. It ships no CI workflow, so there is no gate check here.
-
-echo "Close-reason-lint:"
-
-close_reason_lint_src="$PLAYBOOK_ROOT/scripts/close-reason-lint"
-close_reason_lint_dest="$PROJECT_ROOT/scripts/close-reason-lint"
-
-if [ ! -f "$close_reason_lint_src" ]; then
-  check_warn "Kit copy missing at $close_reason_lint_src — cannot drift-check close-reason-lint"
-elif [ ! -f "$close_reason_lint_dest" ]; then
-  # Informational, not a failure: the repo may predate the checker or not use it.
-  echo "  – close-reason-lint not distributed here (optional — re-run playbook-init.sh to add it)"
-else
-  if diff -q "$close_reason_lint_src" "$close_reason_lint_dest" > /dev/null 2>&1; then
-    check_pass "close-reason-lint CLI matches the kit copy"
-  else
-    check_fail "close-reason-lint CLI is stale vs the kit copy — detection rules may have evolved" \
-      "cp -f \"$close_reason_lint_src\" \"$close_reason_lint_dest\" && chmod +x \"$close_reason_lint_dest\""
-    close_reason_lint_stale=1
-  fi
-fi
-
-echo ""
-
-# ---------- Banned-token-scan checker ----------
-#
-# scripts/banned-token-scan is kit-managed the same way as defer-lint:
-# playbook-init.sh copies it with cp -f, so it drift-checks against the
-# kit copy. It ships no CI workflow, so there is no gate check here.
-
-echo "Banned-token-scan:"
-
-banned_token_scan_src="$PLAYBOOK_ROOT/scripts/banned-token-scan"
-banned_token_scan_dest="$PROJECT_ROOT/scripts/banned-token-scan"
-
-if [ ! -f "$banned_token_scan_src" ]; then
-  check_warn "Kit copy missing at $banned_token_scan_src — cannot drift-check banned-token-scan"
-elif [ ! -f "$banned_token_scan_dest" ]; then
-  # Informational, not a failure: the repo may predate the checker or not use it.
-  echo "  – banned-token-scan not distributed here (optional — re-run playbook-init.sh to add it)"
-else
-  if diff -q "$banned_token_scan_src" "$banned_token_scan_dest" > /dev/null 2>&1; then
-    check_pass "banned-token-scan CLI matches the kit copy"
-  else
-    check_fail "banned-token-scan CLI is stale vs the kit copy — detection rules may have evolved" \
-      "cp -f \"$banned_token_scan_src\" \"$banned_token_scan_dest\" && chmod +x \"$banned_token_scan_dest\""
-    banned_token_scan_stale=1
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    ref_total=$((ref_total + 1))
+    ref_kind="${ref%%/*}"
+    ref_name="${ref#*/}"
+    resolved=false
+    if [ "$ref_kind" = "skills" ]; then
+      for cand in "$PROJECT_ROOT/.cursor/skills/$ref_name" \
+                  "$PROJECT_ROOT/.claude/skills/$ref_name" \
+                  "$PROJECT_ROOT/skills/$ref_name" \
+                  "$HOME/.cursor/skills/$ref_name" \
+                  "$HOME/.claude/skills/$ref_name" \
+                  "$PLAYBOOK_ROOT/skills/$ref_name"; do
+        [ -e "$cand" ] && resolved=true && break
+      done
+    else
+      for cand in "$PROJECT_ROOT/templates/$ref_name" \
+                  "$PLAYBOOK_ROOT/templates/$ref_name"; do
+        [ -e "$cand" ] && resolved=true && break
+      done
+    fi
+    if ! $resolved; then
+      ref_unresolved=$((ref_unresolved + 1))
+      check_warn "$ref cited by distributed rules resolves nowhere (project → global → kit clone)"
+    fi
+  done <<< "$refs"
+  if [ $ref_unresolved -eq 0 ]; then
+    check_pass "All $ref_total kit-resident references cited by rules resolve"
   fi
 fi
 
@@ -562,11 +539,11 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 
 # --- Agent-mode structured summary + exit ---
 #
-# Priority: bootstrap_needed > rules_drift > ledger_drift >
-# defer_lint_drift > close_reason_lint_drift > banned_token_scan_drift >
-# error > ok.
+# Priority: bootstrap_needed > rules_drift > per-CLI drift keys in
+# manifest line order (scripts/distributed-clis.list) > error > ok.
 # The SUMMARY line is a stable contract; do not emit user-controlled paths
-# or free-form strings — only the fixed enum keys below.
+# or free-form strings — only the fixed rules keys and the manifest's
+# registered per-CLI keys.
 #
 # rules_drift is split tri-state so the agent contract maps directly to a
 # specific sync-rules.sh --format flag. Without this, an agent following
@@ -574,14 +551,13 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 # project would default to --format cursor (the script's default) and
 # silently create unwanted .cursor/rules/ files in the target.
 #
-# ledger_drift, defer_lint_drift, close_reason_lint_drift, and
-# banned_token_scan_drift reuse exit 3 (drift class) with their own
-# SUMMARY keys rather than new exit codes, so the agent-protocol exit
-# table stays stable.
-# Ordering: rules drift wins the SUMMARY when several drift (existing
-# agents already dispatch on rules_drift_*), then ledger, then defer-lint,
-# then close-reason-lint, then banned-token-scan (kit landing order);
-# the losing findings are still in the text output above.
+# Per-CLI drift keys reuse exit 3 (drift class) with their own SUMMARY
+# keys rather than new exit codes, so the agent-protocol exit table stays
+# stable. Rules drift wins the SUMMARY when several drift (existing agents
+# already dispatch on rules_drift_*); among stale CLIs the first in
+# manifest order wins; the losing findings are still in the text output.
+cli_first_stale="${cli_stale_keys# }"
+cli_first_stale="${cli_first_stale%% *}"
 if $AGENT_MODE; then
   if [ $bootstrap_missing -eq 1 ]; then
     echo ""
@@ -599,21 +575,9 @@ if $AGENT_MODE; then
     echo ""
     echo "SUMMARY: rules_drift_claude"
     exit 3
-  elif [ $ledger_stale -eq 1 ]; then
+  elif [ -n "$cli_first_stale" ]; then
     echo ""
-    echo "SUMMARY: ledger_drift"
-    exit 3
-  elif [ $defer_lint_stale -eq 1 ]; then
-    echo ""
-    echo "SUMMARY: defer_lint_drift"
-    exit 3
-  elif [ $close_reason_lint_stale -eq 1 ]; then
-    echo ""
-    echo "SUMMARY: close_reason_lint_drift"
-    exit 3
-  elif [ $banned_token_scan_stale -eq 1 ]; then
-    echo ""
-    echo "SUMMARY: banned_token_scan_drift"
+    echo "SUMMARY: $cli_first_stale"
     exit 3
   elif [ $fail -gt 0 ]; then
     echo ""
