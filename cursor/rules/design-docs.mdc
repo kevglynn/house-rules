@@ -29,28 +29,7 @@ The spec describes WHAT to build and WHY. It does not contain implementation cod
 
 ### Template
 
-```markdown
-# [Initiative Name]
-
-**Date:** YYYY-MM-DD
-**Beads:** [epic ID or list of bead IDs]
-**Status:** Draft | Approved | Superseded
-
-## Architecture and component overview
-
-## Data flow and key interfaces
-
-## Trade-offs and decisions
-
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-
-## Non-goals
-
-## Risks and open questions
-
-- [ ] [Unresolved question or risk]
-```
+Starter skeleton: `templates/design-doc.md` in the kit repo (`${PROCESS_KIT:-$HOME/process-kit}/templates/design-doc.md`). It lives in the kit, not in target repos — copy it to `docs/specs/YYYY-MM-DD-<name>.md` when starting a spec. Its sections mirror the content list above.
 
 ## What stays in beads
 
