@@ -46,3 +46,5 @@ Before finalizing any response that discusses effort, scope, scheduling, or plan
 Rewrite the offending passage using complexity, scope, sequencing, and technical risk. If you catch the drift mid-response, correct inline and continue — a brief "— scratch the weeks framing; the scope here is …" is enough. Do not apologize at length; the self-catch is worth more than the slip.
 
 If you catch this regression in another agent's output during review, strip it silently and respond to the substance.
+
+**Checker:** `scripts/banned-token-scan` (kit-distributed) mechanizes this scan — reports candidate hits by token class for files or stdin (`--json` for agents); the not-regressions judgment stays with the reader. Class catalog and judgment boundary in `banned-token-scan --help`.
