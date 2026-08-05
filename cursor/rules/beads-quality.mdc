@@ -20,7 +20,7 @@ Every bead must be self-contained — a developer picking it up cold, without sc
 
 ### Acceptance Criteria (`--acceptance`)
 
-Required for **bug**, **feature**, **task**, **story**, and **spike** beads. Epics require **Success Criteria** instead. Use `bd create --acceptance "..."`.
+Use `bd create --acceptance "..."`; per-type requirements:
 
 | Type | Section name | What to specify |
 |------|-------------|-----------------|
@@ -52,4 +52,3 @@ Parent-child hierarchy and dependency-graph mechanics (`--parent`, `bd dep add`,
 4. **Duplicate creation.** Creating a new bead without checking `bd search` first.
 5. **Orphaned in-progress.** Claiming a bead and ending the session without closing it or leaving `bd note <id> "Progress: ..."`.
 6. **Evidence-free closes.** `bd close --reason "Done"` with no AC mapping; "will be verified later" is an IOU, not evidence — see `bead-completion.mdc` § "Do not defer AC verification" for the four legitimate options.
-7. **AC as implementation steps.** ACs describe observable outcomes ("Loading indicator appears when switching tabs"), not steps ("Add isLoading state variable").

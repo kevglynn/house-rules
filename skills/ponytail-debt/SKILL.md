@@ -14,18 +14,22 @@ quietly become permanent.
 
 ## Scan
 
-Where the checker is distributed (kit-bootstrapped repos), use it — it
-handles all comment prefixes, multi-line continuation clauses, and noise
-dirs, and tags the rot rows for you:
+Where the checker is distributed (kit-bootstrapped repos), start with it —
+it handles all comment prefixes, multi-line continuation clauses, and noise
+dirs, and supplies the totals and the rot rows:
 
 `scripts/defer-lint --json`
 
-Fallback where it isn't:
-`grep -rnE '(#|//) ?defer:' .`  (skip `node_modules`, `.git`, build output;
-add other comment prefixes if your stack uses them)
+Its `findings` array lists only the rot rows (missing trigger or ceiling);
+`defer_comments` is the total. The compliant rows — the bulk of the ledger —
+still come from the grep:
 
-Each hit is one ledger row. The comment prefix keeps prose that merely mentions
-the convention out of the ledger.
+`grep -rnE '(#|//) ?defer:' .`  (skip `node_modules`, `.git`, build output;
+add other comment prefixes if your stack uses them; also the full fallback
+where the checker isn't distributed)
+
+Each grep hit is one ledger row. The comment prefix keeps prose that merely
+mentions the convention out of the ledger.
 
 ## Output
 

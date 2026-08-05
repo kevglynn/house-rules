@@ -127,6 +127,30 @@ class DeferLintTest(unittest.TestCase):
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1)
 
+    def test_near_miss_trigger_text_is_still_violation(self):
+        # Mutation guard: a detector looser than the full "upgrade when:"
+        # phrase (bare word, or missing colon) must NOT pass these.
+        self.write("a.py", f"# {D} old client. ceiling: misses fields. should upgrade eventually.\n")
+        self.write("b.py", f"# {D} raw sql. ceiling: injection-prone. upgrade when we get time.\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 2)
+        for f in out["findings"]:
+            self.assertIn("upgrade-when", f["missing"])
+
+    def test_uppercase_clauses_are_recognized(self):
+        # Continuation lines plausibly start capitalized; matching is
+        # case-insensitive by design.
+        self.write(
+            "a.py",
+            f"# {D} single retry. Ceiling: transient failures surface.\n"
+            "# Upgrade when: flake rate exceeds 1%.\n",
+        )
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        self.assertEqual(out["defer_comments"], 1)
+
     # --- Missing ceiling: lesser severity, does not fail the scan ---
 
     def test_missing_ceiling_only_is_warning_exit_0(self):
@@ -198,21 +222,51 @@ class DeferLintTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["defer_comments"], 0)
 
+    def test_plain_string_mention_without_marker_is_not_a_defer(self):
+        # The comment-marker requirement keeps prose/log strings that merely
+        # mention the convention out of the scan.
+        self.write("a.py", f'msg = "{D} plain mention, no comment marker"\n')
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["defer_comments"], 0)
+
+    def test_symlinked_dir_and_file_are_not_followed(self):
+        # Payload lives under .git (never scanned directly); symlinks to it
+        # from scanned space must not resurrect it.
+        payload = self.write(".git/payload/bad.py", BAD_NO_TRIGGER)
+        os.symlink(payload.parent, self.root / "linkdir")
+        os.symlink(payload, self.root / "linkfile.py")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["defer_comments"], 0)
+
+    def test_makefile_and_dockerfile_are_scanned(self):
+        self.write("Makefile", BAD_NO_TRIGGER)
+        self.write("Dockerfile", BAD_NO_TRIGGER)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 2)
+
+    def test_unreadable_binary_files_are_counted_as_skipped(self):
+        # A scan that silently drops files can report "clean" on a tree it
+        # mostly failed to read; the JSON must expose the skip count.
+        p = self.root / "blob.py"
+        p.write_bytes(b"\x00\x01" + BAD_NO_TRIGGER.encode())
+        self.write("ok.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["files_skipped"], 1)
+        self.assertEqual(out["files_scanned"], 1)
+
     def test_extensionless_file_with_shebang_is_scanned(self):
         self.write("bin/tool", "#!/usr/bin/env python3\n" + BAD_NO_TRIGGER)
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(out["findings"][0]["file"], "bin/tool")
 
-    def test_exclude_flag_skips_path(self):
-        self.write("gen/out.py", BAD_NO_TRIGGER)
-        r, out = self.scan_json("--exclude", "gen")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(out["defer_comments"], 0)
-
-    def test_checker_excludes_its_own_running_copy(self):
-        # The CLI's --help epilog carries worked bad examples; a copy of the
-        # checker inside the scanned tree must not flag itself.
+    def test_running_copy_scanning_its_own_tree_is_clean(self):
+        # A distributed copy scanning the tree it lives in must not flag
+        # its own --help examples or regex source.
         dest = self.root / "scripts" / "defer-lint"
         dest.parent.mkdir(parents=True)
         shutil.copy(CLI, dest)
@@ -225,6 +279,22 @@ class DeferLintTest(unittest.TestCase):
         out = json.loads(r.stdout)
         self.assertEqual(out["findings"], [])
 
+    def test_kit_copy_scanning_tree_with_distributed_copy_is_clean(self):
+        # The kit's own copy is routinely invoked against bootstrapped target
+        # repos that carry a distributed copy at scripts/defer-lint. That copy
+        # is a different path from the running one — the exclusion contract
+        # must hold by content, not path identity.
+        dest = self.root / "scripts" / "defer-lint"
+        dest.parent.mkdir(parents=True)
+        shutil.copy(CLI, dest)
+        dest.chmod(dest.stat().st_mode | stat.S_IXUSR)
+        r, out = self.scan_json()  # runs the ORIGINAL CLI over self.root
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(
+            [f for f in out["findings"] if f["file"] == "scripts/defer-lint"],
+            [],
+        )
+
     # --- Output shapes ---
 
     def test_human_output_names_file_line_and_missing_clause(self):
@@ -234,19 +304,23 @@ class DeferLintTest(unittest.TestCase):
         self.assertIn("src/a.py:1", r.stdout)
         self.assertIn("upgrade-when", r.stdout)
 
-    def test_clean_tree_human_output_exit_0(self):
+    def test_clean_tree_human_output_names_scan_summary(self):
         self.write("a.py", "x = 1\n")
         r = self.scan()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Scanned 1 files", r.stdout)
+        self.assertIn("clean", r.stdout)
 
     def test_json_top_level_shape(self):
+        # No exit_code key: the process exit code is the contract, matching
+        # tdd-ledger's payload shape.
         self.write("a.py", GOOD_ONE_LINE + BAD_NO_TRIGGER)
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1)
-        for key in ("ok", "root", "files_scanned", "defer_comments",
-                    "findings", "exit_code"):
+        for key in ("ok", "root", "files_scanned", "files_skipped",
+                    "defer_comments", "findings"):
             self.assertIn(key, out)
-        self.assertEqual(out["exit_code"], 1)
+        self.assertNotIn("exit_code", out)
         self.assertEqual(out["defer_comments"], 2)
         f = out["findings"][0]
         for key in ("file", "line", "text", "missing", "severity"):

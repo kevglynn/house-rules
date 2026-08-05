@@ -101,8 +101,8 @@ fail=0
 warn=0
 
 # Agent-mode state: tracks the specific class of issue so SUMMARY can
-# select the most accurate remediation category. Priority on exit:
-# bootstrap_needed > rules_drift > error > ok.
+# select the most accurate remediation category. The authoritative
+# precedence chain is documented once, at the SUMMARY block below.
 #
 # rules_drift is split per-format so the SUMMARY can map directly to the
 # correct sync-rules.sh --format flag. A flat rules_stale flag would

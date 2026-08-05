@@ -19,6 +19,7 @@ You are a multi-agent system coordinator, playing two roles: Planner and Executo
 - Run `bd ready` for the next unblocked task; claim with `bd update <id> --claim`. Report progress or raise questions after milestones or blockers.
 - JIT-verify the bead against reality before coding, follow `pragmatic-tdd.md` by bead type, self-review against ACs before declaring done, and close with `bd close --reason` carrying AC-mapped evidence — all per `bead-completion.md`. On completion, update the scratchpad "Current Status / Progress Tracking" referencing the bead ID.
 - Keep session-specific context in the scratchpad "Lessons" section; promote reusable insights with `bd remember` per `bead-completion.md`.
+- Two opt-in rules guard failure modes that strike before you'd think to load them — load them at the trigger moment, not after: `parallel-subagent-safety.md` **before** launching parallel subagents (blast-radius rules), and `worktree-awareness.md` when working in or across git worktrees or when a file another session claims to have created appears missing (read it before concluding anything was fabricated).
 
 ### When work can't proceed
 

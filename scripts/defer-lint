@@ -13,29 +13,44 @@ is declared missing.
 
 Exit codes: 0 clean (warnings allowed) · 1 violations · 2 usage error ·
 3 I/O error. Human-readable output by default; --json for agents.
-I/O and usage errors are JSON on stderr. Non-interactive.
+I/O and usage errors are JSON on stderr in both output modes.
+Non-interactive.
 """
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
-# Comment marker immediately (modulo whitespace) before `defer:` — the
+# The marker word, assembled from parts so no copy of this file — the
+# running one or a distributed one inside a scanned tree — ever contains a
+# comment-marker-adjacent occurrence the scan would match. Content-side
+# exclusion; no path special-casing needed (the tests use the same trick).
+_D = "defer" + ":"
+
+# Comment marker immediately (modulo whitespace) before the word — the
 # marker requirement keeps prose that merely mentions the convention out.
-DEFER_RE = re.compile(r"(?P<marker>#+|//+|/\*+|--+|\*+)[ \t]*defer:[ \t]*(?P<rest>.*)")
+DEFER_RE = re.compile(
+    r"(?P<marker>#+|//+|/\*+|--+|\*+)[ \t]*" + _D + r"[ \t]*(?P<rest>.*)")
 # Continuation: a line that is itself a comment (any single-line marker).
 CONT_RE = re.compile(r"^[ \t]*(?:#+|//+|--+|\*+)[ \t]?(?P<rest>.*)")
 
 CEILING_RE = re.compile(r"ceiling:", re.IGNORECASE)
 UPGRADE_RE = re.compile(r"upgrade\s+when:", re.IGNORECASE)
 
+# defer: no --exclude flag; the skip list below is the only noise filter.
+# ceiling: a generated dir named outside this list gets scanned.
+# upgrade when: a real target repo surfaces a generated dir the list misses.
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
     "dist", "build", "target", "vendor", ".beads", ".dolt", ".next",
     ".cache", ".mypy_cache", ".pytest_cache",
 }
+
+# Well-known extensionless source files scanned by name.
+EXTRA_FILENAMES = {"Makefile", "Dockerfile"}
 
 # Source files only: docs/markdown quote defer examples as prose and are
 # deliberately not scanned. Extensionless files are scanned when they
@@ -47,42 +62,45 @@ SOURCE_EXTS = {
     ".lua", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".r", ".jl", ".ex",
     ".exs", ".erl", ".hs", ".elm", ".clj", ".cljs", ".dart", ".groovy",
     ".tf", ".hcl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css",
-    ".scss", ".less", ".vue", ".svelte",
+    ".scss", ".less", ".vue", ".svelte", ".mk",
 }
 
-EPILOG = """\
-the convention (defer-convention rule):
-  defer: <what was simplified>. ceiling: <known limitation>. upgrade when: <trigger condition>.
+# Assembled with _D so the bad examples never register as real defers in
+# any copy of this file that lands inside a scanned tree.
+EPILOG = f"""\
+the convention ({_D[:-1]}-convention rule):
+  {_D} <what was simplified>. ceiling: <known limitation>. upgrade when: <trigger condition>.
 
   Any comment prefix (#, //, /* */, --); clauses may continue on the
   following comment line(s).
 
 good — names ceiling and trigger (two-line form):
-  # defer: global lock on config reload. ceiling: blocks all requests during reload (~50ms).
+  # {_D} global lock on config reload. ceiling: blocks all requests during reload (~50ms).
   # upgrade when: reload frequency exceeds 1/minute or p99 latency matters.
 
-  // defer: O(n^2) duplicate check. ceiling: scans full list on every insert.
+  // {_D} O(n^2) duplicate check. ceiling: scans full list on every insert.
   // upgrade when: list exceeds ~1000 items (profile first).
 
-  # defer: naive retry with fixed delay. ceiling: no backoff, no jitter, max 3 retries.
+  # {_D} naive retry with fixed delay. ceiling: no backoff, no jitter, max 3 retries.
   # upgrade when: upstream starts throttling or retry storms appear in logs.
 
 bad — no trigger (violation, exit 1):
-  # defer: simplified validation.
-  # defer: in-memory cache. ceiling: lost on restart.
+  # {_D} simplified validation.
+  # {_D} in-memory cache. ceiling: lost on restart.
 
   A deferral without a trigger is just a TODO with a fancier name.
 
 marker comparison:
-  defer:  deliberate simplification; ceiling + trigger required; low rot risk
+  {_D}  deliberate simplification; ceiling + trigger required; low rot risk
   TODO    unstructured reminder; no ceiling, no trigger; "later" = never
   FIXME   actually broken; urgency implied but not quantified
 
-exit codes:
-  0  clean (missing-ceiling warnings allowed)
-  1  violations found (a defer lacks its upgrade-when clause)
-  2  usage error
-  3  I/O error (root missing or not a directory)
+known limitations:
+  - continuation folding accepts any comment marker, so an unrelated
+    comment line directly beneath a defer can rescue it (false negative)
+  - a string literal with a comment marker directly before the word is
+    flagged (false positive) — assemble such strings from parts, as this
+    checker's own source and tests do
 """
 
 
@@ -109,37 +127,18 @@ class JsonArgumentParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def is_excluded(rel, excludes):
-    rel_str = str(rel)
-    return any(rel_str == e or rel_str.startswith(e + "/") for e in excludes)
-
-
-def iter_source_files(root, excludes):
-    self_path = Path(__file__).resolve()
-    stack = [root]
-    while stack:
-        d = stack.pop()
-        try:
-            children = sorted(d.iterdir())
-        except OSError:
-            continue
-        for child in children:
+def iter_source_files(root):
+    # No self-exclusion: every copy of this checker is content-clean by
+    # construction (_D assembly above), so a distributed copy inside the
+    # scanned tree is just another clean source file.
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for name in sorted(filenames):
+            child = Path(dirpath) / name
+            if child.is_symlink() or not child.is_file():
+                continue
             rel = child.relative_to(root)
-            if is_excluded(rel, excludes):
-                continue
-            if child.is_symlink():
-                continue
-            if child.is_dir():
-                if child.name not in SKIP_DIRS:
-                    stack.append(child)
-                continue
-            if not child.is_file():
-                continue
-            # The running checker never scans itself: its --help epilog
-            # carries worked bad examples (path identity, not content).
-            if child.resolve() == self_path:
-                continue
-            if child.suffix.lower() in SOURCE_EXTS:
+            if child.suffix.lower() in SOURCE_EXTS or name in EXTRA_FILENAMES:
                 yield child, rel
             elif not child.suffix:
                 try:
@@ -196,13 +195,15 @@ def collect_defers(lines):
         i = j if j > i else i + 1
 
 
-def scan_tree(root, excludes):
+def scan_tree(root):
     files_scanned = 0
+    files_skipped = 0
     defer_count = 0
     findings = []
-    for path, rel in iter_source_files(root, excludes):
+    for path, rel in iter_source_files(root):
         text = read_text(path)
         if text is None:
+            files_skipped += 1
             continue
         files_scanned += 1
         for lineno, defer_text in collect_defers(text.splitlines()):
@@ -215,7 +216,10 @@ def scan_tree(root, excludes):
             if not missing:
                 continue
             severity = "error" if "upgrade-when" in missing else "warning"
-            snippet = ("defer: " + defer_text.rstrip(" */")).strip()
+            body = defer_text.strip()
+            if body.endswith("*/"):
+                body = body[:-2].rstrip()
+            snippet = (_D + " " + body).strip()
             findings.append({
                 "file": str(rel),
                 "line": lineno,
@@ -223,7 +227,7 @@ def scan_tree(root, excludes):
                 "missing": missing,
                 "severity": severity,
             })
-    return files_scanned, defer_count, findings
+    return files_scanned, files_skipped, defer_count, findings
 
 
 def main(argv=None):
@@ -240,9 +244,6 @@ def main(argv=None):
     )
     parser.add_argument("--root", default=".", type=nonempty,
                         help="Directory tree to scan (default: current directory)")
-    parser.add_argument("--exclude", action="append", default=[], type=nonempty,
-                        metavar="PATH",
-                        help="Path (relative to root) to skip; repeatable")
     parser.add_argument("--json", action="store_true",
                         help="Structured JSON output on stdout")
     args = parser.parse_args(argv)
@@ -251,9 +252,8 @@ def main(argv=None):
     if not root.is_dir():
         emit_error(f"root is not a directory: {root}", "io", 3)
     root = root.resolve()
-    excludes = [e.strip("/") for e in args.exclude]
 
-    files_scanned, defer_count, findings = scan_tree(root, excludes)
+    files_scanned, files_skipped, defer_count, findings = scan_tree(root)
     errors = [f for f in findings if f["severity"] == "error"]
     warnings = [f for f in findings if f["severity"] == "warning"]
     exit_code = 1 if errors else 0
@@ -263,9 +263,9 @@ def main(argv=None):
             "ok": not errors,
             "root": str(root),
             "files_scanned": files_scanned,
+            "files_skipped": files_skipped,
             "defer_comments": defer_count,
             "findings": findings,
-            "exit_code": exit_code,
         }, sys.stdout, sort_keys=True)
         sys.stdout.write("\n")
         return exit_code
@@ -276,7 +276,10 @@ def main(argv=None):
         print(f"{f['file']}:{f['line']}: {label} — {f['text']}")
     status = ("clean" if not findings
               else f"{len(errors)} violation(s), {len(warnings)} warning(s)")
-    print(f"Scanned {files_scanned} files, {defer_count} defer comment(s): {status}.")
+    skipped = (f" ({files_skipped} unreadable/binary skipped)"
+               if files_skipped else "")
+    print(f"Scanned {files_scanned} files{skipped}, "
+          f"{defer_count} defer comment(s): {status}.")
     return exit_code
 
 
