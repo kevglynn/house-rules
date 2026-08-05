@@ -22,7 +22,7 @@ model names only 6. Everything below exists in this repo today.
 
 | # | Surface | Kit instances | Activation | Enforcement | State | Judgment |
 |---|---------|--------------|------------|-------------|-------|----------|
-| 1 | Always-on rule | 12 `alwaysApply` `.mdc` files | always in context | advisory | none | model |
+| 1 | Always-on rule | 12 `alwaysApply` `.mdc` files. Kit-synced repos: this surface is kit-exclusive — `sync-rules.sh` stale cleanup deletes local rule files on the next sync; use AGENTS.md sections or skills for repo-local guidance (verified 2026-08-04) | always in context | advisory | none | model |
 | 2 | Agent-requestable rule | `ponytail-playbook.mdc` | on-demand (description match) | advisory | none | model |
 | 3 | Repo orientation doc | `AGENTS.md`, `CLAUDE.md` | always in context | advisory | none | model |
 | 4 | Per-machine safety net | `global-safety-net/*.md` → `~/CLAUDE.md` blocks + Cursor user rules | always, machine-wide (covers un-bootstrapped repos) | advisory | none | model |

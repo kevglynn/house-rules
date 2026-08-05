@@ -174,6 +174,15 @@ strip_frontmatter() {
 }
 
 # --- Stale file cleanup ---
+#
+# Deletes any rule file in a target's rules dir that isn't in the kit's
+# MDC_FILES list. Deliberate consequence: kit-synced repos cannot carry
+# workspace-local rules — a local .mdc/.md placed in .cursor/rules/ or
+# .claude/rules/ is silently removed on the next sync. Repo-local always-on
+# guidance in a synced repo belongs in that repo's own AGENTS.md/CLAUDE.md
+# sections (or a skill), never in the synced rules directories.
+# Verified 2026-08-04 (foreclosed a planned segnolabs workspace rule);
+# also documented in README § "What syncs automatically".
 
 cleanup_stale_cursor() {
   local dest="$1"

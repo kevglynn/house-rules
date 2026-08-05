@@ -102,6 +102,8 @@ Reports which targets have stale or missing rules without modifying anything.
 
 **Rules** (`cursor/rules/*.mdc`) sync automatically via `sync-rules.sh`. Add a target repo to `~/.playbook-sync-targets` and run the script — rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
 
+The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is silently removed on the next sync. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
+
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 
 **Skills** (`skills/`) are copied on demand: `playbook-init.sh --skills` copies them into a project's `.cursor/skills/`, or symlink individual skills for Claude Code (see [skills/README.md](skills/README.md)).

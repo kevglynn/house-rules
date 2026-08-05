@@ -172,6 +172,11 @@ Any surface is characterized on six axes:
 | **Work-item system** | the tracker: ACs, dependency gating, lint, human flags | Workflow substrate — the only surface that mechanically sequences daily work |
 | **Meta-surfaces** | distribution (init/sync scripts, plugins, marketplaces, repo templates), measurement (scorecards, telemetry), parameterization (project overlays), persistence infra (memory/knowledge DBs) | Governing the governing mechanisms themselves |
 
+Distribution imposes a placement constraint of its own: on kit-synced repos
+the rule surface is kit-exclusive (the sync's stale cleanup deletes local
+rule files), so the workspace-local always-on surface is an orientation-doc
+section (AGENTS.md/CLAUDE.md), not a rule (verified 2026-08-04, segnolabs).
+
 A **canonical specification** (authoritative definition a capability's other
 surfaces project from) remains available as a surface, in two forms with
 opposite economics:
