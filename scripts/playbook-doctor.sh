@@ -18,14 +18,17 @@ set -uo pipefail
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
 #   3 = drift (kit-managed files present but stale vs playbook source:
-#       rules_drift_*, ledger_drift, or defer_lint_drift — dispatch on
+#       rules_drift_*, ledger_drift, defer_lint_drift,
+#       close_reason_lint_drift, or banned_token_scan_drift — dispatch on
 #       the SUMMARY key)
 #   1 = generic error / other failure
 #
 # SUMMARY keys (--agent mode) for rules_drift carry the format that needs
 # remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
 # ledger_drift means scripts/tdd-ledger is stale vs the kit copy;
-# defer_lint_drift means scripts/defer-lint is stale vs the kit copy.
+# defer_lint_drift means scripts/defer-lint is stale vs the kit copy;
+# close_reason_lint_drift means scripts/close-reason-lint is stale;
+# banned_token_scan_drift means scripts/banned-token-scan is stale.
 # Agents must dispatch on the specific key, not the generic exit code, to
 # avoid running sync-rules.sh with the wrong --format.
 
@@ -47,6 +50,8 @@ Checks:
   • Agent rules are present and match the canonical source
   • tdd-ledger CLI (if distributed) matches the kit copy
   • defer-lint CLI (if distributed) matches the kit copy
+  • close-reason-lint CLI (if distributed) matches the kit copy
+  • banned-token-scan CLI (if distributed) matches the kit copy
   • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
@@ -60,9 +65,13 @@ Flags:
             exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
             Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
             rules_drift_both (stale rules), ledger_drift (stale
-            scripts/tdd-ledger; only emitted when rules are current), or
+            scripts/tdd-ledger; only emitted when rules are current),
             defer_lint_drift (stale scripts/defer-lint; only emitted when
-            rules and ledger are current).
+            rules and ledger are current), close_reason_lint_drift (stale
+            scripts/close-reason-lint; only emitted when the above are
+            current), or banned_token_scan_drift (stale
+            scripts/banned-token-scan; only emitted when the above are
+            current).
   --help    Show this help.
 
 Exit codes (human mode): 0 = all pass, 1 = issues found.
@@ -113,6 +122,8 @@ cursor_stale=0
 claude_stale=0
 ledger_stale=0
 defer_lint_stale=0
+close_reason_lint_stale=0
+banned_token_scan_stale=0
 
 check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
 check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
@@ -296,6 +307,62 @@ else
     check_fail "defer-lint CLI is stale vs the kit copy — detection rules may have evolved" \
       "cp -f \"$defer_lint_src\" \"$defer_lint_dest\" && chmod +x \"$defer_lint_dest\""
     defer_lint_stale=1
+  fi
+fi
+
+echo ""
+
+# ---------- Close-reason-lint checker ----------
+#
+# scripts/close-reason-lint is kit-managed the same way as defer-lint:
+# playbook-init.sh copies it with cp -f, so it drift-checks against the
+# kit copy. It ships no CI workflow, so there is no gate check here.
+
+echo "Close-reason-lint:"
+
+close_reason_lint_src="$PLAYBOOK_ROOT/scripts/close-reason-lint"
+close_reason_lint_dest="$PROJECT_ROOT/scripts/close-reason-lint"
+
+if [ ! -f "$close_reason_lint_src" ]; then
+  check_warn "Kit copy missing at $close_reason_lint_src — cannot drift-check close-reason-lint"
+elif [ ! -f "$close_reason_lint_dest" ]; then
+  # Informational, not a failure: the repo may predate the checker or not use it.
+  echo "  – close-reason-lint not distributed here (optional — re-run playbook-init.sh to add it)"
+else
+  if diff -q "$close_reason_lint_src" "$close_reason_lint_dest" > /dev/null 2>&1; then
+    check_pass "close-reason-lint CLI matches the kit copy"
+  else
+    check_fail "close-reason-lint CLI is stale vs the kit copy — detection rules may have evolved" \
+      "cp -f \"$close_reason_lint_src\" \"$close_reason_lint_dest\" && chmod +x \"$close_reason_lint_dest\""
+    close_reason_lint_stale=1
+  fi
+fi
+
+echo ""
+
+# ---------- Banned-token-scan checker ----------
+#
+# scripts/banned-token-scan is kit-managed the same way as defer-lint:
+# playbook-init.sh copies it with cp -f, so it drift-checks against the
+# kit copy. It ships no CI workflow, so there is no gate check here.
+
+echo "Banned-token-scan:"
+
+banned_token_scan_src="$PLAYBOOK_ROOT/scripts/banned-token-scan"
+banned_token_scan_dest="$PROJECT_ROOT/scripts/banned-token-scan"
+
+if [ ! -f "$banned_token_scan_src" ]; then
+  check_warn "Kit copy missing at $banned_token_scan_src — cannot drift-check banned-token-scan"
+elif [ ! -f "$banned_token_scan_dest" ]; then
+  # Informational, not a failure: the repo may predate the checker or not use it.
+  echo "  – banned-token-scan not distributed here (optional — re-run playbook-init.sh to add it)"
+else
+  if diff -q "$banned_token_scan_src" "$banned_token_scan_dest" > /dev/null 2>&1; then
+    check_pass "banned-token-scan CLI matches the kit copy"
+  else
+    check_fail "banned-token-scan CLI is stale vs the kit copy — detection rules may have evolved" \
+      "cp -f \"$banned_token_scan_src\" \"$banned_token_scan_dest\" && chmod +x \"$banned_token_scan_dest\""
+    banned_token_scan_stale=1
   fi
 fi
 
@@ -496,7 +563,8 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 # --- Agent-mode structured summary + exit ---
 #
 # Priority: bootstrap_needed > rules_drift > ledger_drift >
-# defer_lint_drift > error > ok.
+# defer_lint_drift > close_reason_lint_drift > banned_token_scan_drift >
+# error > ok.
 # The SUMMARY line is a stable contract; do not emit user-controlled paths
 # or free-form strings — only the fixed enum keys below.
 #
@@ -506,11 +574,13 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 # project would default to --format cursor (the script's default) and
 # silently create unwanted .cursor/rules/ files in the target.
 #
-# ledger_drift and defer_lint_drift reuse exit 3 (drift class) with their
-# own SUMMARY keys rather than new exit codes, so the agent-protocol exit
+# ledger_drift, defer_lint_drift, close_reason_lint_drift, and
+# banned_token_scan_drift reuse exit 3 (drift class) with their own
+# SUMMARY keys rather than new exit codes, so the agent-protocol exit
 # table stays stable.
 # Ordering: rules drift wins the SUMMARY when several drift (existing
-# agents already dispatch on rules_drift_*), then ledger, then defer-lint;
+# agents already dispatch on rules_drift_*), then ledger, then defer-lint,
+# then close-reason-lint, then banned-token-scan (kit landing order);
 # the losing findings are still in the text output above.
 if $AGENT_MODE; then
   if [ $bootstrap_missing -eq 1 ]; then
@@ -536,6 +606,14 @@ if $AGENT_MODE; then
   elif [ $defer_lint_stale -eq 1 ]; then
     echo ""
     echo "SUMMARY: defer_lint_drift"
+    exit 3
+  elif [ $close_reason_lint_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: close_reason_lint_drift"
+    exit 3
+  elif [ $banned_token_scan_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: banned_token_scan_drift"
     exit 3
   elif [ $fail -gt 0 ]; then
     echo ""

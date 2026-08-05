@@ -266,6 +266,51 @@ if [ -f "$defer_lint_src" ]; then
   echo "✓ Copied defer-lint CLI → scripts/defer-lint"
 fi
 
+# ---------- Close-reason-lint checker CLI ----------
+#
+# Distributed for the same reason as defer-lint: it checks the target
+# repo's beads (piped bd JSON), so the checker must live where bd runs.
+# No CI workflow for it in this pass.
+
+close_reason_lint_src="$PLAYBOOK_ROOT/scripts/close-reason-lint"
+close_reason_lint_dest="$PROJECT_ROOT/scripts/close-reason-lint"
+
+if [ -f "$close_reason_lint_src" ]; then
+  mkdir -p "$PROJECT_ROOT/scripts"
+  if ! cp -f "$close_reason_lint_src" "$close_reason_lint_dest" 2>/tmp/playbook-init.cp.err; then
+    echo "✗ Failed to copy close-reason-lint → scripts/"
+    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+    rm -f /tmp/playbook-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/playbook-init.cp.err
+  chmod +x "$close_reason_lint_dest"
+  echo "✓ Copied close-reason-lint CLI → scripts/close-reason-lint"
+fi
+
+# ---------- Banned-token-scan checker CLI ----------
+#
+# Distributed for the same reason as defer-lint: agent-identity's
+# banned-token classes are scanned against the target repo's transcripts
+# and prose, so the checker must live there. No CI workflow for it in
+# this pass.
+
+banned_token_scan_src="$PLAYBOOK_ROOT/scripts/banned-token-scan"
+banned_token_scan_dest="$PROJECT_ROOT/scripts/banned-token-scan"
+
+if [ -f "$banned_token_scan_src" ]; then
+  mkdir -p "$PROJECT_ROOT/scripts"
+  if ! cp -f "$banned_token_scan_src" "$banned_token_scan_dest" 2>/tmp/playbook-init.cp.err; then
+    echo "✗ Failed to copy banned-token-scan → scripts/"
+    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+    rm -f /tmp/playbook-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/playbook-init.cp.err
+  chmod +x "$banned_token_scan_dest"
+  echo "✓ Copied banned-token-scan CLI → scripts/banned-token-scan"
+fi
+
 # ---------- Beads init ----------
 
 if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
@@ -542,6 +587,8 @@ echo "  • Scratchpad for cross-session context"
 [ -f "$ledger_dest" ] && echo "  • TDD evidence ledger CLI (scripts/tdd-ledger — record-failing / record-passing / verify)"
 [ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
 [ -f "$defer_lint_dest" ] && echo "  • Defer-comment checker (scripts/defer-lint — flags defer: comments missing upgrade-when triggers)"
+[ -f "$close_reason_lint_dest" ] && echo "  • Close-reason checker (scripts/close-reason-lint — flags closed beads missing commit-ref / AC-mapping shape)"
+[ -f "$banned_token_scan_dest" ] && echo "  • Banned-token scanner (scripts/banned-token-scan — reports agent-identity banned-token candidates in text)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
 echo "Next steps:"
