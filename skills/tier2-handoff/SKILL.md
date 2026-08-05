@@ -76,7 +76,8 @@ Write a spec JSON and call the assembler:
 
 ```bash
 python3 <skill-dir>/assemble.py --spec spec.json --root <repo-root> \
-  --out docs/reviews/YYYY-MM-DD-tier2-<subject>-prompt.md
+  --out docs/reviews/YYYY-MM-DD-tier2-<subject>-prompt.md \
+  --exploit-out docs/reviews/YYYY-MM-DD-tier2-<subject>-exploit.md
 ```
 
 The assembler embeds each file verbatim (picking a code fence longer than any
@@ -84,6 +85,15 @@ backtick run inside the file, so source containing ``` still embeds cleanly),
 scaffolds every established section, and emits byte-identical output on
 repeated runs. It reads nothing from the clock, environment, or network — the
 `date` in the filename is caller-supplied, so re-running never churns the file.
+
+`--exploit-out` is optional but **emit it whenever the change is a security or
+untrusted-input boundary** (see the reviewer-lane policy below). It writes a
+companion prompt — same verbatim embeds, same context/rules/already-fixed
+sections — but swaps the review mandate for an exploit-construction one: the
+deliverable is a working attack (exact inputs + line-level code path) or a
+per-class proof of absence, never "looks fine". It goes to a *separate* model
+instance from the review lanes so its output is not anchored by review
+framing.
 
 **Spec schema** (JSON object):
 
@@ -102,14 +112,27 @@ repeated runs. It reads nothing from the clock, environment, or network — the
 | `already_addressed` | | list of Tier 1 outcomes; "don't re-report" |
 | `report_format` | | override the default response-format ask |
 | `out_of_scope` | | default `Style and performance polish` |
+| `discipline` | | override the built-in review-discipline rules |
+| `exploit_focus` | | attack charter for `--exploit-out`; defaults to `focus` |
 
-The emitted document has this fixed skeleton: title → paste header → `---` →
-review instruction with the focus paragraph → `## Context` (+ trusted layers)
-→ `## Rules this layer must uphold` (if given) → `## Already addressed` (if
-given) → `## Files` (verbatim embeds) → `## Report format`.
+The emitted review document has this fixed skeleton: title → paste header →
+`---` → review instruction with the focus paragraph → `## Review discipline`
+→ `## Context` (+ trusted layers) → `## Rules this layer must uphold` (if
+given) → `## Already addressed` (if given) → `## Files` (verbatim embeds) →
+`## Report format`.
 
-Review the drafted prompt once, then hand the file to the human to paste into
-each external model.
+The `## Review discipline` block is emitted into every prompt (override with
+`discipline`). Its three default rules exist because triage history showed the
+same failure modes recurring: clean verdicts issued with no verification, real
+findings self-rejected as "out of scope", and packet claims taken on faith.
+The rules are, in order: **verdicts require quoted-code evidence (a clean pass
+included)**; **scope objections are findings tagged out-of-scope, never
+self-rejections**; **the packet's own claims are assertions to verify, and
+disproving one is a finding**.
+
+Review the drafted prompt once, then hand the file(s) to the human to paste —
+the review prompt into each reviewer lane, the exploit prompt (if emitted)
+into its own separate instance.
 
 ### Phase 4 — Triage the responses (agent judgment)
 
@@ -148,8 +171,19 @@ overlay convention — one file, one section per skill):
 | `models` | Default reviewer set for the spec's `models` field | `Grok, Gemini, GPT` |
 | `reviews_dir` | Where prompt docs are written | `docs/reviews/` |
 | `quality_gate` | Command(s) to re-run after fixes | Project's standard test/lint |
+| `reviewer_lanes` | Per-model effort/routing/probation policy | none — treat all `models` equally |
+| `exploit_lane` | Which lane runs the `--exploit-out` mandate | none — emit only when the change is a security boundary |
 
-With no overlay: the defaults above.
+With no overlay: the defaults above, and no per-lane policy.
+
+**Reviewer-lane policy.** When the overlay carries a `reviewer_lanes` block,
+honor it: browser/desktop reviewers only earn their keep at maximum thinking
+effort (fast modes revert silently — confirm before a round), a lane may be
+*routed* (used only on the change classes where it has a track record) or on
+*probation* (dropped after N more net-negative rounds), and the exploit lane
+runs the companion prompt from `--exploit-out`. This policy is data, not
+dogma — it should trace to a scorecard of past rounds, and the triage note
+records which lanes ran so the scorecard stays current.
 
 ## Anti-Patterns
 

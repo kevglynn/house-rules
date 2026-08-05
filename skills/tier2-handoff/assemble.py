@@ -12,7 +12,7 @@ the calling skill/agent and arrives via the spec. This script owns only the
 mechanical, error-prone part: verbatim embedding and section scaffolding.
 
 Usage:
-    assemble.py --spec spec.json --root . [--out prompt.md]
+    assemble.py --spec spec.json --root . [--out prompt.md] [--exploit-out exploit.md]
     assemble.py --spec - < spec.json          # spec on stdin, prompt on stdout
 
 Spec schema (JSON object):
@@ -29,6 +29,14 @@ Spec schema (JSON object):
     already_addressed  (list[str], optional)  Tier 1 outcomes; "don't re-report"
     report_format      (str, optional)  override the default response-format ask
     out_of_scope       (str, optional)  default "Style and performance polish"
+    discipline         (list[str], optional)  override the default review-discipline rules
+    exploit_focus      (str, optional)  attack charter for --exploit-out; defaults to `focus`
+
+--exploit-out emits a companion prompt with the same embeds but an
+exploit-construction mandate instead of a review mandate: the deliverable is
+a working attack or a per-class proof of absence. Intended for a separate
+model instance (e.g. a second GPT window) so its output stays independent of
+the review lane's framing.
 
 Exit codes: 0 ok; 2 bad spec / missing file; 1 unexpected error.
 """
@@ -44,6 +52,32 @@ DEFAULT_REPORT_FORMAT = (
     "For each finding: severity (Critical / Important / Minor), file + location, "
     "what, why it matters, suggested fix. List rejected candidate findings with "
     "the reason for rejection. End with an overall verdict."
+)
+
+# Review-discipline rules emitted into every prompt. Each targets a failure
+# mode observed across real triage rounds: clean verdicts issued without
+# verification, real findings self-rejected as "out of scope", and packet
+# claims (context / already-addressed / trusted boundary) taken on faith.
+DEFAULT_DISCIPLINE = [
+    "Verdicts require evidence. For every focus area and every finding — "
+    "including a clean pass — quote the exact code that decides your "
+    "conclusion. A verdict without quoted code is invalid.",
+    "Scope objections are not rejections. A real defect that falls outside "
+    "this change's scope is still a finding — report it tagged out-of-scope. "
+    "Triage owns scope decisions, not you; never self-reject a finding you "
+    "believe is real.",
+    "The packet's claims — the context, the already-addressed list, the "
+    "trusted-layer boundary — are assertions, not facts. Verify the ones "
+    "your verdict depends on; disproving one counts as a finding.",
+]
+
+EXPLOIT_REPORT_FORMAT = (
+    "Report attacks in order of severity. For each: the exact input, request "
+    "sequence, or interleaving; the expected-per-contract vs actual behavior; "
+    "the code path (file + location) that admits it; and a suggested fix. If "
+    "no attack succeeded, list every attack class you attempted with the "
+    "quoted code that forecloses it. End with a verdict: EXPLOITABLE, or NOT "
+    "EXPLOITED after N attempted classes."
 )
 
 REQUIRED = ["subject", "bead_id", "language", "artifact_noun", "focus", "context", "files"]
@@ -118,6 +152,10 @@ def build(spec: dict, root: Path) -> str:
         f"Focus on: {spec['focus']} {out_of_scope} is out of scope."
     )
 
+    parts.append(
+        "## Review discipline\n\n" + bullets(spec.get("discipline") or DEFAULT_DISCIPLINE)
+    )
+
     parts.append(f"## Context\n\n{spec['context']}")
     if spec.get("trusted_layers"):
         parts.append(
@@ -141,11 +179,85 @@ def build(spec: dict, root: Path) -> str:
     return "\n\n".join(parts) + "\n"
 
 
+def build_exploit(spec: dict, root: Path) -> str:
+    """Companion exploit-construction prompt: same embeds, adversarial mandate.
+
+    Deliberately omits the review framing so a separate model instance attacks
+    the code instead of auditing it. Shares the spec's context, rules, and
+    already-addressed list (so effort doesn't land on fixed ground)."""
+    missing = [k for k in REQUIRED if k not in spec or spec[k] in (None, "", [])]
+    if missing:
+        die(f"spec missing required field(s): {', '.join(missing)}")
+
+    focus = spec.get("exploit_focus") or spec["focus"]
+
+    parts = []
+    parts.append(
+        f"# Tier 2 exploit construction — {spec['subject']} (`{spec['bead_id']}`)"
+    )
+    parts.append(
+        "Paste everything below this line into a separate model instance — "
+        "not the one that produced a review of this change. Collect the "
+        "response and hand it back for triage."
+    )
+    parts.append("---")
+    parts.append(
+        f"You are not reviewing this {spec['language']} "
+        f"{spec['artifact_noun']} — you are attacking it. Construct a "
+        f"concrete exploit: an actual input, request sequence, or "
+        f"interleaving that violates the rules below or the properties named "
+        f"in the charter. Your deliverable is either a working attack — with "
+        f"the exact inputs and the line-level code path that makes it work — "
+        f"or a proof of absence: for each attack class you attempted, the "
+        f"quoted code that forecloses it. \"Looks fine\" is not a "
+        f"deliverable. Charter: {focus}"
+    )
+
+    parts.append(f"## Context\n\n{spec['context']}")
+    if spec.get("trusted_layers"):
+        parts.append(
+            f"The layers below are trusted; attack the change, not its "
+            f"substrate: {spec['trusted_layers']}"
+        )
+
+    if spec.get("rules"):
+        parts.append(
+            "## Rules to attack (a violation of any is a successful exploit)\n\n"
+            + bullets(spec["rules"])
+        )
+
+    if spec.get("already_addressed"):
+        parts.append(
+            "## Already fixed (attacks here are wasted effort — don't re-report)\n\n"
+            + bullets(spec["already_addressed"])
+        )
+
+    file_blocks = [embed_file((root / f), f) for f in spec["files"]]
+    parts.append("## Files\n\n" + "\n".join(file_blocks).rstrip("\n"))
+
+    parts.append(f"## Report format\n\n{EXPLOIT_REPORT_FORMAT}")
+
+    return "\n\n".join(parts) + "\n"
+
+
+def _emit(doc: str, out: str, label: str) -> None:
+    if out == "-":
+        sys.stdout.write(doc)
+    else:
+        Path(out).write_text(doc, encoding="utf-8")
+        sys.stderr.write(f"assemble.py: wrote {len(doc)} bytes to {out} ({label})\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Deterministic Tier 2 review-prompt assembler.")
     ap.add_argument("--spec", required=True, help="path to spec JSON, or - for stdin")
     ap.add_argument("--root", default=".", help="root for resolving file paths (default: cwd)")
-    ap.add_argument("--out", default="-", help="output path, or - for stdout (default)")
+    ap.add_argument("--out", default="-", help="review-prompt output path, or - for stdout (default)")
+    ap.add_argument(
+        "--exploit-out",
+        default=None,
+        help="also emit the companion exploit-construction prompt to this path (or - for stdout)",
+    )
     args = ap.parse_args()
 
     raw = sys.stdin.read() if args.spec == "-" else Path(args.spec).read_text(encoding="utf-8")
@@ -154,13 +266,14 @@ def main() -> int:
     except json.JSONDecodeError as e:
         die(f"spec is not valid JSON: {e}")
 
-    doc = build(spec, Path(args.root))
+    root = Path(args.root)
 
-    if args.out == "-":
-        sys.stdout.write(doc)
-    else:
-        Path(args.out).write_text(doc, encoding="utf-8")
-        sys.stderr.write(f"assemble.py: wrote {len(doc)} bytes to {args.out}\n")
+    if args.exploit_out == "-" and args.out == "-":
+        die("--out and --exploit-out cannot both be stdout; give at least one a path")
+
+    _emit(build(spec, root), args.out, "review")
+    if args.exploit_out is not None:
+        _emit(build_exploit(spec, root), args.exploit_out, "exploit")
     return 0
 
 
