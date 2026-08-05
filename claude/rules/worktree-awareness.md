@@ -39,14 +39,7 @@ All worktrees share a single beads database via a redirect file (`.beads/redirec
 
 ## Native beads worktree management
 
-Beads has built-in worktree support:
-- `bd worktree create <name>` — creates worktree with automatic beads redirect
-- `bd worktree list` — list all git worktrees
-- `bd worktree info` — show current worktree details
-- `bd worktree remove <name>` — remove with safety checks
-- `bd where` — show active beads location (useful for debugging redirects)
-
-Prefer `bd worktree create` over raw `git worktree add` — it is the only path that sets up the beads redirect in target repos.
+Prefer `bd worktree create` over raw `git worktree add` — it is the only path that sets up the beads redirect in target repos. For the rest of the native command catalog (`bd worktree list/info/remove`, `bd where`), see `bd --help`.
 
 ## Fresh clone setup
 

@@ -1,10 +1,6 @@
 # Parallel Subagent Safety
 
-When an agent launches subagents to work on files in parallel, the parent agent must not edit files that overlap with any running subagent's scope. This prevents duplicate edits, merge conflicts, and wasted diagnostic work.
-
-## The problem
-
-Subagents operate on independent snapshots. If the parent agent edits a file that a subagent is also modifying — barrel exports, shared modules, config files, type definitions — both writes land and one overwrites or duplicates the other. The result is broken code (duplicate exports, conflicting type declarations, malformed config) that requires manual deduplication. The fix is always trivial, but the pattern wastes cycles and erodes confidence in agent coordination.
+When an agent launches subagents to work on files in parallel, the parent agent must not edit files that overlap with any running subagent's scope. Subagents operate on independent snapshots — overlapping writes both land, producing duplicate exports, conflicting type declarations, or malformed config that requires manual deduplication. The fix is always trivial; the pattern wastes cycles and erodes confidence in agent coordination.
 
 ## Rules
 
@@ -15,35 +11,6 @@ Identify each subagent's **blast radius** — the set of files it will create, m
 - Barrel/index files that re-export the subagent's output (e.g., `index.ts`, `__init__.py`, `mod.rs`)
 - Shared type files, config files, or manifests the subagent may update
 - Any file where the subagent's new code needs to be registered or wired in
-
-### While subagents are running
-
-**DO NOT** edit any file in any running subagent's blast radius. This includes:
-- Adding exports to barrel files that a subagent will also update
-- Modifying shared type definitions that a subagent depends on or extends
-- Updating config or manifest files that a subagent will also touch
-- Writing to any file where the subagent's task description implies a write
-
-**DO** use foreground time for genuinely non-overlapping work:
-- Reading documentation, source code, or specs for context
-- Running diagnostics, type checks, or linters on unrelated files
-- Editing files that no running subagent will touch
-- Updating the scratchpad, bead notes, or planning artifacts
-- Preparing review criteria for when subagents complete
-
-**DO** wait if there is no productive non-overlapping work. Idling is correct behavior when every useful foreground action would conflict with a running subagent. Do not invent busywork that risks file conflicts.
-
-### After subagents complete
-
-1. **Review all subagent output before committing.** Check for:
-   - Duplicate entries in barrel/index files
-   - Conflicting type definitions or interface declarations
-   - Redundant imports or registrations
-   - Overlapping modifications to shared files
-2. **Resolve conflicts** before proceeding — deduplicate exports, merge type definitions, reconcile config entries.
-3. **Only then** make integration edits: wiring subagent outputs together in shared files, adding missing exports, updating barrel files with the final consolidated set.
-
-## Identifying blast radius
 
 When the overlap isn't obvious, apply these heuristics:
 
@@ -56,6 +23,20 @@ When the overlap isn't obvious, apply these heuristics:
 | Config change | Environment files, feature flags, shared constants |
 
 If uncertain whether a file is in a subagent's blast radius, treat it as if it is. False positives (unnecessary waiting) cost less than false negatives (conflict resolution).
+
+### While subagents are running
+
+**DO NOT** edit any file in any running subagent's blast radius — including adding exports to barrel files a subagent will also update, modifying shared type definitions a subagent depends on or extends, updating config or manifest files a subagent will also touch, or writing to any file where the subagent's task description implies a write.
+
+**DO** use foreground time for genuinely non-overlapping work: reading documentation, source, or specs for context; running diagnostics or linters on unrelated files; editing files no running subagent will touch; updating the scratchpad, bead notes, or planning artifacts; preparing review criteria for when subagents complete.
+
+**DO** wait if there is no productive non-overlapping work. Idling is correct behavior when every useful foreground action would conflict with a running subagent. Do not invent busywork that risks file conflicts.
+
+### After subagents complete
+
+1. **Review all subagent output before committing** — duplicate entries in barrel/index files, conflicting type definitions or interface declarations, redundant imports or registrations, overlapping modifications to shared files.
+2. **Resolve conflicts** before proceeding — deduplicate exports, merge type definitions, reconcile config entries.
+3. **Only then** make integration edits: wiring subagent outputs together in shared files, adding missing exports, updating barrel files with the final consolidated set.
 
 ## Anti-pattern: "I'll just add it now"
 
