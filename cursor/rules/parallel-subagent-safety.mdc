@@ -1,6 +1,6 @@
 ---
-description: Prevents file-edit conflicts between the parent agent and running subagents — do not touch files in a subagent's blast radius until it completes.
-alwaysApply: true
+description: Prevents file-edit conflicts when launching parallel subagents — blast radius rules for parent agents. Load when launching or coordinating subagents via the Task tool.
+alwaysApply: false
 ---
 
 # Parallel Subagent Safety

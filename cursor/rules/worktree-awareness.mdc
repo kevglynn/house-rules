@@ -1,6 +1,6 @@
 ---
-description: Git worktree isolation, shared beads DB, and worktree lifecycle for multi-branch development.
-alwaysApply: true
+description: Git worktree isolation rules — shared beads DB, commit-before-handoff, do-not-accuse-fabrication. Load when working in a git worktree, reviewing cross-worktree work, or managing worktrees with bd worktree commands.
+alwaysApply: false
 ---
 
 # Worktree Awareness

@@ -1,6 +1,6 @@
 ---
-description: When and how to create committed design specs for larger initiatives.
-alwaysApply: true
+description: When and how to create committed design specs (docs/specs/) for initiatives with 3+ beads or high-risk areas. Load during Planner breakdowns that meet the spec threshold.
+alwaysApply: false
 ---
 
 # Design Doc Standards

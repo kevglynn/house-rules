@@ -38,7 +38,7 @@ Add a "Non-goals:" line in the description to prevent agent scope creep. State w
 
 ## Before creating a bead
 
-Search first (`bd search "<topic>"`, `bd list --status=open`) and prefer extending, parenting, or depending on an existing bead over duplicating it. If the beads DB isn't running (cold start, broken redirect) or these are a new project's first beads, proceed without search and run `bd doctor` afterward (embedded-mode substitutes per `session-lifecycle.mdc` § Extended close). Validate with `bd lint` / `bd create --dry-run` (mechanics: the skill).
+Dedupe search, skip-when conditions, and validation mechanics (`bd lint` / `bd create --dry-run`): see `skills/bead-authoring` Phases 1 and 3.
 
 ## Structure
 
