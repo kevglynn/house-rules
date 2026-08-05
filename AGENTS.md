@@ -13,6 +13,7 @@ This is **process-kit** (working name) — the canonical source for AI coding ag
 - Hooks are in `.claude/hooks/` — these distribute to target repos via `playbook-init.sh`
 - Scripts are in `scripts/` — see README.md for the full inventory
 - Global safety-net block sources are in `global-safety-net/*.md` — installed per-machine by `install-global-safety-net.sh`
+- This repo wires an IDE `postCreate` hook in `.cursor/worktrees.json` that runs its local `scripts/setup-worktree.sh` on worktree creation. That script is **not** distributed by `playbook-init.sh` — do not expect it in target repos (source-repo convention; relocated here from `worktree-awareness.mdc` to keep the distributed rule project-neutral)
 
 ## Identity conventions
 

@@ -33,7 +33,7 @@ If uncertain whether a file is in a subagent's blast radius, treat it as if it i
 
 **DO NOT** edit any file in any running subagent's blast radius — including adding exports to barrel files a subagent will also update, modifying shared type definitions a subagent depends on or extends, updating config or manifest files a subagent will also touch, or writing to any file where the subagent's task description implies a write.
 
-**DO** use foreground time for genuinely non-overlapping work: reading documentation, source, or specs for context; running diagnostics or linters on unrelated files; editing files no running subagent will touch; updating the scratchpad, bead notes, or planning artifacts; preparing review criteria for when subagents complete.
+**DO** use foreground time for genuinely non-overlapping work: reading documentation, source, or specs for context; running diagnostics, type checks, or linters on unrelated files; editing files no running subagent will touch; updating the scratchpad, bead notes, or planning artifacts; preparing review criteria for when subagents complete.
 
 **DO** wait if there is no productive non-overlapping work. Idling is correct behavior when every useful foreground action would conflict with a running subagent. Do not invent busywork that risks file conflicts.
 

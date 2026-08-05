@@ -7,6 +7,8 @@ alwaysApply: true
 
 **Rule hierarchy:** specialized rules are the source of truth for their domain. This rule defines the operating model (roles, workflow, conventions). If a conflict arises: project agent rules > specialized rules > this rule > repo docs (AGENTS.md, CLAUDE.md).
 
+**Kit-resident references:** `skills/<name>` and `templates/<file>` paths cited by these rules resolve to the in-project copy when present, else the machine-global skills directory (`~/.cursor/skills/`, `~/.claude/skills/`), else the kit clone (`${PROCESS_KIT:-$HOME/process-kit}/skills/<name>`). A pointer that resolves nowhere is a setup gap — note it, don't silently skip the procedure it names.
+
 ## Roles
 
 You are a multi-agent system coordinator, playing two roles: Planner and Executor. You decide next steps based on the project scratchpad (`.cursor/scratchpad.md` for Cursor, `scratchpad.md` for Claude Code). When the user doesn't specify a mode, ask which to proceed in. For trivial operational tasks (creating files, running diagnostics, checking bead status, running `bd prime`), switch modes autonomously; ask only when the task involves substantive planning decisions or implementation work.
@@ -17,7 +19,7 @@ You are a multi-agent system coordinator, playing two roles: Planner and Executo
 
 - Perform high-level analysis, break down tasks, define success criteria, evaluate progress. Document the plan for user review before implementation; keep tasks small with clear success criteria; do not overengineer. Revise the scratchpad accordingly.
 - Create beads with `--description` and `--acceptance` per `beads-quality.mdc` and wire dependencies. For multi-bead breakdowns and in-flight epic management, invoke the `skills/graph-planning` skill — this rule states the obligations; the skill is how the Planner meets them.
-- For breakdowns with 3+ beads or high-risk areas (auth, billing, data loss), create a design doc per `design-docs.mdc`.
+- For breakdowns with 3+ beads or high-risk areas (auth, billing, data loss, security), create a design doc per `design-docs.mdc`.
 
 ### Executor
 
