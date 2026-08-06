@@ -126,3 +126,27 @@ Repo/remote mechanics: the public repository will be named `house-rules`
 export to a fresh repo is the git-history exposure decision (D-history,
 tracked on bead process-kit-zta) — the marker migration (new prefix
 `house-rules:`, bead process-kit-0em) proceeds independently of that choice.
+
+### A2 — 2026-08-05 — History exposure: publish as-is, rename this repo
+
+Kevin's decision (bead process-kit-zta): the existing repo publishes with its
+full history — `house-rules` is born by **renaming this repo**, not by
+clean-cut export.
+
+Basis (review recorded in the zta session before deciding): the repo was
+already clean-cut extracted on 2026-07-15 (`38cf2f3`), so the history is 80
+commits of post-extraction kit work. `.beads/interactions.jsonl` is bd's
+event ledger (42 entries — status changes and close reasons, the same content
+as the beads), not session transcripts; a sensitive-string scan found no
+other-project names, paths, emails, or secrets in it. Residue accepted: one
+commit message referencing a `segnolabs` bead ID (`0fcdb1d`), and `pryon` in
+this decision record's own D4 rationale (deliberate — the IP provenance
+story). HEAD-file `segnolabs` mentions are handled by the neutrality audit
+(process-kit-dd5) regardless. Deciding factor: the kit's evidence model cites
+commit hashes throughout (close reasons, CHANGELOG, specs); as-is publication
+keeps every citation resolvable, and the history itself — 80 commits
+following the kit's own conventions — is dogfood evidence.
+
+Execution follow-up: bead process-kit-r4w (release cut — rename, flip
+public, tag v0.2.0), gated on both the publication-readiness and Tier 1
+profile-projection epics closing.
