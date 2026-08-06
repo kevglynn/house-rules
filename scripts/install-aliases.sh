@@ -182,16 +182,21 @@ rc_append_block() {
   mv "$tmp" "$rc"
 }
 
-rc_remove_block() {
-  local rc="$1"
-  [ -f "$rc" ] || return 0
-  rc_has_block "$rc" || return 0
+# One scanner for both rewrites: strips every managed block (either marker
+# generation); with `emit`, re-emits the current-generation block at the
+# first BEGIN — in place, because the aliases-file header documents
+# source-order precedence, so block position is load-bearing.
+rc_rewrite_block() {
+  local rc="$1" emit="${2:-}"
   local tmp
   tmp="$(mktemp "${rc}.tmp.XXXXXX")"
   local in_block=0 consumed=0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && { [ "$line" = "$SOURCE_BEGIN" ] || [ "$line" = "$LEGACY_SOURCE_BEGIN" ]; }; then
       in_block=1
+      if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
+        rc_block
+      fi
       consumed=1
       continue
     fi
@@ -207,7 +212,7 @@ rc_remove_block() {
   # (in_block still open at EOF) would have swallowed everything below it
   # — silently deleting the user's shell config on mv; a scan that
   # consumed no BEGIN (e.g. CRLF or indented marker lines that match the
-  # substring grep but not the whole-line test) would report a removal
+  # substring grep but not the whole-line test) would report a rewrite
   # that never happened.
   if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
     rm -f "$tmp"
@@ -217,39 +222,17 @@ rc_remove_block() {
   mv "$tmp" "$rc"
 }
 
+rc_remove_block() {
+  local rc="$1"
+  [ -f "$rc" ] || return 0
+  rc_has_block "$rc" || return 0
+  rc_rewrite_block "$rc"
+}
+
 # Rewrite a legacy-marked block (and any duplicate managed block) in place
 # under the current markers — one block out, regardless of what was in.
 rc_migrate_block() {
-  local rc="$1"
-  local tmp
-  tmp="$(mktemp "${rc}.tmp.XXXXXX")"
-  local in_block=0 emitted=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && { [ "$line" = "$SOURCE_BEGIN" ] || [ "$line" = "$LEGACY_SOURCE_BEGIN" ]; }; then
-      in_block=1
-      if [ $emitted -eq 0 ]; then
-        rc_block
-        emitted=1
-      fi
-      continue
-    fi
-    if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$SOURCE_END" ] || [ "$line" = "$LEGACY_SOURCE_END" ]; then
-        in_block=0
-      fi
-      continue
-    fi
-    printf '%s\n' "$line"
-  done < "$rc" > "$tmp"
-  # Same guard as rc_remove_block: unpaired BEGIN swallows to EOF; a scan
-  # that consumed no BEGIN (emitted=0) would claim a migration that never
-  # happened (e.g. CRLF markers).
-  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
-    rm -f "$tmp"
-    echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 1
-  fi
-  mv "$tmp" "$rc"
+  rc_rewrite_block "$1" emit
 }
 
 # --- Dispatch ---

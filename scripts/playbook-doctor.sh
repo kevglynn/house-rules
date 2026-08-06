@@ -377,8 +377,9 @@ elif [ ! -f "$agents_md" ] || ! grep -qF -e "$agents_marker" -e "$agents_marker_
 elif [ -z "$kit_version" ]; then
   check_warn "Kit VERSION file missing at $PLAYBOOK_ROOT/VERSION — cannot check the AGENTS.md section stamp"
 else
-  target_version="$(sed -n 's/.*<!-- house-rules:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
-  [ -z "$target_version" ] && target_version="$(sed -n 's/.*<!-- ai-dev-playbook:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
+  # One pass matches either marker generation; first-in-file wins (a file
+  # carrying both stamps is a state the installers never produce).
+  target_version="$(sed -nE 's/.*<!-- (house-rules|ai-dev-playbook):version ([^ ]*) -->.*/\2/p' "$agents_md" | head -n1)"
   if grep -qF "$agents_marker_legacy" "$agents_md"; then
     check_warn "AGENTS.md playbook section carries legacy ai-dev-playbook markers (stamped ${target_version:-<no stamp — pre-versioning init>}) — re-run: bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both (migrates the section in place)"
   elif [ "$target_version" = "$kit_version" ]; then
