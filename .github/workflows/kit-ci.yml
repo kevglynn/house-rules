@@ -1,9 +1,10 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Three gates: (1) the claude/rules projection must match the cursor/rules
+# Four gates: (1) the claude/rules projection must match the cursor/rules
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
-# severity.
+# severity, (4) the installer marker-migration loops keep their fixture
+# guarantees (idempotency, legacy migration, malformed-marker refusal).
 
 name: kit ci
 
@@ -56,3 +57,13 @@ jobs:
       - name: shellcheck scripts/*.sh
         # -S warning: fail on warnings and errors; info/style stay advisory.
         run: shellcheck -S warning scripts/*.sh
+
+  marker-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer marker-migration fixture tests
+        # Throwaway HOME per case; guards the legacy ai-dev-playbook ->
+        # house-rules migration loops for the whole legacy-recognition
+        # window (shellcheck is blind to logic regressions here).
+        run: bash scripts/tests/test_marker_migration.sh

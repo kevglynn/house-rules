@@ -188,10 +188,11 @@ rc_remove_block() {
   rc_has_block "$rc" || return 0
   local tmp
   tmp="$(mktemp "${rc}.tmp.XXXXXX")"
-  local in_block=0
+  local in_block=0 consumed=0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && { [ "$line" = "$SOURCE_BEGIN" ] || [ "$line" = "$LEGACY_SOURCE_BEGIN" ]; }; then
       in_block=1
+      consumed=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
@@ -202,6 +203,17 @@ rc_remove_block() {
     fi
     printf '%s\n' "$line"
   done < "$rc" > "$tmp"
+  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
+  # (in_block still open at EOF) would have swallowed everything below it
+  # — silently deleting the user's shell config on mv; a scan that
+  # consumed no BEGIN (e.g. CRLF or indented marker lines that match the
+  # substring grep but not the whole-line test) would report a removal
+  # that never happened.
+  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
+    rm -f "$tmp"
+    echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 1
+  fi
   mv "$tmp" "$rc"
 }
 
@@ -229,6 +241,14 @@ rc_migrate_block() {
     fi
     printf '%s\n' "$line"
   done < "$rc" > "$tmp"
+  # Same guard as rc_remove_block: unpaired BEGIN swallows to EOF; a scan
+  # that consumed no BEGIN (emitted=0) would claim a migration that never
+  # happened (e.g. CRLF markers).
+  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
+    rm -f "$tmp"
+    echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 1
+  fi
   mv "$tmp" "$rc"
 }
 
@@ -292,9 +312,10 @@ case "$MODE" in
       changed=1
     fi
     if rc_has_block "$rc_file"; then
-      rc_remove_block "$rc_file"
-      echo "✓ Removed source line from $rc_file"
-      changed=1
+      if rc_remove_block "$rc_file"; then
+        echo "✓ Removed source line from $rc_file"
+        changed=1
+      fi
     fi
     if [ $changed -eq 0 ]; then
       echo "  Nothing to remove (not installed)."
@@ -317,8 +338,9 @@ case "$MODE" in
     fi
 
     if rc_has_legacy_block "$rc_file"; then
-      rc_migrate_block "$rc_file"
-      echo "✓ Migrated alias block in $rc_file to house-rules markers"
+      if rc_migrate_block "$rc_file"; then
+        echo "✓ Migrated alias block in $rc_file to house-rules markers"
+      fi
     elif rc_has_block "$rc_file"; then
       echo "✓ Source line already present in $rc_file"
     else

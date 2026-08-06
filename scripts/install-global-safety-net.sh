@@ -187,6 +187,17 @@ replace_block() {
     fi
     printf '%s\n' "$line"
   done < "$CLAUDE_MD" > "$tmp"
+  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
+  # (in_block still open at EOF) would have swallowed everything below it
+  # — silently deleting user content on mv; a scan that consumed no BEGIN
+  # (emitted=0, e.g. CRLF or indented marker lines that match the
+  # substring grep but not the whole-line test) would claim success while
+  # rewriting nothing.
+  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
+    rm -f "$tmp"
+    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 1
+  fi
   mv "$tmp" "$CLAUDE_MD"
 }
 
@@ -196,7 +207,7 @@ remove_block() {
   has_block "$id" || return 0
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
-  local begin end lbegin lend in_block=0
+  local begin end lbegin lend in_block=0 consumed=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
   lbegin="$(legacy_marker_begin "$id")"
@@ -204,6 +215,7 @@ remove_block() {
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && { [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; }; then
       in_block=1
+      consumed=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
@@ -214,6 +226,13 @@ remove_block() {
     fi
     printf '%s\n' "$line"
   done < "$CLAUDE_MD" > "$tmp"
+  # Same guard as replace_block: unpaired BEGIN swallows to EOF; a scan
+  # that consumed nothing would report a removal that never happened.
+  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
+    rm -f "$tmp"
+    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 1
+  fi
   mv "$tmp" "$CLAUDE_MD"
 }
 
@@ -326,9 +345,10 @@ case "$MODE" in
     removed=0
     for id in "${BLOCKS[@]}"; do
       if has_block "$id"; then
-        remove_block "$id"
-        echo "✓ Removed block '$id' from $CLAUDE_MD"
-        removed=$((removed + 1))
+        if remove_block "$id"; then
+          echo "✓ Removed block '$id' from $CLAUDE_MD"
+          removed=$((removed + 1))
+        fi
       fi
     done
     if [ $removed -eq 0 ]; then
@@ -356,13 +376,15 @@ case "$MODE" in
         append_block_new "$id"
         echo "✓ Added block '$id' to $CLAUDE_MD"
       elif has_legacy_block "$id"; then
-        replace_block "$id"
-        echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers"
+        if replace_block "$id"; then
+          echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers"
+        fi
       elif block_is_current "$id"; then
         echo "✓ Block '$id' is already current (no changes)"
       else
-        replace_block "$id"
-        echo "✓ Updated block '$id' in $CLAUDE_MD"
+        if replace_block "$id"; then
+          echo "✓ Updated block '$id' in $CLAUDE_MD"
+        fi
       fi
     done
 

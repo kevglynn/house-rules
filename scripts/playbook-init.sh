@@ -488,19 +488,30 @@ refresh_playbook_agents_section() {
     fi
     printf '%s\n' "$line"
   done < "$agents_md" > "$tmp"
+  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
+  # (in_block still open at EOF) would have swallowed everything below it
+  # into the tmp file — silently deleting user content on mv; a scan that
+  # consumed no BEGIN at all (emitted=0, e.g. CRLF or indented marker
+  # lines that match the substring grep but not the whole-line test)
+  # would claim success while rewriting nothing.
+  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
+    rm -f "$tmp"
+    echo "⚠ $agents_md: playbook section markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 1
+  fi
   mv "$tmp" "$agents_md"
 }
 
 # Legacy check comes first: a legacy (or mixed) file is always rewritten in
 # place, migrating the section to the current markers.
 if [ -f "$agents_md" ] && grep -qF "$agents_begin_legacy" "$agents_md"; then
-  refresh_playbook_agents_section
-  echo "✓ Migrated legacy-marked AGENTS.md playbook section to house-rules markers (${playbook_version_label})"
+  if refresh_playbook_agents_section; then
+    echo "✓ Migrated legacy-marked AGENTS.md playbook section to house-rules markers (${playbook_version_label})"
+  fi
 elif [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
   if grep -qF "<!-- house-rules:version ${playbook_version} -->" "$agents_md"; then
     echo "✓ AGENTS.md playbook section current (${playbook_version_label})"
-  else
-    refresh_playbook_agents_section
+  elif refresh_playbook_agents_section; then
     echo "✓ Refreshed AGENTS.md playbook section → ${playbook_version_label} (stamp was stale or missing)"
   fi
 elif [ -f "$agents_md" ]; then
