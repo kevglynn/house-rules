@@ -37,6 +37,7 @@ FRAGMENT_FILES = {
     "close-evidence": "cursor/rules/bead-completion.mdc",
     "defer-convention": "cursor/rules/defer-convention.mdc",
     "agent-identity": "cursor/rules/agent-identity.mdc",
+    "tdd-obligations": "cursor/rules/pragmatic-tdd.mdc",
 }
 
 # The defer marker, assembled from parts so this file never contains a
@@ -288,6 +289,43 @@ class RenderRuleTest(unittest.TestCase):
             "limits (structured — ceiling + trigger required); `TODO` = "
             "unstructured reminder; `FIXME` = actually broken.", text)
 
+    def test_tdd_obligations_fragment_carries_table_and_exceptions(self):
+        # Byte-fidelity pins against today's hand-written rule text: the
+        # four obligation rows, the exceptions heading, and the four
+        # exception bullets.
+        text = self.render("tdd-obligations")
+        lines = text.splitlines()
+        self.assertEqual(lines[0], BEGIN)
+        self.assertEqual(lines[-1], END)
+        self.assertIn("| Bead type | Obligation |", text)
+        for row in (
+            "| Bug | A test that reproduces the bug is written FIRST and "
+            "must fail on the current code (O1). Before close, scan for "
+            "the bug's pattern class across the codebase and fix every "
+            "site or file follow-up beads (O5). |",
+            "| Feature | Failing tests asserting each acceptance criterion "
+            "(observable behavior, not internals) are written before "
+            "implementation (O6). |",
+            "| Story | Identical to feature — ACs become tests (O8). |",
+            "| Refactor | A behavioral safety net exists BEFORE structure "
+            "changes; all behavioral tests still pass after (O9). |",
+        ):
+            self.assertIn(row, text)
+        self.assertIn("## Exceptions — no tests required", text)
+        for bullet in (
+            "- **Spike** — deliverable is knowledge; findings go in the "
+            "close reason. Prototype code promoted to a feature inherits "
+            "the feature obligation (O10).",
+            "- **Decision / milestone** — ADRs and completion markers "
+            "produce no testable code (O11).",
+            "- **Epic** — containers; obligations apply to children, not "
+            "the epic (O12).",
+            "- **Chore / config / docs** — a test here is noise (O13).",
+        ):
+            self.assertIn(bullet, text)
+        self.assertEqual(len([l for l in lines if l.startswith("- **")]), 4)
+        self.assertEqual(len([l for l in lines if l.startswith("| ")]), 5)
+
     def test_agent_identity_fragment_carries_the_catalog(self):
         # Byte-fidelity pins: every bullet of the generated catalog
         # enumeration must reproduce today's hand-written rule text
@@ -439,6 +477,19 @@ class RegenGateTest(unittest.TestCase):
         drifted = [x for x in out["fragments"] if x["status"] == "drift"]
         self.assertEqual([x["fragment"] for x in drifted],
                          ["agent-identity"])
+
+    def test_seeded_drift_in_tdd_fragment_fails_and_names_it(self):
+        f = self.root / FRAGMENT_FILES["tdd-obligations"]
+        seeded = f.read_text().replace("a test here is noise",
+                                       "a test here is nice")
+        self.assertNotEqual(seeded, f.read_text(),
+                            "fixture rot: chore-noise note not found")
+        f.write_text(seeded)
+        r, out = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        drifted = [x for x in out["fragments"] if x["status"] == "drift"]
+        self.assertEqual([x["fragment"] for x in drifted],
+                         ["tdd-obligations"])
 
     def test_edit_outside_region_does_not_trip_the_gate(self):
         f = self.root / FRAGMENT_FILES["git-conventions"]

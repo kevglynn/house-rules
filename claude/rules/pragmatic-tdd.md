@@ -6,6 +6,7 @@ Test-first discipline adapted from obra/superpowers, stripped of dogma. The goal
 
 ## Obligations by bead type
 
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
 | Bead type | Obligation |
 |---|---|
 | Bug | A test that reproduces the bug is written FIRST and must fail on the current code (O1). Before close, scan for the bug's pattern class across the codebase and fix every site or file follow-up beads (O5). |
@@ -19,6 +20,7 @@ Test-first discipline adapted from obra/superpowers, stripped of dogma. The goal
 - **Decision / milestone** — ADRs and completion markers produce no testable code (O11).
 - **Epic** — containers; obligations apply to children, not the epic (O12).
 - **Chore / config / docs** — a test here is noise (O13).
+<!-- END GENERATED from profiles/conventions.toml -->
 
 ## The guardrail (O15)
 

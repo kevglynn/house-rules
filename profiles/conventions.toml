@@ -425,7 +425,53 @@ entries = [
 # banned-token-scan:declared-tokens:end
 
 # ---------------------------------------------------------------------------
-# 5. Fragment homes — where each rendered fragment is committed, relative to
+# 5. TDD obligations by bead type
+# Law home: cursor/rules/pragmatic-tdd.mdc § Obligations by bead type +
+# § Exceptions (generated). Render-only today, so every key wears the
+# rule_* prefix: no checker consumes this section — tdd-ledger is
+# deliberately type-agnostic (its verify invariant is red-before-green per
+# test_id, no bead-type field exists in ledger entries; process-kit-k6k
+# JIT finding). Parameterization trigger: the first consumer that passes
+# bead types into tdd-ledger verify reads its per-type obligations here.
+# Row order below is the rendered table/list order — it mirrors the
+# committed rule text. Obligation IDs (O1-O16) are part of the row text;
+# their definitions stay prose-side in skills/pragmatic-tdd.
+# ---------------------------------------------------------------------------
+[tdd.by_type.bug]
+rule_label = "Bug"
+rule_obligation = "A test that reproduces the bug is written FIRST and must fail on the current code (O1). Before close, scan for the bug's pattern class across the codebase and fix every site or file follow-up beads (O5)."
+
+[tdd.by_type.feature]
+rule_label = "Feature"
+rule_obligation = "Failing tests asserting each acceptance criterion (observable behavior, not internals) are written before implementation (O6)."
+
+[tdd.by_type.story]
+rule_label = "Story"
+rule_obligation = "Identical to feature — ACs become tests (O8)."
+
+[tdd.by_type.refactor]
+rule_label = "Refactor"
+rule_obligation = "A behavioral safety net exists BEFORE structure changes; all behavioral tests still pass after (O9)."
+
+# Exceptions render as the "no tests required" bulleted list.
+[tdd.exceptions.spike]
+rule_label = "Spike"
+rule_note = "deliverable is knowledge; findings go in the close reason. Prototype code promoted to a feature inherits the feature obligation (O10)."
+
+[tdd.exceptions.decision_milestone]
+rule_label = "Decision / milestone"
+rule_note = "ADRs and completion markers produce no testable code (O11)."
+
+[tdd.exceptions.epic]
+rule_label = "Epic"
+rule_note = "containers; obligations apply to children, not the epic (O12)."
+
+[tdd.exceptions.chore_config_docs]
+rule_label = "Chore / config / docs"
+rule_note = "a test here is noise (O13)."
+
+# ---------------------------------------------------------------------------
+# 6. Fragment homes — where each rendered fragment is committed, relative to
 # the repo root. `render-rule --check` (the kit-ci regen gate) iterates this
 # table: render each fragment, extract the GENERATED-marked region from the
 # file, fail on any byte difference.
@@ -446,3 +492,6 @@ file = "cursor/rules/defer-convention.mdc"
 
 [fragments."agent-identity"]
 file = "cursor/rules/agent-identity.mdc"
+
+[fragments."tdd-obligations"]
+file = "cursor/rules/pragmatic-tdd.mdc"

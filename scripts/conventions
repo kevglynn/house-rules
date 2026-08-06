@@ -396,11 +396,29 @@ def render_agent_identity(profile):
     return lines
 
 
+def render_tdd_obligations(profile):
+    # Render-only section today: tdd-ledger is deliberately type-agnostic
+    # (k6k JIT finding) — the first type-aware consumer reads from here.
+    # The exceptions heading is inside the region because the one-region-
+    # per-file law puts the table and the list under a single marker pair.
+    t = profile["tdd"]
+    lines = ["| Bead type | Obligation |", "|---|---|"]
+    for spec in t["by_type"].values():
+        lines.append(f"| {spec['rule_label']} | {spec['rule_obligation']} |")
+    lines.append("")
+    lines.append("## Exceptions — no tests required")
+    lines.append("")
+    for spec in t["exceptions"].values():
+        lines.append(f"- **{spec['rule_label']}** — {spec['rule_note']}")
+    return lines
+
+
 RENDERERS = {
     "git-conventions": render_git_conventions,
     "close-evidence": render_close_evidence,
     "defer-convention": render_defer_convention,
     "agent-identity": render_agent_identity,
+    "tdd-obligations": render_tdd_obligations,
 }
 
 
