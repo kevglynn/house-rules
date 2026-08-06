@@ -59,10 +59,12 @@ On build/test failure: stop, diagnose, fix; if the fix is outside the current be
 - Per milestone (3+ beads closed or an epic child done): `bd stale`, `bd orphans`, `bd count --by-status`, `bd epic status <epic-id>`; on long-lived repos, preview bloat with `bd prune --older-than 90d --dry-run` (`--force` only after review — it permanently deletes); run the scheduled sweeps — `graybeard-audit`, `graybeard-debt`, and the refinement trigger check (`skills/refinement`).
 - Pre-PR: `bd doctor --check=conventions` (embedded mode: `bd lint` + `bd stale` + `bd orphans`) and `bd epic close-eligible`. Do not use `bd preflight` for now — it emits upstream-project checklist content; revisit when it reads per-repo config.
 
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
 ## Git Conventions
 
-- Commit messages: `<type>: <summary>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`; summaries under 72 characters. Branch naming: `<type>/<bead-id>-<short-description>`.
+- Commit messages: `<type>: <summary>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `spike`; summaries under 72 characters. Branch naming: `<type>/<bead-id>-<short-description>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`.
 - Commit at logical checkpoints, small and atomic — not one giant commit at bead close. Never force push shared branches without explicit user approval.
+<!-- END GENERATED from profiles/conventions.toml -->
 
 ## Communication
 
