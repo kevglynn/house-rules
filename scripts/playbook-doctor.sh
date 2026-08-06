@@ -117,6 +117,8 @@ claude_stale=0
 # Space-separated SUMMARY keys of stale distributed CLIs, appended in
 # manifest order — so the first entry is the highest-precedence CLI drift.
 cli_stale_keys=""
+# Set to 1 when the distributed conventions profile drifts from the kit copy.
+profile_stale=0
 
 check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
 check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
@@ -301,6 +303,51 @@ else
     echo ""
   done < "$clis_manifest"
 fi
+
+# ---------- Conventions profile (data-shaped convention source) ----------
+#
+# profiles/conventions.toml is the data the distributed checkers read. It is
+# not scripts-shaped, so it lives outside the CLI manifest; it distributes
+# with the checkers (playbook-init) and drift-checks here the same byte-for-
+# byte way. The profile and the four checkers are ONE atomic sync unit: a
+# target holding a stale checker against a fresh profile (or the reverse) is a
+# version-skew hazard, so the profile's fix re-runs init (which re-syncs the
+# whole unit), and profile-present-but-checker-stale is called out as one
+# condition rather than two independent rows.
+echo "Conventions profile:"
+profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
+profile_dest="$PROJECT_ROOT/profiles/conventions.toml"
+profile_present=false
+if [ ! -f "$profile_src" ]; then
+  check_warn "Kit copy missing at $profile_src — cannot drift-check the profile"
+elif [ ! -f "$profile_dest" ]; then
+  # Informational, not a failure: the repo may predate the profile or not use it.
+  echo "  – profiles/conventions.toml not distributed here (optional — re-run playbook-init.sh to add it)"
+else
+  profile_present=true
+  if diff -q "$profile_src" "$profile_dest" > /dev/null 2>&1; then
+    check_pass "profiles/conventions.toml matches the kit copy"
+  else
+    check_fail "profiles/conventions.toml is stale vs the kit copy — checker verdicts and rule fragments may have diverged" \
+      "bash $PLAYBOOK_ROOT/scripts/playbook-init.sh --tool cursor|claude|both  (re-syncs the profile + checkers as one unit)"
+    profile_stale=1
+  fi
+fi
+# Version-skew guard: profile + the four checkers are one atomic unit. A stale
+# checker can mis-scan the current profile (e.g. a pre-token-catalog scanner
+# self-flags on a profile that now carries the token list), so surface the
+# pair as a single re-sync condition, not two unrelated rows.
+if $profile_present && [ -n "$cli_stale_keys" ]; then
+  check_warn "Conventions profile present but a distributed checker is stale — re-sync the profile+checker unit together (a stale checker may mis-scan the current profile). Fix: re-run playbook-init.sh"
+fi
+# Registration self-check: profile_drift is a manifest-external SUMMARY key,
+# so its dispatch-table row in global-safety-net/agent-protocol.md is the one
+# site nothing generates — warn if the row is missing (same guard the CLIs get).
+if [ -f "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md" ] && \
+   ! grep -qF "\`profile_drift\`" "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md"; then
+  check_warn "SUMMARY key profile_drift is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
+fi
+echo ""
 
 # ---------- Kit-resident references ----------
 #
@@ -554,8 +601,10 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 
 # --- Agent-mode structured summary + exit ---
 #
-# Priority: bootstrap_needed > rules_drift > per-CLI drift keys in
-# manifest line order (scripts/distributed-clis.list) > error > ok.
+# Priority: bootstrap_needed > rules_drift > profile_drift > per-CLI drift
+# keys in manifest line order (scripts/distributed-clis.list) > error > ok.
+# profile_drift sits just above the per-CLI keys because the profile and the
+# checkers are one atomic sync unit — its fix re-runs init and re-copies both.
 # The SUMMARY line is a stable contract; do not emit user-controlled paths
 # or free-form strings — only the fixed rules keys and the manifest's
 # registered per-CLI keys.
@@ -592,6 +641,10 @@ if $AGENT_MODE; then
   elif [ $claude_stale -ge 1 ]; then
     echo ""
     echo "SUMMARY: rules_drift_claude"
+    exit 3
+  elif [ $profile_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: profile_drift"
     exit 3
   elif [ -n "$cli_first_stale" ]; then
     echo ""

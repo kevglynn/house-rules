@@ -40,6 +40,13 @@ The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-s
 
 **Templates** (`templates/`) carry two distribution semantics: `tdd-ledger-verify.yml` is distributed by `playbook-init.sh` (as a not-overwriting copy into `.github/workflows/`), while `design-doc.md` is kit-resident: you copy it into `docs/specs/` when authoring a spec; init never ships it.
 
+**The conventions profile** (`profiles/conventions.toml`) is the data-shaped source the checkers read — commit/branch grammar, close-evidence shape, defer grammar, the banned-token catalog, TDD obligations. `playbook-init.sh` distributes it in the same run as the four checkers, and `playbook-doctor.sh` drift-checks it byte-for-byte against the kit copy (SUMMARY key `profile_drift`, fix: re-run `playbook-init.sh`).
+
+- **Kit-owned, not project-editable.** The profile drift-checks byte-for-byte, so it must stay identical to the kit copy. Change conventions in the kit and re-sync; do not edit the distributed copy. (Contrast `.agents/overlay.md`, which *is* project-editable — the ownership boundary is stated in [skills/README.md](../skills/README.md#overlay-convention).)
+- **Ships verbatim, including inert keys.** The `[fragments]` paths and `rule_*` keys are render-only — their only consumer is the kit-only `conventions` CLI (not distributed), so they are harmless dead data in a target. They ship unchanged because byte-drift-checking rules out per-target rewrites.
+- **One atomic sync unit.** The profile and the four checkers version together. A target holding a stale checker against a fresh profile is a skew hazard (an old scanner can mis-read a profile that gained a section), so the doctor surfaces profile-present-but-checker-stale as one re-sync condition — re-running `playbook-init.sh` re-copies both.
+- **Advisory in targets, blocking in the kit.** The distributed checkers resolve the profile at the target repo root and run advisory: they exit non-zero on findings only where the target's own CI opts in. The kit's own CI is where profile↔fragment drift and the checker suites block. One consequence worth stating plainly: a target has no fragment-regen gate, so any target-side edit to the profile's rule/catalog sections silently moves the rule↔checker contract onto that repo's own responsibility — another reason to treat the file as kit-owned.
+
 ## The maintainer workflow
 
 1. Edit rules in `cursor/rules/` (the kit repo is the canonical source)

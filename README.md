@@ -80,7 +80,7 @@ Single-file, stdlib-only Python. Each documents its full contract in `--help`; a
 | `close-reason-lint` | Bead close reasons carry commit refs and AC mapping |
 | `banned-token-scan` | The agent-identity rule's no-human-estimation token classes |
 
-The checker CLIs ship to target repos through one manifest (`scripts/distributed-clis.list`); the doctor drift-checks each against the kit copy.
+The checker CLIs ship to target repos through one manifest (`scripts/distributed-clis.list`); the doctor drift-checks each against the kit copy. `profiles/conventions.toml` — the data those checkers read — ships in the same run as one atomic unit and is drift-checked byte-for-byte too (SUMMARY key `profile_drift`). In targets the checkers run **advisory** (they exit non-zero on findings only where the target's own CI opts in); blocking enforcement stays in the kit's CI. See [docs/operations.md](docs/operations.md) for the ownership and drift rules.
 
 ### Distribution scripts (`scripts/`)
 

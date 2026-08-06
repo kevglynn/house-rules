@@ -246,6 +246,32 @@ else
   echo "⚠ Distributed-CLI manifest missing at $clis_manifest — no kit CLIs distributed"
 fi
 
+# ---------- Conventions profile (data-shaped convention source) ----------
+#
+# profiles/conventions.toml is the single source for the kit's data-shaped
+# conventions. It is not scripts-shaped, so it lives outside the CLI manifest
+# but ships in the SAME run as the checkers — the profile and the four
+# checkers are one atomic sync unit (a stale checker against a fresh profile
+# is a version-skew hazard). It ships VERBATIM: playbook-doctor drift-checks
+# it byte-for-byte like the CLIs, so per-target rewrites are ruled out. The
+# render-only keys ([fragments] kit-relative paths, rule_* keys) are inert in
+# targets — their only consumer is the kit-only `conventions` CLI, which is
+# not distributed — so shipping them unchanged is harmless.
+profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
+if [ -f "$profile_src" ]; then
+  mkdir -p "$PROJECT_ROOT/profiles"
+  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>/tmp/playbook-init.cp.err; then
+    echo "✗ Failed to copy profiles/conventions.toml"
+    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
+    rm -f /tmp/playbook-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/playbook-init.cp.err
+  echo "✓ Copied conventions profile → profiles/conventions.toml"
+else
+  echo "⚠ Conventions profile missing at $profile_src — distributed checkers will fall back to built-in grammars"
+fi
+
 # The CI gate that makes the ledger non-bypassable (not-overwriting, like
 # the PR template — target repos may have customized it).
 ledger_wf_src="$PLAYBOOK_ROOT/templates/tdd-ledger-verify.yml"
@@ -592,6 +618,8 @@ if [ -f "$clis_manifest" ]; then
       echo "  • $cli_label (scripts/$cli_name — $cli_detail)"
   done < "$clis_manifest"
 fi
+[ -f "$PROJECT_ROOT/profiles/conventions.toml" ] && \
+  echo "  • Conventions profile (profiles/conventions.toml — data source the checkers read; kit-owned, drift-checked)"
 [ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
 [ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
 echo ""
