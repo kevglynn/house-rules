@@ -77,6 +77,18 @@ judgment = [
 # feature's shape but the committed table never had a Task row; config is
 # folded into the "Chore/config" row). `row_label` overrides the default
 # capitalized type name.
+#
+# scripts/close-reason-lint (the distributed production close checker) also
+# reads this section at runtime; a tree with no discoverable profile — or a
+# discovered profile without this section — falls back to the checker's
+# built-in copy of the same shape (test-pinned structural parity), matching
+# the [defer] posture. Two stream-linter reads beyond check-close's:
+#   - a type whose `requires` name na_marker or children_closed is EXEMPT
+#     from the stream lint (its canonical close is N/A prose or a
+#     children-closed statement — no commit/AC shape to demand);
+#   - `ref_severity` (default "error") softens that type's missing
+#     commit-ref finding to a warning — summary-evidence types only
+#     (check-close keeps requiring the element where `requires` names it).
 # ---------------------------------------------------------------------------
 [close_evidence]
 # IOU phrases mark deferral-instead-of-evidence — banned in every close
@@ -96,21 +108,22 @@ iou_exempt = { pattern = 'deferred to bead \S+', flags = ["IGNORECASE"] }
 # Element library: deterministic detectors for the evidence shapes a close
 # reason must visibly carry. Presence only — evidence QUALITY stays with
 # self-review and the review lenses.
-# PRE-RECONCILIATION: these detectors were promoted verbatim from the spike
-# and are cruder than scripts/close-reason-lint's production detectors of
-# the same law (that checker requires a digit in hash matches and a
-# branch-shaped token, accepts more PR-URL forms, and keeps AC detection
-# case-sensitive). process-kit-ywq owns the reconciliation; until it lands,
-# close-reason-lint remains the enforcement-grade checker.
+# Reconciled toward close-reason-lint's production detectors
+# (process-kit-ywq): a hash must carry a digit (an all-letter hex-alphabet
+# word like "effaced" is English, not a hash), a branch citation needs a
+# branch-shaped token (bare "branch" prose cites no branch), all forge
+# PR/MR URL forms count, and AC detection stays case-sensitive (lowercase
+# "ac" is an English fragment). One {pattern, flags} entry cannot express
+# per-alternative flag mixes, so the case-insensitive alternatives use
+# inline (?i:...) groups and these two entries carry no flags list —
+# deliberate schema decision, not an omission.
 [close_evidence.elements.commit_ref]
-description = "commit hash (7-40 hex), branch name reference, or PR URL"
-pattern = '\b[0-9a-f]{7,40}\b|\bbranch\b|https?://\S*/pull/\d+'
-flags = ["IGNORECASE"]
+description = "commit hash (7-40 lowercase hex with a digit), branch name, or PR/MR URL"
+pattern = '''\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b|https?://\S+/(?:pull|pulls|pull-requests|merge_requests)/\d+|\b(?:feat|fix|refactor|test|chore|docs|feature|bugfix|hotfix|release|spike|wip)/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+(?![\w\-/]|\.\w)|(?i:\bbranch\b[:\s]+[`'\"]?[A-Za-z0-9._/-]*[-/][A-Za-z0-9._/-]*)'''
 
 [close_evidence.elements.ac_mapping]
-description = "explicit mapping to acceptance criteria (AC1:, AC 2, per AC ...)"
-pattern = '\bACs?\s*\d|\bper[- ]AC\b|\ball ACs\b|\bacceptance criteri'
-flags = ["IGNORECASE"]
+description = "explicit mapping to acceptance criteria (AC1, AC 2, AC-3, ACs, acceptance criteria)"
+pattern = '\bAC\s*[-–]?\s*\d+|\bACs?\b|(?i:\bacceptance\s+criteri(?:a|on))'
 
 [close_evidence.elements.na_marker]
 description = "explicit N/A marker for types whose table row prescribes it"
@@ -149,6 +162,9 @@ judgment = ["same as feature"]
 [close_evidence.by_type.spike]
 evidence = "Summary of findings; whether the question was answered"
 requires = ["findings_summary"]
+# Stream linter: spike evidence is findings, not a commit — a missing
+# commit-ref reports at warning severity.
+ref_severity = "warning"
 judgment = ["findings are real; the spike question was actually answered"]
 
 [close_evidence.by_type.refactor]
@@ -160,12 +176,16 @@ judgment = ["build/lint clean; behavioral tests actually passed"]
 row_label = "Chore/config"
 evidence = "Brief summary of what was done"
 requires = ["commit_ref"]
+# Stream linter: the table asks only a brief summary, so a missing
+# commit-ref reports at warning severity (check-close still requires it).
+ref_severity = "warning"
 judgment = ["summary reflects what was done"]
 
 # Folded into the "Chore/config" row above; checker treats it as its own type.
 [close_evidence.by_type.config]
 row = false
 requires = ["commit_ref"]
+ref_severity = "warning"
 judgment = ["summary reflects what was done"]
 
 # Checker-known; the committed table has no Task row (same shape as feature).

@@ -1,64 +1,132 @@
 #!/usr/bin/env python3
 """close-reason-lint — mechanical shape check for bead close reasons.
 
-Checks closed beads (bd JSON on stdin) for the two evidence shapes
+Checks closed beads (bd JSON on stdin) for the evidence shapes
 bead-completion.mdc requires of every close reason: a commit reference
-(hex hash, PR/MR URL, or branch name) and an AC-mapping shape (the
-reason visibly references acceptance criteria: "AC1", "ACs",
-"acceptance criteria"). Pattern presence only — whether the mapped
+(hex hash, PR/MR URL, or branch name), an AC-mapping shape (the reason
+visibly references acceptance criteria: "AC1", "ACs", "acceptance
+criteria"), and no IOU phrase ("will be verified later" — deferral
+instead of evidence). Pattern presence only — whether the mapped
 evidence is any GOOD stays with the review lenses (tier1/tier2) and the
-reader; this tool converts the rule's most checkable MUST into an exit
+reader; this tool converts the rule's most checkable MUSTs into an exit
 code.
+
+The close-evidence shape (element detectors, per-type requires, IOU
+phrase list + exemption) is read from profiles/conventions.toml — the
+single source of truth the rule's evidence table is rendered from.
+Resolution: --profile flag > CONVENTIONS_PROFILE env > nearest
+profiles/conventions.toml walking up from the current directory. A tree
+with no discoverable profile falls back to the built-in copy of the same
+shape so the checker keeps working standalone (advisory posture); a
+DISCOVERED profile without a [close_evidence] section also falls back
+(it predates the section). But explicit selection is loud: a
+--profile/env profile missing [close_evidence], or any profile that is
+unreadable or invalid, is an error — never a silent fallback. The JSON
+payload and human summary echo grammar_source.
 
 Data source is bd's JSON surface: pipe `bd list --status=closed --json`
 (array) or `bd show <id> --json` (one-element array); a single bead
 object is also accepted. Non-closed entries are skipped.
 
 Exit codes: 0 clean (warnings allowed) · 1 violations · 2 usage error ·
-3 input error. Human-readable output by default; --json for agents.
-Input and usage errors are JSON on stderr in both output modes.
+3 input, I/O, or profile error. Human-readable output by default; --json
+for agents. Errors are JSON on stderr in both output modes.
 Non-interactive.
 """
 
 import argparse
 import json
+import os
 import re
 import sys
+import tomllib
+from pathlib import Path
 
-# --- Commit-reference shapes -------------------------------------------
-# Hex hash: 7-40 lowercase hex chars containing at least one digit (an
-# all-letter hex-alphabet word like "effaced" would otherwise match).
-HASH_RE = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b")
-# PR / MR URL on any forge.
-PR_URL_RE = re.compile(
-    r"https?://\S+/(?:pull|pulls|pull-requests|merge_requests)/\d+")
-# Branch name: the kit convention <type>/<bead-id>-<description>, or an
-# explicit "branch <name>" phrase. The slug must carry a hyphen and must
-# not continue into a path (second slash) or a file extension (dot +
-# word) — otherwise docs/specs/plan.md or test/utils.py would count.
-BRANCH_RE = re.compile(
-    r"\b(?:feat|fix|refactor|test|chore|docs|feature|bugfix|hotfix|"
-    r"release|spike|wip)/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+(?![\w\-/]|\.\w)")
-# The keyword form only counts when the following word is branch-shaped
-# (carries a hyphen or slash); "the branch after merge" cites no branch.
-BRANCH_KW_RE = re.compile(
-    r"\bbranch\b[:\s]+[`'\"]?[A-Za-z0-9._/-]*[-/][A-Za-z0-9._/-]*",
-    re.IGNORECASE)
+PROFILE_RELPATH = Path("profiles") / "conventions.toml"
 
-# --- AC-mapping shapes --------------------------------------------------
-# "AC1" / "AC 1" / "AC-1" (case-sensitive: lowercase "ac" is an English
-# fragment), the bare word "AC"/"ACs", or the spelled-out phrase.
-AC_NUM_RE = re.compile(r"\bAC\s*[-–]?\s*\d+")
-AC_WORD_RE = re.compile(r"\bACs?\b")
-AC_PHRASE_RE = re.compile(r"\bacceptance\s+criteri(?:a|on)", re.IGNORECASE)
+# Aliases normalized before the per-type lookup — tolerance for both
+# spellings in bd data, not a shape the profile carries.
+TYPE_ALIASES = {"doc": "docs"}
 
-# Exempt per bead-completion.mdc's evidence table: docs/decision/milestone
-# close with canonical "N/A — ..." reasons; an epic's evidence is its
-# closed children, not a commit.
-EXEMPT_TYPES = {"docs", "doc", "decision", "milestone", "epic"}
-# The evidence table asks these types only for a brief summary / findings,
-# so a missing commit-ref is reported at warning severity (exit stays 0).
-SOFT_REF_TYPES = {"chore", "config", "spike"}
+# Compatibility fallback: the same shape the profile's [close_evidence]
+# section carries, restricted to the keys this checker consumes (the
+# commit_ref / ac_mapping detectors, per-type requires + ref_severity,
+# IOU phrase list + exemption; check-close-only keys like description and
+# the other element detectors are deliberately absent). Used only when no
+# profile is discoverable (or the discovered profile has no
+# [close_evidence] section). Parity with the kit profile is pinned by the
+# test suite — edit the profile, not this dict.
+FALLBACK_CLOSE_EVIDENCE = {
+    # IOU phrases mark deferral-instead-of-evidence — banned in every
+    # close reason (bead-completion "Do not defer AC verification"). The
+    # one sanctioned deferral form is exempted below; the follow-up bead
+    # must exist at close time.
+    "iou_phrases": [
+        "will be verified later",
+        "will be re-verified",
+        "deferred to PR review",
+        "deferred to integration",
+        "to be re-checked",
+        "verified later",
+    ],
+    "iou_exempt": {"pattern": r"deferred to bead \S+",
+                   "flags": ["IGNORECASE"]},
+    "elements": {
+        "commit_ref": {
+            "pattern": (
+                # Hex hash: 7-40 lowercase hex chars containing at least
+                # one digit (an all-letter hex-alphabet word like
+                # "effaced" would otherwise match).
+                r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b"
+                # PR / MR URL on any forge.
+                r"|https?://\S+/(?:pull|pulls|pull-requests|merge_requests)/\d+"
+                # Branch name: the kit convention <type>/<slug>; the slug
+                # must carry a hyphen and must not continue into a path
+                # (second slash) or a file extension (dot + word) —
+                # otherwise docs/specs/plan.md or test/utils.py would
+                # count.
+                r"|\b(?:feat|fix|refactor|test|chore|docs|feature|bugfix|hotfix|"
+                r"release|spike|wip)/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+(?![\w\-/]|\.\w)"
+                # The "branch <name>" keyword form — case-insensitive via
+                # an inline group (one entry cannot mix per-alternative
+                # flags) — counts only when the following word is
+                # branch-shaped (carries a hyphen or slash); "the branch
+                # after merge" cites no branch.
+                r"|(?i:\bbranch\b[:\s]+[`'\"]?[A-Za-z0-9._/-]*[-/][A-Za-z0-9._/-]*)"
+            ),
+        },
+        "ac_mapping": {
+            "pattern": (
+                # "AC1" / "AC 1" / "AC-1" and the bare word "AC"/"ACs"
+                # are case-sensitive: lowercase "ac" is an English
+                # fragment. The spelled-out phrase is case-insensitive
+                # via an inline group.
+                r"\bAC\s*[-–]?\s*\d+"
+                r"|\bACs?\b"
+                r"|(?i:\bacceptance\s+criteri(?:a|on))"
+            ),
+        },
+    },
+    # Per-type requires (order mirrors the profile). Types whose requires
+    # name na_marker or children_closed are exempt from this stream lint;
+    # ref_severity "warning" (default "error") softens a missing
+    # commit-ref for summary-evidence types.
+    "by_type": {
+        "bug": {"requires": ["commit_ref", "ac_mapping"]},
+        "feature": {"requires": ["commit_ref", "ac_mapping"]},
+        "story": {"requires": ["commit_ref", "ac_mapping"]},
+        "spike": {"requires": ["findings_summary"],
+                  "ref_severity": "warning"},
+        "refactor": {"requires": ["commit_ref"]},
+        "chore": {"requires": ["commit_ref"], "ref_severity": "warning"},
+        "config": {"requires": ["commit_ref"], "ref_severity": "warning"},
+        "task": {"requires": ["commit_ref", "ac_mapping"]},
+        "docs": {"requires": ["na_marker"]},
+        "decision": {"requires": ["na_marker"]},
+        "milestone": {"requires": ["na_marker"]},
+        "epic": {"requires": ["children_closed"]},
+    },
+}
 
 EPILOG = """\
 usage with bd:
@@ -73,6 +141,7 @@ bad close reasons (exit 1):
   "Done."                       — missing commit-ref and ac-mapping
   "All ACs verified manually."  — missing commit-ref
   "Fixed in ab34f9e."           — missing ac-mapping
+  "Fixed in ab34f9e. AC1 will be verified later."  — IOU phrase
 
 commit-ref shapes accepted: hex hash (7-40 lowercase chars, at least one
 digit), PR/MR URL (.../pull/N, .../merge_requests/N), branch name
@@ -83,13 +152,24 @@ ac-mapping shapes accepted: "AC1" / "AC 2" / "AC-3", "AC"/"ACs",
 "acceptance criteria". The check fires only when the bead carries
 acceptance criteria — there is nothing to map otherwise.
 
-exemptions and severities (bead-completion.mdc evidence table):
+IOU phrases ("will be verified later", "deferred to PR review", ...) are
+deferral-instead-of-evidence and flag at error severity regardless of
+type. The one sanctioned form is "deferred to bead <id>" — the follow-up
+bead must exist at close time.
+
+exemptions and severities (bead-completion.mdc evidence table, as the
+kit profile / built-in fallback encode it):
   docs/decision/milestone/epic — exempt (canonical "N/A — ..." closes;
     epic evidence is its closed children)
   chore/config/spike           — missing commit-ref is a warning (their
     required evidence is a brief summary / findings)
   everything else              — missing commit-ref or AC mapping is a
     violation
+
+shape source:
+  profiles/conventions.toml [close_evidence] section when present
+  (--profile / CONVENTIONS_PROFILE / upward walk from the current
+  directory); built-in fallback with the same shape otherwise.
 
 known limitations:
   - pattern check only: a reason can name "AC1" and still be hollow;
@@ -119,17 +199,168 @@ class JsonArgumentParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def has_commit_ref(reason):
-    return bool(HASH_RE.search(reason) or PR_URL_RE.search(reason)
-                or BRANCH_RE.search(reason) or BRANCH_KW_RE.search(reason))
+# --------------------------------------------------------------------------
+# Profile plumbing — discover_profile, resolve_profile_path, load_profile,
+# compile_entry, and FLAG_NAMES are verbatim copies from scripts/conventions
+# (the canonical copy; Planner decision on the tlp epic — do not fork the
+# behavior).
+# --------------------------------------------------------------------------
+
+# Pattern-entry flags name Python `re` module constants (design-doc schema:
+# token entries are {pattern, flags} tables; the same shape serves every
+# detector in the profile).
+FLAG_NAMES = {
+    "IGNORECASE": re.IGNORECASE,
+    "MULTILINE": re.MULTILINE,
+    "DOTALL": re.DOTALL,
+    "VERBOSE": re.VERBOSE,
+    "ASCII": re.ASCII,
+}
 
 
-def has_ac_mapping(reason):
-    return bool(AC_NUM_RE.search(reason) or AC_WORD_RE.search(reason)
-                or AC_PHRASE_RE.search(reason))
+def discover_profile(start_dir):
+    """Nearest profiles/conventions.toml walking up from start_dir, stopping
+    at the repo boundary (.git) so an ancestor repo's profile is never
+    picked up. Returns None when absent — the caller decides whether
+    absence is an error (this CLI) or a fallback (standalone checkers)."""
+    for candidate_dir in [start_dir, *start_dir.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        if (candidate_dir / ".git").exists():
+            break
+    return None
 
 
-def lint_beads(beads):
+def resolve_profile_path(flag_value):
+    if flag_value:
+        return Path(flag_value)
+    env_value = os.environ.get("CONVENTIONS_PROFILE")
+    if env_value:
+        return Path(env_value)
+    cwd = Path.cwd().resolve()
+    found = discover_profile(cwd)
+    if found:
+        return found
+    emit_error(
+        f"no {PROFILE_RELPATH} found walking up from {cwd}; "
+        "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
+
+
+def load_profile(flag_value):
+    path = resolve_profile_path(flag_value)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f), path.resolve()
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        emit_error(f"cannot load profile {path}: {exc}", "io", 3)
+
+
+def compile_entry(entry, where):
+    """Compile a pattern entry: a bare regex string or a {pattern, flags} table."""
+    if isinstance(entry, str):
+        pattern, flag_names = entry, []
+    elif isinstance(entry, dict) and "pattern" in entry:
+        pattern, flag_names = entry["pattern"], entry.get("flags", [])
+    else:
+        emit_error(f"{where}: expected a pattern string or "
+                   "a {pattern, flags} table", "profile", 3)
+    flags = 0
+    for name in flag_names:
+        if name not in FLAG_NAMES:
+            emit_error(f"{where}: unknown flag {name!r} "
+                       f"(known: {sorted(FLAG_NAMES)})", "profile", 3)
+        flags |= FLAG_NAMES[name]
+    try:
+        return re.compile(pattern, flags)
+    except re.error as exc:
+        emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
+                   "profile", 3)
+
+
+def build_shape(spec, origin):
+    """Compile a [close_evidence] shape spec into matchers and type sets.
+    `origin` names the shape source (profile path or the built-in
+    fallback) for errors."""
+    try:
+        commit_ref = compile_entry(
+            spec["elements"]["commit_ref"],
+            f"{origin}: close_evidence.elements.commit_ref")
+        ac_mapping = compile_entry(
+            spec["elements"]["ac_mapping"],
+            f"{origin}: close_evidence.elements.ac_mapping")
+        by_type = spec["by_type"]
+        iou_phrases = spec["iou_phrases"]
+        iou_exempt = compile_entry(
+            spec["iou_exempt"], f"{origin}: close_evidence.iou_exempt")
+    except (KeyError, TypeError) as exc:
+        emit_error(f"{origin}: [close_evidence] shape is missing required "
+                   f"key: {exc}", "profile", 3)
+    if not isinstance(by_type, dict):
+        emit_error(f"{origin}: close_evidence.by_type must be a table of "
+                   "named type tables", "profile", 3)
+    if (not isinstance(iou_phrases, list)
+            or not all(isinstance(p, str) for p in iou_phrases)):
+        emit_error(f"{origin}: close_evidence.iou_phrases must be a list "
+                   "of strings", "profile", 3)
+    exempt_types = set()
+    soft_ref_types = set()
+    for name, entry in by_type.items():
+        requires = entry.get("requires") if isinstance(entry, dict) else None
+        if not isinstance(requires, list):
+            emit_error(f"{origin}: close_evidence.by_type.{name} needs a "
+                       "requires list", "profile", 3)
+        severity = entry.get("ref_severity", "error")
+        if severity not in ("error", "warning"):
+            emit_error(f"{origin}: close_evidence.by_type.{name} "
+                       "ref_severity must be 'error' or 'warning'",
+                       "profile", 3)
+        # Exemption is requires-driven: a type whose required evidence is
+        # an N/A marker or a children-closed statement closes with
+        # canonical prose, not a commit — there is no commit/AC shape for
+        # this checker to demand of it.
+        if {"na_marker", "children_closed"} & set(requires):
+            exempt_types.add(name)
+        elif severity == "warning":
+            soft_ref_types.add(name)
+    return {
+        "commit_ref": commit_ref,
+        "ac_mapping": ac_mapping,
+        "exempt_types": exempt_types,
+        "soft_ref_types": soft_ref_types,
+        "iou_phrases": iou_phrases,
+        "iou_exempt": iou_exempt,
+    }
+
+
+def resolve_shape(flag_value, root):
+    """Shape per the resolution chain: explicit profile (flag/env) >
+    discovered profile at/above `root` > built-in fallback. Returns
+    (shape, source_label). Absence of any profile falls back, and so does
+    a DISCOVERED profile without a [close_evidence] section (it predates
+    the section); but an EXPLICITLY selected profile missing the section
+    is a profile error — the caller named a shape source that has no
+    shape. A named-or-found profile that fails to load is always an
+    error."""
+    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
+    discovered = None if explicit else discover_profile(root)
+    if explicit or discovered:
+        profile, profile_path = load_profile(
+            flag_value if explicit else str(discovered))
+        section = profile.get("close_evidence")
+        if section is not None:
+            return (build_shape(section, str(profile_path)),
+                    str(profile_path))
+        if explicit:
+            emit_error(
+                f"{profile_path}: profile has no [close_evidence] section "
+                "(explicitly selected profiles must carry the shape)",
+                "profile", 3)
+    return (build_shape(FALLBACK_CLOSE_EVIDENCE, "built-in fallback shape"),
+            "built-in fallback")
+
+
+def lint_beads(beads, shape):
     checked = 0
     exempt = 0
     skipped = 0
@@ -142,29 +373,41 @@ def lint_beads(beads):
             skipped += 1
             continue
         issue_type = (b.get("issue_type") or "task").lower()
-        if issue_type in EXEMPT_TYPES:
+        lint_type = TYPE_ALIASES.get(issue_type, issue_type)
+        if lint_type in shape["exempt_types"]:
             exempt += 1
             continue
+        # A type the profile does not know gets the full check at error
+        # severity — unknown types must not silently join the exemptions.
         checked += 1
         reason = (b.get("close_reason") or "").strip()
         acs = (b.get("acceptance_criteria") or "").strip()
         missing = []
+        ious = []
         if not reason:
             missing.append("close-reason")
         else:
-            if not has_commit_ref(reason):
+            if not shape["commit_ref"].search(reason):
                 missing.append("commit-ref")
-            if acs and not has_ac_mapping(reason):
+            # AC mapping fires whenever the bead carries ACs, regardless
+            # of the type's requires — bead-completion's evidence-mapping
+            # MUST is universal; there is nothing to map otherwise.
+            if acs and not shape["ac_mapping"].search(reason):
                 missing.append("ac-mapping")
-        if not missing:
+            scrubbed = shape["iou_exempt"].sub("", reason)
+            ious = [p for p in shape["iou_phrases"]
+                    if p.lower() in scrubbed.lower()]
+        if not missing and not ious:
             continue
         severity = ("warning"
-                    if missing == ["commit-ref"] and issue_type in SOFT_REF_TYPES
+                    if missing == ["commit-ref"] and not ious
+                    and lint_type in shape["soft_ref_types"]
                     else "error")
         findings.append({
             "id": b.get("id", "<no-id>"),
             "issue_type": issue_type,
             "missing": missing,
+            "iou": ious,
             "severity": severity,
             "reason": reason[:200],
         })
@@ -175,15 +418,21 @@ def main(argv=None):
     parser = JsonArgumentParser(
         prog="close-reason-lint",
         description=(
-            "Check closed beads' close reasons for commit-ref and "
-            "AC-mapping shape (deterministic pattern presence, not "
-            "semantic quality). Reads bd JSON from stdin. "
+            "Check closed beads' close reasons for commit-ref, AC-mapping "
+            "shape, and IOU phrases (deterministic pattern presence, not "
+            "semantic quality). Reads bd JSON from stdin. The shape comes "
+            "from profiles/conventions.toml when present (--profile / "
+            "CONVENTIONS_PROFILE / upward walk from the current "
+            "directory); built-in fallback otherwise. "
             "Exit codes: 0 clean, 1 violations, 2 usage error, "
-            "3 input error."
+            "3 input, I/O, or profile error."
         ),
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--profile",
+                        help="path to profile TOML (default: resolution "
+                             "chain in the description)")
     parser.add_argument("--json", action="store_true",
                         help="Structured JSON output on stdout")
     args = parser.parse_args(argv)
@@ -191,6 +440,7 @@ def main(argv=None):
     if sys.stdin.isatty():
         emit_error("no input: pipe bd JSON (e.g. bd list "
                    "--status=closed --json)", "usage", 2)
+    shape, grammar_source = resolve_shape(args.profile, Path.cwd().resolve())
     raw = sys.stdin.read()
 
     try:
@@ -203,7 +453,7 @@ def main(argv=None):
         emit_error("input must be a bead object or an array of beads",
                    "input", 3)
 
-    checked, exempt, skipped, findings = lint_beads(payload)
+    checked, exempt, skipped, findings = lint_beads(payload, shape)
     errors = [f for f in findings if f["severity"] == "error"]
     warnings = [f for f in findings if f["severity"] == "warning"]
     exit_code = 1 if errors else 0
@@ -211,6 +461,7 @@ def main(argv=None):
     if args.json:
         json.dump({
             "ok": not errors,
+            "grammar_source": grammar_source,
             "beads_checked": checked,
             "beads_exempt": exempt,
             "beads_skipped": skipped,
@@ -221,12 +472,19 @@ def main(argv=None):
 
     for f in findings:
         tag = " (warning)" if f["severity"] == "warning" else ""
-        print(f"{f['id']} ({f['issue_type']}): missing "
-              f"{', '.join(f['missing'])}{tag} — {f['reason'] or '<empty>'}")
+        parts = []
+        if f["missing"]:
+            parts.append(f"missing {', '.join(f['missing'])}")
+        if f["iou"]:
+            parts.append("IOU phrase "
+                         + ", ".join(f"'{p}'" for p in f["iou"]))
+        print(f"{f['id']} ({f['issue_type']}): {'; '.join(parts)}{tag} "
+              f"— {f['reason'] or '<empty>'}")
     status = ("clean" if not findings
               else f"{len(errors)} violation(s), {len(warnings)} warning(s)")
     extra = f" ({exempt} exempt, {skipped} skipped)" if exempt or skipped else ""
-    print(f"Checked {checked} closed bead(s){extra}: {status}.")
+    print(f"Checked {checked} closed bead(s){extra}: {status}. "
+          f"[grammar: {grammar_source}]")
     return exit_code
 
 
