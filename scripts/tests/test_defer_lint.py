@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 
 CLI = Path(__file__).resolve().parent.parent / "defer-lint"
+PROFILE = CLI.parent.parent / "profiles" / "conventions.toml"
 
 # Assembled so the literal comment-marker + marker-word sequence never
 # appears in this file at rest (path/fixture exclusion, not content
@@ -38,16 +39,55 @@ BAD_CEILING_ONLY = f"# {D} in-memory cache. ceiling: lost on restart.\n"
 BAD_TRIGGER_ONLY = f"# {D} naive retry. upgrade when: upstream starts throttling.\n"
 
 
-def run_cli(args, cwd=None):
+def run_cli(args, cwd=None, env_extra=None, cli=None):
+    # CONVENTIONS_PROFILE is scrubbed so a profile configured in the
+    # developer's environment can never leak grammar into a fixture run.
+    env = {k: v for k, v in os.environ.items() if k != "CONVENTIONS_PROFILE"}
+    if env_extra:
+        env.update(env_extra)
     return subprocess.run(
-        ["python3", str(CLI)] + args,
+        ["python3", str(cli or CLI)] + args,
         capture_output=True,
         text=True,
         cwd=cwd,
+        env=env,
     )
 
 
-class DeferLintTest(unittest.TestCase):
+def alt_defer_profile(marker_word):
+    """A minimal-but-complete [defer] profile with a custom marker word.
+
+    source_exts is deliberately narrowed to .py so tests can also prove the
+    scanned file set comes from the profile, not from any built-in list.
+    """
+    return (
+        "schema_version = 1\n"
+        'profile = "fixture"\n'
+        "\n"
+        "[defer]\n"
+        f'marker_word = "{marker_word}"\n'
+        'marker_suffix = ":"\n'
+        "\n"
+        "[defer.scan]\n"
+        "marker_line_prefixes = ['#+', '//+']\n"
+        "continuation_prefixes = ['#+', '//+']\n"
+        'skip_dirs = [".git"]\n'
+        "extra_filenames = []\n"
+        'source_exts = [".py"]\n'
+        "\n"
+        '[defer.clauses."upgrade-when"]\n'
+        "pattern = 'upgrade\\s+when:'\n"
+        'flags = ["IGNORECASE"]\n'
+        'severity = "error"\n'
+        "\n"
+        "[defer.clauses.ceiling]\n"
+        "pattern = 'ceiling:'\n"
+        'flags = ["IGNORECASE"]\n'
+        'severity = "warning"\n'
+    )
+
+
+class FixtureTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -61,14 +101,18 @@ class DeferLintTest(unittest.TestCase):
         p.write_text(content)
         return p
 
-    def scan(self, *extra):
-        return run_cli(["--root", str(self.root), *extra])
+    def scan(self, *extra, env_extra=None):
+        return run_cli(["--root", str(self.root), *extra],
+                       env_extra=env_extra)
 
-    def scan_json(self, *extra):
-        r = run_cli(["--root", str(self.root), "--json", *extra])
+    def scan_json(self, *extra, env_extra=None):
+        r = run_cli(["--root", str(self.root), "--json", *extra],
+                    env_extra=env_extra)
         payload = json.loads(r.stdout) if r.stdout.strip() else None
         return r, payload
 
+
+class DeferLintTest(FixtureTest):
     # --- AC: flags defer comments lacking an upgrade-when clause ---
 
     def test_no_trigger_defer_is_violation_exit_1(self):
@@ -271,29 +315,46 @@ class DeferLintTest(unittest.TestCase):
         dest.parent.mkdir(parents=True)
         shutil.copy(CLI, dest)
         dest.chmod(dest.stat().st_mode | stat.S_IXUSR)
-        r = subprocess.run(
-            ["python3", str(dest), "--root", str(self.root), "--json"],
-            capture_output=True, text=True,
-        )
+        r = run_cli(["--root", str(self.root), "--json"], cli=dest)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         out = json.loads(r.stdout)
         self.assertEqual(out["findings"], [])
 
     def test_kit_copy_scanning_tree_with_distributed_copy_is_clean(self):
         # The kit's own copy is routinely invoked against bootstrapped target
-        # repos that carry a distributed copy at scripts/defer-lint. That copy
-        # is a different path from the running one — the exclusion contract
-        # must hold by content, not path identity.
+        # repos that carry a distributed copy at scripts/defer-lint — and,
+        # post-distribution, the profile data file next to it. Both are
+        # different paths from the running copy's own — the exclusion
+        # contract must hold by content, not path identity.
         dest = self.root / "scripts" / "defer-lint"
         dest.parent.mkdir(parents=True)
         shutil.copy(CLI, dest)
         dest.chmod(dest.stat().st_mode | stat.S_IXUSR)
+        profile_dest = self.root / "profiles" / "conventions.toml"
+        profile_dest.parent.mkdir(parents=True)
+        shutil.copy(PROFILE, profile_dest)
         r, out = self.scan_json()  # runs the ORIGINAL CLI over self.root
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(
-            [f for f in out["findings"] if f["file"] == "scripts/defer-lint"],
+            [f for f in out["findings"]
+             if f["file"] in ("scripts/defer-lint",
+                              "profiles/conventions.toml")],
             [],
         )
+
+    def test_profile_data_file_does_not_trip_the_scanner(self):
+        # Exclusion contract (design doc): the profile that CARRIES the
+        # defer grammar is itself a scanned .toml source file; its grammar
+        # strings must be clean by construction — no line may hold a
+        # comment-prefix-adjacent marker occurrence.
+        dest = self.root / "profiles" / "conventions.toml"
+        dest.parent.mkdir(parents=True)
+        shutil.copy(PROFILE, dest)
+        self.write("ok.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        self.assertEqual(out["defer_comments"], 0)
 
     # --- Output shapes ---
 
@@ -356,6 +417,123 @@ class DeferLintTest(unittest.TestCase):
         self.assertIn("ceiling:", r.stdout)
         self.assertIn("TODO", r.stdout)  # marker comparison lives here now
         self.assertIn("FIXME", r.stdout)
+
+
+class ProfileGrammarTest(FixtureTest):
+    """AC: the defer grammar lives in profiles/conventions.toml and
+    defer-lint reads it at runtime — marker word, clause requirements, and
+    the scanned file set all come from the profile when one is present."""
+
+    def test_discovered_profile_marker_drives_the_scan(self):
+        # A profile at <root>/profiles/conventions.toml is discovered from
+        # the scan root; its marker word replaces the built-in one, so the
+        # D-marker comment below must NOT register as a defer.
+        self.write("profiles/conventions.toml", alt_defer_profile("postpone"))
+        self.write("a.py", "# postpone: quick hack.\n" + BAD_NO_TRIGGER)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["defer_comments"], 1)
+        self.assertEqual(len(out["findings"]), 1)
+        f = out["findings"][0]
+        self.assertEqual(f["missing"], ["upgrade-when", "ceiling"])
+        self.assertEqual(f["severity"], "error")
+        self.assertIn("postpone:", f["text"])
+
+    def test_profile_scanned_file_set_drives_file_selection(self):
+        # The fixture profile narrows source_exts to .py — the .js file
+        # must not be scanned at all.
+        self.write("profiles/conventions.toml", alt_defer_profile("postpone"))
+        self.write("bad.js", "// postpone: no clauses at all.\n")
+        self.write("ok.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["files_scanned"], 1)
+        self.assertEqual(out["defer_comments"], 0)
+
+    def test_env_profile_is_honored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            alt = Path(tmp) / "alt.toml"
+            alt.write_text(alt_defer_profile("postpone"))
+            self.write("a.py", "# postpone: quick hack.\n")
+            r, out = self.scan_json(
+                env_extra={"CONVENTIONS_PROFILE": str(alt)})
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("upgrade-when", out["findings"][0]["missing"])
+
+    def test_profile_flag_beats_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            flag_profile = Path(tmp) / "flag.toml"
+            flag_profile.write_text(alt_defer_profile("postpone"))
+            env_profile = Path(tmp) / "env.toml"
+            env_profile.write_text(alt_defer_profile("shelve"))
+            self.write("a.py", "# postpone: quick hack.\n")
+            env = {"CONVENTIONS_PROFILE": str(env_profile)}
+            # env alone: shelve grammar, the postpone line is not a defer
+            r, out = self.scan_json(env_extra=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(out["defer_comments"], 0)
+            # flag wins: postpone grammar flags it
+            r, out = self.scan_json("--profile", str(flag_profile),
+                                    env_extra=env)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(out["defer_comments"], 1)
+
+    def test_malformed_discovered_profile_is_io_error_exit_3(self):
+        # A profile that is present but unreadable must fail loudly, never
+        # silently fall back — corruption would otherwise hide grammar.
+        self.write("profiles/conventions.toml", "[defer\nnot toml at all")
+        self.write("a.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertIsNone(out)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "io")
+
+    def test_incomplete_defer_section_is_profile_error_exit_3(self):
+        self.write("profiles/conventions.toml",
+                   'schema_version = 1\n[defer]\nmarker_word = "defer"\n')
+        self.write("a.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "profile")
+
+    def test_profile_without_defer_section_falls_back(self):
+        # A conventions profile that predates the [defer] section simply
+        # does not parameterize this checker — built-in grammar applies.
+        self.write("profiles/conventions.toml", "schema_version = 1\n")
+        self.write("a.py", BAD_NO_TRIGGER)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("upgrade-when", out["findings"][0]["missing"])
+
+    def test_fallback_parity_with_kit_profile_grammar(self):
+        # Drift guard, not red-proof: the built-in fallback and the kit
+        # profile's [defer] section must produce identical scans over a
+        # fixture that exercises markers, clauses, prefixes, skip dirs,
+        # extra filenames, and extensions.
+        self.write("a.py", GOOD_ONE_LINE + BAD_NO_TRIGGER)
+        self.write("b.sql", f"-- {D} full scan. ceiling: x. upgrade when: y.\n")
+        self.write("c.css", f"/* {D} magic number. ceiling: x. upgrade when: y. */\n")
+        self.write(
+            "d.java",
+            f"/* {D} sync call. ceiling: blocks the event loop.\n"
+            " * upgrade when: p99 latency matters. */\n",
+        )
+        self.write("Makefile", BAD_CEILING_ONLY)
+        self.write("bin/tool", "#!/usr/bin/env python3\n" + BAD_NO_TRIGGER)
+        self.write("e.toml", f"# {D} toml file. ceiling: x. upgrade when: y.\n")
+        self.write("node_modules/pkg/i.js", f"// {D} vendored, skipped.\n")
+        r_fallback, out_fallback = self.scan_json()
+        r_profile, out_profile = self.scan_json(
+            env_extra={"CONVENTIONS_PROFILE": str(PROFILE)})
+        self.assertEqual(r_fallback.returncode, r_profile.returncode,
+                         r_fallback.stdout + r_profile.stdout
+                         + r_fallback.stderr + r_profile.stderr)
+        self.assertEqual(out_fallback, out_profile)
+        self.assertGreater(out_fallback["defer_comments"], 0)
 
 
 if __name__ == "__main__":

@@ -292,9 +292,38 @@ def render_close_evidence(profile):
     return lines
 
 
+def render_defer_convention(profile):
+    # The marker and the worked example are assembled from parts here so the
+    # profile (a scanned data file) never carries a comment-prefix-adjacent
+    # marker occurrence — the exclusion contract is clean-by-construction.
+    d = profile["defer"]
+    marker = d["marker_word"] + d["marker_suffix"]
+    prefixes = ", ".join(f"`{p}`" for p in d["comment_prefixes"])
+    law = " ".join(d["no_trigger_law"])
+    trigger = d["clauses"]["upgrade-when"]["label"]
+    comparison = "; ".join(f"`{m['marker']}` = {m['meaning']}"
+                           for m in d["marker_comparison"])
+    return [
+        f"Mark deliberate simplifications with a `{marker}` comment:",
+        "",
+        "```",
+        f"{d['comment_prefixes'][0]} {marker} {d['format']}",
+        "```",
+        "",
+        f"Language-appropriate comment prefix ({prefixes}); "
+        f"{d['continuation_note']}.",
+        "",
+        f"**The no-trigger law:** every `{marker}` comment MUST include "
+        f'an "{trigger}" condition. {law}',
+        "",
+        f"Marker choice: `{marker}` = {d['marker_meaning']}; {comparison}.",
+    ]
+
+
 RENDERERS = {
     "git-conventions": render_git_conventions,
     "close-evidence": render_close_evidence,
+    "defer-convention": render_defer_convention,
 }
 
 

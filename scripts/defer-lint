@@ -7,13 +7,23 @@ Missing "ceiling:" is reported as a warning (lesser severity, does not
 fail the scan). Converts the rule's most checkable MUST from advisory
 prose into an observable exit code.
 
+The grammar (marker word, clause requirements, comment prefixes, scanned
+file set) is read from profiles/conventions.toml — the single source of
+truth the rule fragment is rendered from. Resolution: --profile flag >
+CONVENTIONS_PROFILE env > nearest profiles/conventions.toml walking up
+from the scan root (the repo being checked). A tree with no discoverable
+profile, or a profile without a [defer] section, falls back to the
+built-in copy of the same grammar so the checker keeps working standalone
+(advisory posture); a profile that is present but unreadable or invalid
+is an error, never a silent fallback.
+
 Multi-line aware: ceiling/upgrade-when clauses often continue on the
 following comment line(s); continuation lines are scanned before a clause
 is declared missing.
 
 Exit codes: 0 clean (warnings allowed) · 1 violations · 2 usage error ·
-3 I/O error. Human-readable output by default; --json for agents.
-I/O and usage errors are JSON on stderr in both output modes.
+3 I/O or profile error. Human-readable output by default; --json for
+agents. I/O and usage errors are JSON on stderr in both output modes.
 Non-interactive.
 """
 
@@ -22,47 +32,62 @@ import json
 import os
 import re
 import sys
+import tomllib
 from pathlib import Path
+
+PROFILE_RELPATH = Path("profiles") / "conventions.toml"
 
 # The marker word, assembled from parts so no copy of this file — the
 # running one or a distributed one inside a scanned tree — ever contains a
 # comment-marker-adjacent occurrence the scan would match. Content-side
-# exclusion; no path special-casing needed (the tests use the same trick).
+# exclusion; no path special-casing needed (the tests and the profile use
+# the same trick).
 _D = "defer" + ":"
 
-# Comment marker immediately (modulo whitespace) before the word — the
-# marker requirement keeps prose that merely mentions the convention out.
-DEFER_RE = re.compile(
-    r"(?P<marker>#+|//+|/\*+|--+|\*+)[ \t]*" + _D + r"[ \t]*(?P<rest>.*)")
-# Continuation: a line that is itself a comment (any single-line marker).
-CONT_RE = re.compile(r"^[ \t]*(?:#+|//+|--+|\*+)[ \t]?(?P<rest>.*)")
-
-CEILING_RE = re.compile(r"ceiling:", re.IGNORECASE)
-UPGRADE_RE = re.compile(r"upgrade\s+when:", re.IGNORECASE)
-
-# defer: no --exclude flag; the skip list below is the only noise filter.
-# ceiling: a generated dir named outside this list gets scanned.
-# upgrade when: a real target repo surfaces a generated dir the list misses.
-SKIP_DIRS = {
-    ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
-    "dist", "build", "target", "vendor", ".beads", ".dolt", ".next",
-    ".cache", ".mypy_cache", ".pytest_cache",
-}
-
-# Well-known extensionless source files scanned by name.
-EXTRA_FILENAMES = {"Makefile", "Dockerfile"}
-
-# Source files only: docs/markdown quote defer examples as prose and are
-# deliberately not scanned. Extensionless files are scanned when they
-# start with a shebang.
-SOURCE_EXTS = {
-    ".py", ".pyi", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".rs",
-    ".go", ".java", ".kt", ".kts", ".scala", ".c", ".h", ".cc", ".cpp",
-    ".hpp", ".cs", ".m", ".mm", ".swift", ".rb", ".php", ".pl", ".pm",
-    ".lua", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".r", ".jl", ".ex",
-    ".exs", ".erl", ".hs", ".elm", ".clj", ".cljs", ".dart", ".groovy",
-    ".tf", ".hcl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css",
-    ".scss", ".less", ".vue", ".svelte", ".mk",
+# Compatibility fallback: the same grammar the profile's [defer] section
+# carries, used only when no profile is discoverable (or the discovered
+# profile has no [defer] section). Parity with the kit profile is pinned
+# by the test suite — edit the profile, not this dict.
+FALLBACK_DEFER = {
+    "marker_word": _D[:-1],
+    "marker_suffix": _D[-1],
+    "clauses": {
+        "upgrade-when": {"pattern": r"upgrade\s+when:",
+                         "flags": ["IGNORECASE"], "severity": "error"},
+        "ceiling": {"pattern": "ceiling:",
+                    "flags": ["IGNORECASE"], "severity": "warning"},
+    },
+    "scan": {
+        # Comment marker immediately (modulo whitespace) before the word —
+        # the marker requirement keeps prose that merely mentions the
+        # convention out. Continuations accept any single-line marker.
+        "marker_line_prefixes": ["#+", "//+", r"/\*+", "--+", r"\*+"],
+        "continuation_prefixes": ["#+", "//+", "--+", r"\*+"],
+        # defer: no --exclude flag; the skip list below is the only noise
+        # filter. ceiling: a generated dir named outside this list gets
+        # scanned. upgrade when: a real target repo surfaces a generated
+        # dir the list misses.
+        "skip_dirs": [
+            ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
+            "dist", "build", "target", "vendor", ".beads", ".dolt", ".next",
+            ".cache", ".mypy_cache", ".pytest_cache",
+        ],
+        # Well-known extensionless source files scanned by name.
+        "extra_filenames": ["Makefile", "Dockerfile"],
+        # Source files only: docs/markdown quote defer examples as prose
+        # and are deliberately not scanned. Extensionless files are scanned
+        # when they start with a shebang.
+        "source_exts": [
+            ".py", ".pyi", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx",
+            ".rs", ".go", ".java", ".kt", ".kts", ".scala", ".c", ".h",
+            ".cc", ".cpp", ".hpp", ".cs", ".m", ".mm", ".swift", ".rb",
+            ".php", ".pl", ".pm", ".lua", ".sql", ".sh", ".bash", ".zsh",
+            ".ps1", ".r", ".jl", ".ex", ".exs", ".erl", ".hs", ".elm",
+            ".clj", ".cljs", ".dart", ".groovy", ".tf", ".hcl", ".yaml",
+            ".yml", ".toml", ".ini", ".cfg", ".css", ".scss", ".less",
+            ".vue", ".svelte", ".mk",
+        ],
+    },
 }
 
 # Assembled with _D so the bad examples never register as real defers in
@@ -95,12 +120,17 @@ marker comparison:
   TODO    unstructured reminder; no ceiling, no trigger; "later" = never
   FIXME   actually broken; urgency implied but not quantified
 
+grammar source:
+  profiles/conventions.toml [{_D[:-1]}] section when present (--profile /
+  CONVENTIONS_PROFILE / upward walk from --root); built-in fallback with
+  the same grammar otherwise.
+
 known limitations:
   - continuation folding accepts any comment marker, so an unrelated
     comment line directly beneath a defer can rescue it (false negative)
   - a string literal with a comment marker directly before the word is
     flagged (false positive) — assemble such strings from parts, as this
-    checker's own source and tests do
+    checker's own source, tests, and profile do
 """
 
 
@@ -127,18 +157,165 @@ class JsonArgumentParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def iter_source_files(root):
-    # No self-exclusion: every copy of this checker is content-clean by
-    # construction (_D assembly above), so a distributed copy inside the
-    # scanned tree is just another clean source file.
+# --------------------------------------------------------------------------
+# Profile plumbing — resolve_profile_path, load_profile, compile_entry, and
+# FLAG_NAMES are verbatim copies from scripts/conventions (the canonical
+# copy; Planner decision on the tlp epic — do not fork the behavior).
+# --------------------------------------------------------------------------
+
+# Pattern-entry flags name Python `re` module constants (design-doc schema:
+# token entries are {pattern, flags} tables; the same shape serves every
+# detector in the profile).
+FLAG_NAMES = {
+    "IGNORECASE": re.IGNORECASE,
+    "MULTILINE": re.MULTILINE,
+    "DOTALL": re.DOTALL,
+    "VERBOSE": re.VERBOSE,
+    "ASCII": re.ASCII,
+}
+
+
+def resolve_profile_path(flag_value):
+    if flag_value:
+        return Path(flag_value)
+    env_value = os.environ.get("CONVENTIONS_PROFILE")
+    if env_value:
+        return Path(env_value)
+    cwd = Path.cwd().resolve()
+    for candidate_dir in [cwd, *cwd.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        # Stop at the repo boundary: never pick up an ancestor repo's profile.
+        if (candidate_dir / ".git").exists():
+            break
+    emit_error(
+        f"no {PROFILE_RELPATH} found walking up from {cwd}; "
+        "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
+
+
+def load_profile(flag_value):
+    path = resolve_profile_path(flag_value)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f), path.resolve()
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        emit_error(f"cannot load profile {path}: {exc}", "io", 3)
+
+
+def compile_entry(entry, where):
+    """Compile a pattern entry: a bare regex string or a {pattern, flags} table."""
+    if isinstance(entry, str):
+        pattern, flag_names = entry, []
+    elif isinstance(entry, dict) and "pattern" in entry:
+        pattern, flag_names = entry["pattern"], entry.get("flags", [])
+    else:
+        emit_error(f"{where}: expected a pattern string or "
+                   "a {pattern, flags} table", "profile", 3)
+    flags = 0
+    for name in flag_names:
+        if name not in FLAG_NAMES:
+            emit_error(f"{where}: unknown flag {name!r} "
+                       f"(known: {sorted(FLAG_NAMES)})", "profile", 3)
+        flags |= FLAG_NAMES[name]
+    try:
+        return re.compile(pattern, flags)
+    except re.error as exc:
+        emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
+                   "profile", 3)
+
+
+def find_profile_for(root):
+    """Non-fatal profile discovery for the scanned tree: nearest
+    profiles/conventions.toml walking up from the scan root (the repo root
+    of the repo being checked — spec's checker resolution), stopping at the
+    .git boundary. Returns None when absent: unlike `conventions`, this
+    checker keeps working profile-less (standalone advisory posture), so
+    absence selects the built-in fallback instead of an error."""
+    for candidate_dir in [root, *root.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        if (candidate_dir / ".git").exists():
+            break
+    return None
+
+
+def build_grammar(spec, origin):
+    """Compile a [defer] grammar spec into matchers. `origin` names the
+    grammar source (profile path or the built-in fallback) for errors."""
+    try:
+        marker = spec["marker_word"] + spec["marker_suffix"]
+        scan = spec["scan"]
+        marker_prefixes = scan["marker_line_prefixes"]
+        cont_prefixes = scan["continuation_prefixes"]
+        skip_dirs = set(scan["skip_dirs"])
+        extra_filenames = set(scan["extra_filenames"])
+        source_exts = set(scan["source_exts"])
+        clause_specs = spec["clauses"]
+    except (KeyError, TypeError) as exc:
+        emit_error(f"{origin}: [defer] grammar is missing required key: "
+                   f"{exc}", "profile", 3)
+    clauses = []
+    for name, entry in clause_specs.items():
+        severity = entry.get("severity") if isinstance(entry, dict) else None
+        if severity not in ("error", "warning"):
+            emit_error(f"{origin}: defer.clauses.{name} severity must be "
+                       "'error' or 'warning'", "profile", 3)
+        clauses.append((name, compile_entry(entry, f"defer.clauses.{name}"),
+                        severity))
+    try:
+        defer_re = re.compile(
+            r"(?P<marker>" + "|".join(marker_prefixes) + r")[ \t]*"
+            + re.escape(marker) + r"[ \t]*(?P<rest>.*)")
+        cont_re = re.compile(
+            r"^[ \t]*(?:" + "|".join(cont_prefixes) + r")[ \t]?(?P<rest>.*)")
+    except re.error as exc:
+        emit_error(f"{origin}: invalid comment-prefix pattern: {exc}",
+                   "profile", 3)
+    return {
+        "marker": marker,
+        "defer_re": defer_re,
+        "cont_re": cont_re,
+        "clauses": clauses,
+        "severity_of": {name: sev for name, _, sev in clauses},
+        "skip_dirs": skip_dirs,
+        "extra_filenames": extra_filenames,
+        "source_exts": source_exts,
+    }
+
+
+def resolve_grammar(flag_value, root):
+    """Grammar per the resolution chain: explicit profile (flag/env) >
+    discovered profile at/above the scan root > built-in fallback. Absence
+    falls back; a named-or-found profile that fails to load is an error."""
+    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
+    discovered = None if explicit else find_profile_for(root)
+    if explicit or discovered:
+        profile, profile_path = load_profile(
+            flag_value if explicit else str(discovered))
+        section = profile.get(_D[:-1])
+        if section is not None:
+            return build_grammar(section, str(profile_path))
+    return build_grammar(FALLBACK_DEFER, "built-in fallback grammar")
+
+
+def iter_source_files(root, grammar):
+    # No self-exclusion: every copy of this checker — and of the profile
+    # data file — is content-clean by construction (parts assembly above),
+    # so a distributed copy inside the scanned tree is just another clean
+    # source file.
+    skip_dirs = grammar["skip_dirs"]
+    source_exts = grammar["source_exts"]
+    extra_filenames = grammar["extra_filenames"]
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        dirnames[:] = sorted(d for d in dirnames if d not in skip_dirs)
         for name in sorted(filenames):
             child = Path(dirpath) / name
             if child.is_symlink() or not child.is_file():
                 continue
             rel = child.relative_to(root)
-            if child.suffix.lower() in SOURCE_EXTS or name in EXTRA_FILENAMES:
+            if child.suffix.lower() in source_exts or name in extra_filenames:
                 yield child, rel
             elif not child.suffix:
                 try:
@@ -160,12 +337,14 @@ def read_text(path):
     return raw.decode("utf-8", errors="replace")
 
 
-def collect_defers(lines):
+def collect_defers(lines, grammar):
     """Yields (lineno, defer_text) with continuation comment lines folded in."""
+    defer_re = grammar["defer_re"]
+    cont_re = grammar["cont_re"]
     i = 0
     n = len(lines)
     while i < n:
-        m = DEFER_RE.search(lines[i])
+        m = defer_re.search(lines[i])
         if not m:
             i += 1
             continue
@@ -175,7 +354,7 @@ def collect_defers(lines):
         j = i + 1
         while j < n:
             line = lines[j]
-            if DEFER_RE.search(line):
+            if defer_re.search(line):
                 break  # a new defer starts; it gets its own entry
             if in_block:
                 part = line.strip()
@@ -186,7 +365,7 @@ def collect_defers(lines):
                 if closed:
                     break
                 continue
-            c = CONT_RE.match(line)
+            c = cont_re.match(line)
             if not c:
                 break
             parts.append(c.group("rest"))
@@ -195,31 +374,31 @@ def collect_defers(lines):
         i = j if j > i else i + 1
 
 
-def scan_tree(root):
+def scan_tree(root, grammar):
     files_scanned = 0
     files_skipped = 0
     defer_count = 0
     findings = []
-    for path, rel in iter_source_files(root):
+    severity_of = grammar["severity_of"]
+    for path, rel in iter_source_files(root, grammar):
         text = read_text(path)
         if text is None:
             files_skipped += 1
             continue
         files_scanned += 1
-        for lineno, defer_text in collect_defers(text.splitlines()):
+        for lineno, defer_text in collect_defers(text.splitlines(), grammar):
             defer_count += 1
-            missing = []
-            if not UPGRADE_RE.search(defer_text):
-                missing.append("upgrade-when")
-            if not CEILING_RE.search(defer_text):
-                missing.append("ceiling")
+            missing = [name for name, detector, _ in grammar["clauses"]
+                       if not detector.search(defer_text)]
             if not missing:
                 continue
-            severity = "error" if "upgrade-when" in missing else "warning"
+            severity = ("error"
+                        if any(severity_of[n] == "error" for n in missing)
+                        else "warning")
             body = defer_text.strip()
             if body.endswith("*/"):
                 body = body[:-2].rstrip()
-            snippet = (_D + " " + body).strip()
+            snippet = (grammar["marker"] + " " + body).strip()
             findings.append({
                 "file": str(rel),
                 "line": lineno,
@@ -236,14 +415,20 @@ def main(argv=None):
         description=(
             "Scan for defer: comments violating the no-trigger law "
             "(missing 'upgrade when:' clause). Multi-line comment "
-            "continuations are honored. Exit codes: 0 clean, 1 violations, "
-            "2 usage error, 3 I/O error."
+            "continuations are honored. Grammar comes from "
+            "profiles/conventions.toml when present (--profile / "
+            "CONVENTIONS_PROFILE / upward walk from --root); built-in "
+            "fallback otherwise. Exit codes: 0 clean, 1 violations, "
+            "2 usage error, 3 I/O or profile error."
         ),
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--root", default=".", type=nonempty,
                         help="Directory tree to scan (default: current directory)")
+    parser.add_argument("--profile",
+                        help="path to profile TOML (default: resolution "
+                             "chain in the description)")
     parser.add_argument("--json", action="store_true",
                         help="Structured JSON output on stdout")
     args = parser.parse_args(argv)
@@ -253,7 +438,9 @@ def main(argv=None):
         emit_error(f"root is not a directory: {root}", "io", 3)
     root = root.resolve()
 
-    files_scanned, files_skipped, defer_count, findings = scan_tree(root)
+    grammar = resolve_grammar(args.profile, root)
+    files_scanned, files_skipped, defer_count, findings = scan_tree(
+        root, grammar)
     errors = [f for f in findings if f["severity"] == "error"]
     warnings = [f for f in findings if f["severity"] == "warning"]
     exit_code = 1 if errors else 0
@@ -270,9 +457,14 @@ def main(argv=None):
         sys.stdout.write("\n")
         return exit_code
 
+    severity_of = grammar["severity_of"]
     for f in findings:
-        label = ("missing upgrade-when clause" if f["severity"] == "error"
-                 else "missing ceiling clause (warning)")
+        if f["severity"] == "error":
+            name = next(n for n in f["missing"]
+                        if severity_of.get(n) == "error")
+            label = f"missing {name} clause"
+        else:
+            label = f"missing {f['missing'][0]} clause (warning)"
         print(f"{f['file']}:{f['line']}: {label} — {f['text']}")
     status = ("clean" if not findings
               else f"{len(errors)} violation(s), {len(warnings)} warning(s)")

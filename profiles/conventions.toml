@@ -187,7 +187,88 @@ requires = ["children_closed"]
 judgment = ["each success criterion genuinely met by the closed children"]
 
 # ---------------------------------------------------------------------------
-# 3. Fragment homes — where each rendered fragment is committed, relative to
+# 3. Defer-comment grammar
+# Law home: cursor/rules/defer-convention.mdc (generated fragment).
+# scripts/defer-lint reads this section at runtime; a tree with no
+# discoverable profile — or a profile without this section — falls back to
+# the checker's built-in copy of the same grammar, preserving its standalone
+# advisory posture (test-pinned parity guards the fallback against drift).
+#
+# Content-side exclusion contract (design doc): this data file is itself a
+# scanned .toml source, so its grammar strings must never trip the scanner.
+# The marker word is stored apart from its suffix and the worked example is
+# assembled by the renderer, so no line here carries a comment-prefix-
+# adjacent marker occurrence — the same clean-by-construction idiom the
+# checker's own source uses. The defer-lint suite pins this with a fixture
+# that scans a copy of this file.
+# ---------------------------------------------------------------------------
+[defer]
+marker_word = "defer"
+marker_suffix = ":"
+format = "<what was simplified>. ceiling: <known limitation>. upgrade when: <trigger condition>."
+# Canonical prefixes as the rule displays them; the renderer's worked
+# example uses the first one.
+comment_prefixes = ["//", "#", "/* */", "--"]
+continuation_note = "the ceiling and trigger may continue on the following comment line(s)"
+no_trigger_law = [
+  "A deferral without a trigger is just a TODO with a fancier name.",
+  "If you can't name when to revisit, either the simplification is permanent (no comment needed) or you don't understand the ceiling yet (investigate before deferring).",
+]
+marker_meaning = "deliberate simplification with known limits (structured — ceiling + trigger required)"
+marker_comparison = [
+  { marker = "TODO", meaning = "unstructured reminder" },
+  { marker = "FIXME", meaning = "actually broken" },
+]
+judgment = [
+  "ceiling and trigger must name a real limitation and a real revisit condition — the checker verifies presence, not meaning",
+]
+
+# What the checker accepts: regex alternates for comment prefixes on the
+# marker line and on continuation lines (block-comment interiors and
+# repeated marks included — deliberately wider than the four display
+# prefixes above).
+[defer.scan]
+marker_line_prefixes = ['#+', '//+', '/\*+', '--+', '\*+']
+continuation_prefixes = ['#+', '//+', '--+', '\*+']
+skip_dirs = [
+  ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
+  "dist", "build", "target", "vendor", ".beads", ".dolt", ".next",
+  ".cache", ".mypy_cache", ".pytest_cache",
+]
+# Well-known extensionless source files scanned by name; extensionless
+# files with a shebang are scanned regardless (behavior, not data).
+extra_filenames = ["Makefile", "Dockerfile"]
+# Source files only: docs/markdown quote worked examples as prose and are
+# deliberately not scanned.
+source_exts = [
+  ".py", ".pyi", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".rs",
+  ".go", ".java", ".kt", ".kts", ".scala", ".c", ".h", ".cc", ".cpp",
+  ".hpp", ".cs", ".m", ".mm", ".swift", ".rb", ".php", ".pl", ".pm",
+  ".lua", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".r", ".jl", ".ex",
+  ".exs", ".erl", ".hs", ".elm", ".clj", ".cljs", ".dart", ".groovy",
+  ".tf", ".hcl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css",
+  ".scss", ".less", ".vue", ".svelte", ".mk",
+]
+
+# The no-trigger law, checker-shaped: a defer missing an error-severity
+# clause fails the scan (exit 1); warning-severity clauses report without
+# failing. Table order below is the order findings list missing clauses.
+# `label` is the display name the rendered rule quotes; `pattern` is what
+# the checker matches in collected comment text.
+[defer.clauses."upgrade-when"]
+label = "upgrade when:"
+pattern = 'upgrade\s+when:'
+flags = ["IGNORECASE"]
+severity = "error"
+
+[defer.clauses.ceiling]
+label = "ceiling:"
+pattern = 'ceiling:'
+flags = ["IGNORECASE"]
+severity = "warning"
+
+# ---------------------------------------------------------------------------
+# 4. Fragment homes — where each rendered fragment is committed, relative to
 # the repo root. `render-rule --check` (the kit-ci regen gate) iterates this
 # table: render each fragment, extract the GENERATED-marked region from the
 # file, fail on any byte difference.
@@ -202,3 +283,6 @@ file = "cursor/rules/operating-model.mdc"
 
 [fragments."close-evidence"]
 file = "cursor/rules/bead-completion.mdc"
+
+[fragments."defer-convention"]
+file = "cursor/rules/defer-convention.mdc"

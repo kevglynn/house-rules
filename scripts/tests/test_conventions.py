@@ -32,7 +32,13 @@ END = "<!-- END GENERATED from profiles/conventions.toml -->"
 FRAGMENT_FILES = {
     "git-conventions": "cursor/rules/operating-model.mdc",
     "close-evidence": "cursor/rules/bead-completion.mdc",
+    "defer-convention": "cursor/rules/defer-convention.mdc",
 }
+
+# The defer marker, assembled from parts so this file never contains a
+# comment-marker-adjacent occurrence defer-lint would match (same idiom as
+# the checker and its tests).
+D = "defer" + ":"
 
 
 def run_cli(args, cwd=None, env_extra=None):
@@ -249,6 +255,34 @@ class RenderRuleTest(unittest.TestCase):
             self.assertIn(row, text)
         # the committed table has no Task row — task stays checker-only
         self.assertNotIn("| Task |", text)
+
+    def test_defer_convention_fragment_carries_the_law(self):
+        text = self.render("defer-convention")
+        lines = text.splitlines()
+        self.assertEqual(lines[0], BEGIN)
+        self.assertEqual(lines[-1], END)
+        # the grammar template, assembled by the renderer from marker parts
+        # and format — every line byte-matches today's hand-written rule
+        self.assertIn(
+            f"Mark deliberate simplifications with a `{D}` comment:", text)
+        self.assertIn(
+            f"// {D} <what was simplified>. ceiling: <known limitation>. "
+            "upgrade when: <trigger condition>.", text)
+        self.assertIn(
+            "Language-appropriate comment prefix (`//`, `#`, `/* */`, `--`); "
+            "the ceiling and trigger may continue on the following comment "
+            "line(s).", text)
+        self.assertIn(
+            f"**The no-trigger law:** every `{D}` comment MUST include an "
+            '"upgrade when:" condition. A deferral without a trigger is just '
+            "a TODO with a fancier name. If you can't name when to revisit, "
+            "either the simplification is permanent (no comment needed) or "
+            "you don't understand the ceiling yet (investigate before "
+            "deferring).", text)
+        self.assertIn(
+            f"Marker choice: `{D}` = deliberate simplification with known "
+            "limits (structured — ceiling + trigger required); `TODO` = "
+            "unstructured reminder; `FIXME` = actually broken.", text)
 
     # --- AC2: committed regions byte-match render output ---
 
