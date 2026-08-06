@@ -77,9 +77,10 @@ SPIKE_BASELINE = [
      "feat: tdd-ledger CLI — durable red-then-green evidence + CI verify"]),
     # real commit 0fcdb1d: 87-char summary vs the "under 72" cap — the
     # spike kept it as live proof the prose convention was unenforced.
+    # (Bead ID neutralized to a demo token; still comfortably over-cap.)
     ("real-commit-fix-overlong", 1, ["check-commit",
      "fix: packet verifier strip check scans the grid structurally, "
-     "not 1800 chars (segnolabs-cga)"]),
+     "not 1800 chars (demo-project-cga)"]),
     ("bad-type", 1, ["check-commit", "wip: half-done stuff"]),
     ("no-colon-format", 1, ["check-commit", "added loading spinner"]),
     ("summary-too-long", 1, ["check-commit",

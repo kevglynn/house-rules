@@ -18,7 +18,7 @@ This is **process-kit** (working name) — the canonical source for AI coding ag
 ## Identity conventions
 
 - The kit name is a **working name**; the final name, license, and publication posture are open decisions tracked in [PLAN.md](PLAN.md).
-- Skill and rule content must stay **project-neutral**: no project names, people, or project-specific parameters in the generic core. Project specifics belong in per-project overlay files in consuming repos.
+- Skill and rule content must stay **project-neutral**: no project names, people, or project/user-specific parameters in the generic core. Project specifics belong in per-project overlay files in consuming repos; per-user parameters belong in the machine-global overlay (`~/.agents/overlay.md`) — both scopes documented in `skills/README.md`.
 - Marker strings in installers use the `house-rules:` prefix (final name, 0001 A1). The installers still recognize the legacy `ai-dev-playbook:` markers written by the predecessor repo and rewrite those blocks in place under the new prefix on their next run — a one-shot migration, no duplicate blocks. Do not remove the legacy-recognition patterns while any machine or target repo still carries old-marker artifacts.
 
 ## For bootstrapping target repos

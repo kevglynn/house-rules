@@ -37,6 +37,6 @@ Marker strings in the installers now use the `house-rules:` prefix; the installe
 
 ## Backlog (after the first four skills prove out)
 
-- ~~Second-consumer proof: sync the kit into a second project and verify the overlay boundary holds~~ — declared **met** 2026-08-05 (0001 A3): 15 sync targets consume the core unmodified; overlay exercised where needed (segnolabs); neutrality audit (process-kit-dd5) completes the boundary verification
+- ~~Second-consumer proof: sync the kit into a second project and verify the overlay boundary holds~~ — declared **met** 2026-08-05 (0001 A3): 15 sync targets consume the core unmodified; overlay exercised where needed (one consuming repo, 61-line overlay); neutrality audit (process-kit-dd5) completes the boundary verification
 - Trigger layer: lifecycle automation (hooks, tracker formulas) so process fires without being asked
 - Session-close ceremony hooks; council harvest upgrade; planning-ritual skill; decision-record template
