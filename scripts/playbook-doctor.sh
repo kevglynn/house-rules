@@ -18,12 +18,13 @@ set -uo pipefail
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
 #   3 = drift (kit-managed files present but stale vs playbook source:
-#       rules_drift_*, or a per-CLI key from scripts/distributed-clis.list —
-#       dispatch on the SUMMARY key)
+#       rules_drift_*, profile_drift, or a per-CLI key from
+#       scripts/distributed-clis.list — dispatch on the SUMMARY key)
 #   1 = generic error / other failure
 #
 # SUMMARY keys (--agent mode) for rules_drift carry the format that needs
 # remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
+# profile_drift means profiles/conventions.toml is stale vs the kit copy.
 # Each distributed CLI carries its own drift key, registered in
 # scripts/distributed-clis.list (currently ledger_drift, defer_lint_drift,
 # close_reason_lint_drift, banned_token_scan_drift — the manifest is the
@@ -49,6 +50,8 @@ Checks:
   • Agent rules are present and match the canonical source
   • Each distributed CLI in scripts/distributed-clis.list (if present in
     the target) matches the kit copy
+  • The conventions profile (profiles/conventions.toml, if present in the
+    target) matches the kit copy byte-for-byte
   • Kit-resident references (skills/…, templates/…) cited by distributed
     rules resolve somewhere on this machine (warn-only)
   • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
@@ -63,9 +66,11 @@ Flags:
   --agent   Emit a machine-consumable SUMMARY line and use structured
             exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
             Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
-            rules_drift_both (stale rules), or the stale CLI's drift key
+            rules_drift_both (stale rules), profile_drift (stale
+            profiles/conventions.toml), or the stale CLI's drift key
             from scripts/distributed-clis.list (rules drift wins when
-            several drift; CLI keys follow the manifest's line order).
+            several drift, then profile_drift; CLI keys follow the
+            manifest's line order).
   --help    Show this help.
 
 Exit codes (human mode): 0 = all pass, 1 = issues found.
@@ -306,14 +311,14 @@ fi
 
 # ---------- Conventions profile (data-shaped convention source) ----------
 #
-# profiles/conventions.toml is the data the distributed checkers read. It is
-# not scripts-shaped, so it lives outside the CLI manifest; it distributes
-# with the checkers (playbook-init) and drift-checks here the same byte-for-
-# byte way. The profile and the four checkers are ONE atomic sync unit: a
-# target holding a stale checker against a fresh profile (or the reverse) is a
-# version-skew hazard, so the profile's fix re-runs init (which re-syncs the
-# whole unit), and profile-present-but-checker-stale is called out as one
-# condition rather than two independent rows.
+# The data file the distributed checkers read; ships verbatim via
+# playbook-init and byte-drift-checks here. Ownership and skew rules:
+# docs/operations.md. Must run AFTER the CLI loop — the skew warn below
+# reads cli_stale_keys.
+# defer: hand-written parallel block instead of generalizing the manifest to
+# data files. ceiling: re-implements the CLI loop's four states + the
+# registration self-check per file. upgrade when: a second data-shaped file
+# distributes.
 echo "Conventions profile:"
 profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
 profile_dest="$PROJECT_ROOT/profiles/conventions.toml"
@@ -329,20 +334,26 @@ else
     check_pass "profiles/conventions.toml matches the kit copy"
   else
     check_fail "profiles/conventions.toml is stale vs the kit copy — checker verdicts and rule fragments may have diverged" \
-      "bash $PLAYBOOK_ROOT/scripts/playbook-init.sh --tool cursor|claude|both  (re-syncs the profile + checkers as one unit)"
+      "cp -f \"$profile_src\" \"$profile_dest\""
     profile_stale=1
   fi
 fi
-# Version-skew guard: profile + the four checkers are one atomic unit. A stale
-# checker can mis-scan the current profile (e.g. a pre-token-catalog scanner
-# self-flags on a profile that now carries the token list), so surface the
-# pair as a single re-sync condition, not two unrelated rows.
-if $profile_present && [ -n "$cli_stale_keys" ]; then
-  check_warn "Conventions profile present but a distributed checker is stale — re-sync the profile+checker unit together (a stale checker may mis-scan the current profile). Fix: re-run playbook-init.sh"
-fi
+# Version-skew guard: a stale PROFILE-READING checker can mis-scan the current
+# profile (e.g. a pre-token-catalog scanner self-flags on a profile that now
+# carries the token list). tdd-ledger never reads the profile, so ledger_drift
+# alone must not fire this. Keys hardcoded: extend this list when a new
+# profile-reading CLI joins the manifest.
+case "$cli_stale_keys" in
+  *defer_lint_drift*|*close_reason_lint_drift*|*banned_token_scan_drift*)
+    if $profile_present; then
+      check_warn "Conventions profile present but a profile-reading checker is stale — re-copy the stale checker(s) and the profile together (or re-run playbook-init.sh); a stale checker may mis-scan the current profile"
+    fi ;;
+esac
 # Registration self-check: profile_drift is a manifest-external SUMMARY key,
-# so its dispatch-table row in global-safety-net/agent-protocol.md is the one
-# site nothing generates — warn if the row is missing (same guard the CLIs get).
+# so nothing generates its documentation sites — the dispatch-table row in
+# global-safety-net/agent-protocol.md (guarded here, same as the CLIs) and
+# the hand-extended enumerations in this script's header/--help and init's
+# rendered AGENTS.md section (not guarded; update by hand with any new key).
 if [ -f "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md" ] && \
    ! grep -qF "\`profile_drift\`" "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md"; then
   check_warn "SUMMARY key profile_drift is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
@@ -603,8 +614,6 @@ echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks)
 #
 # Priority: bootstrap_needed > rules_drift > profile_drift > per-CLI drift
 # keys in manifest line order (scripts/distributed-clis.list) > error > ok.
-# profile_drift sits just above the per-CLI keys because the profile and the
-# checkers are one atomic sync unit — its fix re-runs init and re-copies both.
 # The SUMMARY line is a stable contract; do not emit user-controlled paths
 # or free-form strings — only the fixed rules keys and the manifest's
 # registered per-CLI keys.

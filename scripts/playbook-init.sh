@@ -248,15 +248,12 @@ fi
 
 # ---------- Conventions profile (data-shaped convention source) ----------
 #
-# profiles/conventions.toml is the single source for the kit's data-shaped
-# conventions. It is not scripts-shaped, so it lives outside the CLI manifest
-# but ships in the SAME run as the checkers — the profile and the four
-# checkers are one atomic sync unit (a stale checker against a fresh profile
-# is a version-skew hazard). It ships VERBATIM: playbook-doctor drift-checks
-# it byte-for-byte like the CLIs, so per-target rewrites are ruled out. The
-# render-only keys ([fragments] kit-relative paths, rule_* keys) are inert in
-# targets — their only consumer is the kit-only `conventions` CLI, which is
-# not distributed — so shipping them unchanged is harmless.
+# The data file the distributed checkers read; ships verbatim (byte-drift-
+# checked by playbook-doctor, SUMMARY key profile_drift). Ownership, skew,
+# and inert-key rules: docs/operations.md.
+# defer: hand-written parallel block instead of generalizing the manifest to
+# data files. ceiling: duplicates the CLI-loop copy idiom per file. upgrade
+# when: a second data-shaped file distributes.
 profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
 if [ -f "$profile_src" ]; then
   mkdir -p "$PROJECT_ROOT/profiles"
@@ -443,7 +440,9 @@ fi
 generated_on="$(date -u +%Y-%m-%d)"
 
 # Drift-key enumeration for the section text, generated from the manifest so
-# the AGENTS.md contract can never lag a newly registered CLI.
+# the AGENTS.md contract can never lag a newly registered CLI. Manifest-
+# external SUMMARY keys (profile_drift) are hand-listed in the heredoc —
+# extend that line whenever such a key is added.
 cli_drift_keys_md=""
 if [ -f "$clis_manifest" ]; then
   while IFS='|' read -r _cli_name cli_key _rest; do
@@ -473,7 +472,7 @@ bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh"
 bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh" --agent
 \`\`\`
 
-Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=drift, \`1\`=error. On exit 3 the SUMMARY key names what drifted: \`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\` for stale rules, or ${cli_drift_keys_md:-a per-CLI drift key} for a stale distributed CLI (fix: re-copy from the kit). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full dispatch table.
+Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=drift, \`1\`=error. On exit 3 the SUMMARY key names what drifted: \`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\` for stale rules, \`profile_drift\` for a stale \`profiles/conventions.toml\`, or ${cli_drift_keys_md:-a per-CLI drift key} for a stale distributed CLI (fix: re-copy the named file from the kit). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full dispatch table.
 
 **Sync rules with upstream:**
 \`\`\`bash
