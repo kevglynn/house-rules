@@ -63,15 +63,17 @@ examples:
   conventions render-rule git-conventions
   conventions render-rule --check        # the kit-ci regen gate
 
-fragments (declared in the profile's [fragments] table):
-  git-conventions  -> cursor/rules/operating-model.mdc  (## Git Conventions)
-  close-evidence   -> cursor/rules/bead-completion.mdc  (evidence table)
+fragments are declared in the profile's [fragments] table, one marked
+region per rule file; an unknown fragment name reports the known set.
 
 Each fragment is committed between the marker pair
   {BEGIN_MARKER}
   {END_MARKER}
-and must byte-match `render-rule <fragment>` output. Regenerate by pasting
-that output over the whole marked region — never hand-edit inside it.
+and must byte-match `render-rule <fragment>` output. Regenerate a cursor
+canon region by pasting that output over the whole marked region — never
+hand-edit inside it. claude/rules/ copies are projections of the cursor
+canon: regenerate them with `scripts/sync-rules.sh --format claude`, not
+by pasting render output.
 
 known limitations:
   - the branch grammar's <bead-id>/<short-description> boundary is
@@ -83,9 +85,9 @@ known limitations:
 """
 
 
-def emit(payload, stream=sys.stdout):
-    json.dump(payload, stream, sort_keys=True)
-    stream.write("\n")
+def emit(payload):
+    json.dump(payload, sys.stdout, sort_keys=True)
+    sys.stdout.write("\n")
 
 
 def emit_error(message, kind, code):
@@ -96,10 +98,7 @@ def emit_error(message, kind, code):
 
 
 def usage_error(message):
-    json.dump({"ok": False, "error": message, "exit_code": 2},
-              sys.stderr, sort_keys=True)
-    sys.stderr.write("\n")
-    sys.exit(2)
+    emit_error(message, "usage", 2)
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
@@ -120,6 +119,9 @@ def resolve_profile_path(flag_value):
         candidate = candidate_dir / PROFILE_RELPATH
         if candidate.is_file():
             return candidate
+        # Stop at the repo boundary: never pick up an ancestor repo's profile.
+        if (candidate_dir / ".git").exists():
+            break
     emit_error(
         f"no {PROFILE_RELPATH} found walking up from {cwd}; "
         "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
@@ -185,7 +187,12 @@ def check_commit(profile, message):
             "detail": f"type `{ctype}` not in allowed types {spec['types']}",
         })
     summary_first_line = summary.splitlines()[0]
-    if len(summary_first_line) >= spec["summary_max_chars"]:
+    if not summary_first_line.strip():
+        violations.append({
+            "code": "commit-empty-summary",
+            "detail": "summary first line is empty or whitespace-only",
+        })
+    elif len(summary_first_line) >= spec["summary_max_chars"]:
         violations.append({
             "code": "commit-summary-length",
             "detail": (f"summary is {len(summary_first_line)} chars; "
@@ -297,14 +304,18 @@ def render_fragment(profile, name):
 
 
 def extract_region(text):
-    """Returns the marked region (markers inclusive), or None if the marker
-    pair is absent, duplicated, or out of order."""
+    """Returns (status, region). Status "ok" carries the marked region
+    (markers inclusive); "duplicate-markers" means a marker appears more
+    than once (one region per rule file — profile [fragments] comment);
+    "missing-markers" means the pair is absent or out of order."""
     lines = text.splitlines()
     begins = [i for i, line in enumerate(lines) if line.strip() == BEGIN_MARKER]
     ends = [i for i, line in enumerate(lines) if line.strip() == END_MARKER]
-    if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
-        return None
-    return "\n".join(lines[begins[0]:ends[0] + 1])
+    if len(begins) > 1 or len(ends) > 1:
+        return "duplicate-markers", None
+    if not begins or not ends or begins[0] >= ends[0]:
+        return "missing-markers", None
+    return "ok", "\n".join(lines[begins[0]:ends[0] + 1])
 
 
 def check_fragments(profile, root):
@@ -322,9 +333,13 @@ def check_fragments(profile, root):
         if not target.is_file():
             result["status"] = "missing-file"
         else:
-            committed = extract_region(target.read_text(encoding="utf-8"))
+            try:
+                text = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                emit_error(f"cannot read {target}: {exc}", "io", 3)
+            marker_status, committed = extract_region(text)
             if committed is None:
-                result["status"] = "missing-markers"
+                result["status"] = marker_status
             elif committed != rendered:
                 result["status"] = "drift"
                 result["diff"] = list(difflib.unified_diff(
@@ -339,10 +354,10 @@ def check_fragments(profile, root):
 # --------------------------------------------------------------------------
 
 
-def run_check(kind, violations, subject):
+def run_check(kind, violations, subject, profile_path):
     ok = not violations
     emit({"ok": ok, "check": kind, "subject": subject,
-          "violations": violations})
+          "profile": str(profile_path), "violations": violations})
     return 0 if ok else 1
 
 
@@ -389,19 +404,23 @@ def main(argv=None):
     try:
         if args.command == "check-commit":
             return run_check("commit", check_commit(profile, args.message),
-                             args.message)
+                             args.message, profile_path)
         if args.command == "check-branch":
             return run_check("branch", check_branch(profile, args.name),
-                             args.name)
+                             args.name, profile_path)
         if args.command == "check-close":
             return run_check(
                 "close",
                 check_close(profile, args.bead_type, args.reason),
                 {"type": args.bead_type, "reason": args.reason},
+                profile_path,
             )
         if args.command == "render-rule":
             known = sorted(profile.get("fragments", {}))
             if args.check:
+                if args.fragment:
+                    usage_error("render-rule takes a fragment name or "
+                                "--check, not both")
                 root = repo_root_for(profile_path)
                 results = check_fragments(profile, root)
                 ok = all(r["status"] == "ok" for r in results)
@@ -419,7 +438,6 @@ def main(argv=None):
     except KeyError as exc:
         emit_error(f"profile {profile_path} is missing required key: {exc}",
                    "profile", 3)
-    return 2
 
 
 if __name__ == "__main__":

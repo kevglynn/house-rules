@@ -28,7 +28,6 @@ profile = "process-kit"
 # `wip` remains unsanctioned.
 # ---------------------------------------------------------------------------
 [commit]
-source = "cursor/rules/operating-model.mdc#git-conventions"
 format = "<type>: <summary>"
 types = ["feat", "fix", "refactor", "test", "chore", "docs", "spike"]
 # "under 72" read strictly: len(summary first line) < 72. The prose says
@@ -45,10 +44,10 @@ summary_max_chars = 72
 # hyphen-separated segments. Documented, not fixed, in Tier 1.
 # ---------------------------------------------------------------------------
 [branch]
-source = "cursor/rules/operating-model.mdc#git-conventions"
 format = "<type>/<bead-id>-<short-description>"
 types = ["feat", "fix", "refactor", "test", "chore", "docs"]
-slug_pattern = '^[a-z0-9]+(-[a-z0-9]+)+$'
+# \Z (not $): a trailing newline must not sneak past the anchor.
+slug_pattern = '^[a-z0-9]+(-[a-z0-9]+)+\Z'
 
 # ---------------------------------------------------------------------------
 # 1c. Judgment-shaped git law — rendered verbatim as fragment bullets. No
@@ -72,7 +71,6 @@ judgment = [
 # capitalized type name.
 # ---------------------------------------------------------------------------
 [close_evidence]
-source = "cursor/rules/bead-completion.mdc#evidence-policy"
 # IOU phrases mark deferral-instead-of-evidence — banned in every close
 # reason (bead-completion "Do not defer AC verification"). The one
 # sanctioned deferral form is exempted below; the follow-up bead must exist
@@ -90,6 +88,12 @@ iou_exempt = { pattern = 'deferred to bead \S+', flags = ["IGNORECASE"] }
 # Element library: deterministic detectors for the evidence shapes a close
 # reason must visibly carry. Presence only — evidence QUALITY stays with
 # self-review and the review lenses.
+# PRE-RECONCILIATION: these detectors were promoted verbatim from the spike
+# and are cruder than scripts/close-reason-lint's production detectors of
+# the same law (that checker requires a digit in hash matches and a
+# branch-shaped token, accepts more PR-URL forms, and keeps AC detection
+# case-sensitive). process-kit-ywq owns the reconciliation; until it lands,
+# close-reason-lint remains the enforcement-grade checker.
 [close_evidence.elements.commit_ref]
 description = "commit hash (7-40 hex), branch name reference, or PR URL"
 pattern = '\b[0-9a-f]{7,40}\b|\bbranch\b|https?://\S*/pull/\d+'
@@ -113,7 +117,9 @@ flags = ["IGNORECASE"]
 [close_evidence.elements.children_closed]
 description = "epic/milestone: statement that children are closed/verified"
 pattern = '\bchild(?:ren)?\b.*\bclos|\bclos\w*\b.*\bchild(?:ren)?\b'
-flags = ["IGNORECASE"]
+# DOTALL: real close reasons are multiline; "children ... closed" must be
+# allowed to span a line break.
+flags = ["IGNORECASE", "DOTALL"]
 
 # Table-row order below is the rendered order — it mirrors the committed
 # evidence table in bead-completion.mdc.
@@ -185,6 +191,11 @@ judgment = ["each success criterion genuinely met by the closed children"]
 # the repo root. `render-rule --check` (the kit-ci regen gate) iterates this
 # table: render each fragment, extract the GENERATED-marked region from the
 # file, fail on any byte difference.
+#
+# LAW: one marked region per rule file. The marker pair is unnamed, so two
+# fragments can never share a file; a duplicated pair reports
+# duplicate-markers. Children adding fragments target files without an
+# existing region.
 # ---------------------------------------------------------------------------
 [fragments."git-conventions"]
 file = "cursor/rules/operating-model.mdc"

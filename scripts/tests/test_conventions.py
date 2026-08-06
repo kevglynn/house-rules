@@ -46,6 +46,8 @@ def run_cli(args, cwd=None, env_extra=None):
 
 
 def extract_region(text):
+    # Deliberately independent of the CLI's extractor: a bug there should
+    # disagree with this reimplementation, not be mirrored by it.
     lines = text.splitlines()
     begins = [i for i, l in enumerate(lines) if l.strip() == BEGIN]
     ends = [i for i, l in enumerate(lines) if l.strip() == END]
@@ -144,10 +146,13 @@ class SpikeBaselineTest(unittest.TestCase):
         r = run_cli(["--profile", str(PROFILE), "check-commit",
                      "added loading spinner"])
         out = json.loads(r.stdout)
-        for key in ("ok", "check", "subject", "violations"):
+        for key in ("ok", "check", "subject", "profile", "violations"):
             self.assertIn(key, out)
         self.assertNotIn("exit_code", out)
         self.assertEqual(out["check"], "commit")
+        # the resolved profile path is echoed so a wrong-profile verdict
+        # is diagnosable from output alone
+        self.assertEqual(Path(out["profile"]).resolve(), PROFILE.resolve())
         for v in out["violations"]:
             self.assertIn("code", v)
             self.assertIn("detail", v)
@@ -158,6 +163,35 @@ class SpikeBaselineTest(unittest.TestCase):
         out = json.loads(r.stdout)
         codes = [v["code"] for v in out["violations"]]
         self.assertIn("close-missing-commit-ref", codes)
+
+
+class CheckerEdgeCasesTest(unittest.TestCase):
+    """Regression tests from the Tier 1 review of process-kit-ouc."""
+
+    def test_empty_summary_with_body_is_rejected(self):
+        # `git commit -m "feat: " -m "body"` produces exactly this shape;
+        # DOTALL lets (.+) span the body, so the guard must catch it.
+        r = run_cli(["--profile", str(PROFILE), "check-commit",
+                     "feat: \n\nimplement the loading spinner per AC1"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        self.assertIn("commit-empty-summary",
+                      [v["code"] for v in out["violations"]])
+
+    def test_multiline_epic_close_reason_passes(self):
+        # "children ... closed" spanning a line break is a legitimate close.
+        r = run_cli(["--profile", str(PROFILE), "check-close", "--type",
+                     "epic",
+                     "All 4 children verified individually.\n"
+                     "Everything closed with commit-mapped evidence "
+                     "(abc: 52b45df)."])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_branch_with_trailing_newline_is_rejected(self):
+        # unstripped `git symbolic-ref` output must not pass the anchor
+        r = run_cli(["--profile", str(PROFILE), "check-branch",
+                     "feat/abc-def\n"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
 
 
 class RenderRuleTest(unittest.TestCase):
@@ -350,23 +384,37 @@ class ProfileResolutionTest(unittest.TestCase):
 
 
 class CliConventionsTest(unittest.TestCase):
+    def assert_json_usage_error(self, r):
+        # exit 2 alone is what stock argparse (or a missing CLI) produces;
+        # the agent contract is JSON on stderr with error_kind "usage".
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "usage")
+
     def test_unknown_flag_is_usage_error_exit_2(self):
-        r = run_cli(["--bogus"])
-        self.assertEqual(r.returncode, 2)
+        self.assert_json_usage_error(run_cli(["--bogus"]))
 
     def test_check_close_without_type_is_usage_error_exit_2(self):
-        r = run_cli(["--profile", str(PROFILE), "check-close", "reason only"])
-        self.assertEqual(r.returncode, 2)
+        self.assert_json_usage_error(
+            run_cli(["--profile", str(PROFILE), "check-close", "reason only"]))
 
     def test_unknown_fragment_is_usage_error_naming_known_ones(self):
         r = run_cli(["--profile", str(PROFILE), "render-rule", "nonesuch"])
-        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assert_json_usage_error(r)
         err = json.loads(r.stderr)
         self.assertIn("git-conventions", err["error"])
 
     def test_render_rule_without_fragment_or_check_is_usage_error(self):
-        r = run_cli(["--profile", str(PROFILE), "render-rule"])
-        self.assertEqual(r.returncode, 2)
+        self.assert_json_usage_error(
+            run_cli(["--profile", str(PROFILE), "render-rule"]))
+
+    def test_render_rule_fragment_plus_check_is_usage_error(self):
+        # a fragment name alongside --check must not be silently ignored —
+        # a whole-repo pass must not be misread as a single-fragment pass
+        self.assert_json_usage_error(
+            run_cli(["--profile", str(PROFILE), "render-rule",
+                     "git-conventions", "--check"]))
 
     def test_help_exits_zero_and_names_subcommands(self):
         r = run_cli(["--help"])
