@@ -1,0 +1,193 @@
+# process-kit conventions profile — single source of truth for the kit's
+# data-shaped conventions.
+# Design: docs/specs/2026-08-05-profile-projection-tier1.md (Tier 1, GO 2026-08-05).
+#
+# Two projections come off this file:
+#   1. Rule text — GENERATED-marked fragments committed inside cursor/rules/
+#      (render: `scripts/conventions render-rule <fragment>`; the kit-ci regen
+#      gate runs `scripts/conventions render-rule --check` and fails on drift).
+#   2. Checker behavior — `scripts/conventions` check-commit / check-branch /
+#      check-close read this profile at runtime.
+#
+# Honesty rule (carried from the spike): this file encodes what the rule prose
+# PRESCRIBES. Where the prose is judgment-shaped, `judgment` lists say so
+# explicitly rather than pretending a regex covers it.
+#
+# Pattern entries: a detector is either a bare regex string or a
+# { pattern = '...', flags = ["IGNORECASE", ...] } table; flags name Python
+# `re` module constants. Later children (token catalog, defer grammar, TDD
+# obligations) add their sections here using the same entry shape.
+
+schema_version = 1
+profile = "process-kit"
+
+# ---------------------------------------------------------------------------
+# 1a. Commit-message grammar
+# Law home: cursor/rules/operating-model.mdc § Git Conventions (generated).
+# `spike` sanctioned as a commit type by Kevin, 2026-08-05 (process-kit-8qv);
+# `wip` remains unsanctioned.
+# ---------------------------------------------------------------------------
+[commit]
+source = "cursor/rules/operating-model.mdc#git-conventions"
+format = "<type>: <summary>"
+types = ["feat", "fix", "refactor", "test", "chore", "docs", "spike"]
+# "under 72" read strictly: len(summary first line) < 72. The prose says
+# "summaries", not "subject line", so the cap applies after "<type>: ".
+summary_max_chars = 72
+
+# ---------------------------------------------------------------------------
+# 1b. Branch-naming grammar
+# `spike` is NOT a branch type — only the commit type was sanctioned
+# (Kevin, 2026-08-05); the demo-case baseline pins spike/... branches as
+# rejected. The prose grammar is not deterministically parseable (<bead-id>
+# and <short-description> are both kebab-case), so the checker validates the
+# checkable envelope: known type + "/" + lowercase kebab slug with >= 2
+# hyphen-separated segments. Documented, not fixed, in Tier 1.
+# ---------------------------------------------------------------------------
+[branch]
+source = "cursor/rules/operating-model.mdc#git-conventions"
+format = "<type>/<bead-id>-<short-description>"
+types = ["feat", "fix", "refactor", "test", "chore", "docs"]
+slug_pattern = '^[a-z0-9]+(-[a-z0-9]+)+$'
+
+# ---------------------------------------------------------------------------
+# 1c. Judgment-shaped git law — rendered verbatim as fragment bullets. No
+# checker can verify these; they live here so the whole Git Conventions
+# section stays single-sourced.
+# ---------------------------------------------------------------------------
+[git]
+judgment = [
+  "Commit at logical checkpoints, small and atomic — not one giant commit at bead close. Never force push shared branches without explicit user approval.",
+]
+
+# ---------------------------------------------------------------------------
+# 2. Close-evidence shape, per bead type
+# Law home: cursor/rules/bead-completion.mdc evidence table (generated).
+# Per type: `evidence` is the law prose rendered into the table's "Required
+# evidence" column; `requires` names the machine-checked elements
+# (`conventions check-close`); `judgment` is what no checker can verify.
+# `row = false` keeps a type checker-known without a table row (task shares
+# feature's shape but the committed table never had a Task row; config is
+# folded into the "Chore/config" row). `row_label` overrides the default
+# capitalized type name.
+# ---------------------------------------------------------------------------
+[close_evidence]
+source = "cursor/rules/bead-completion.mdc#evidence-policy"
+# IOU phrases mark deferral-instead-of-evidence — banned in every close
+# reason (bead-completion "Do not defer AC verification"). The one
+# sanctioned deferral form is exempted below; the follow-up bead must exist
+# at close time.
+iou_phrases = [
+  "will be verified later",
+  "will be re-verified",
+  "deferred to PR review",
+  "deferred to integration",
+  "to be re-checked",
+  "verified later",
+]
+iou_exempt = { pattern = 'deferred to bead \S+', flags = ["IGNORECASE"] }
+
+# Element library: deterministic detectors for the evidence shapes a close
+# reason must visibly carry. Presence only — evidence QUALITY stays with
+# self-review and the review lenses.
+[close_evidence.elements.commit_ref]
+description = "commit hash (7-40 hex), branch name reference, or PR URL"
+pattern = '\b[0-9a-f]{7,40}\b|\bbranch\b|https?://\S*/pull/\d+'
+flags = ["IGNORECASE"]
+
+[close_evidence.elements.ac_mapping]
+description = "explicit mapping to acceptance criteria (AC1:, AC 2, per AC ...)"
+pattern = '\bACs?\s*\d|\bper[- ]AC\b|\ball ACs\b|\bacceptance criteri'
+flags = ["IGNORECASE"]
+
+[close_evidence.elements.na_marker]
+description = "explicit N/A marker for types whose table row prescribes it"
+pattern = 'N/A'
+flags = ["IGNORECASE"]
+
+[close_evidence.elements.findings_summary]
+description = "spike: summary of findings / whether the question was answered"
+pattern = '\bfinding|\banswer|\bconclusion|\brecommend|\bwon.t.do\b|\bobsolete\b'
+flags = ["IGNORECASE"]
+
+[close_evidence.elements.children_closed]
+description = "epic/milestone: statement that children are closed/verified"
+pattern = '\bchild(?:ren)?\b.*\bclos|\bclos\w*\b.*\bchild(?:ren)?\b'
+flags = ["IGNORECASE"]
+
+# Table-row order below is the rendered order — it mirrors the committed
+# evidence table in bead-completion.mdc.
+[close_evidence.by_type.bug]
+evidence = "Test output showing bug is reproduced and fixed"
+requires = ["commit_ref", "ac_mapping"]
+judgment = ["test output actually shows the bug reproduced and fixed"]
+
+[close_evidence.by_type.feature]
+evidence = "Test output or manual verification notes per AC"
+requires = ["commit_ref", "ac_mapping"]
+judgment = ["test output / manual verification genuinely covers each AC"]
+
+[close_evidence.by_type.story]
+evidence = "Test output or manual verification per AC (same as feature)"
+requires = ["commit_ref", "ac_mapping"]
+judgment = ["same as feature"]
+
+[close_evidence.by_type.spike]
+evidence = "Summary of findings; whether the question was answered"
+requires = ["findings_summary"]
+judgment = ["findings are real; the spike question was actually answered"]
+
+[close_evidence.by_type.refactor]
+evidence = "Build/lint clean, existing behavioral tests pass"
+requires = ["commit_ref"]
+judgment = ["build/lint clean; behavioral tests actually passed"]
+
+[close_evidence.by_type.chore]
+row_label = "Chore/config"
+evidence = "Brief summary of what was done"
+requires = ["commit_ref"]
+judgment = ["summary reflects what was done"]
+
+# Folded into the "Chore/config" row above; checker treats it as its own type.
+[close_evidence.by_type.config]
+row = false
+requires = ["commit_ref"]
+judgment = ["summary reflects what was done"]
+
+# Checker-known; the committed table has no Task row (same shape as feature).
+[close_evidence.by_type.task]
+row = false
+requires = ["commit_ref", "ac_mapping"]
+judgment = ["verification notes genuinely cover each AC"]
+
+[close_evidence.by_type.docs]
+evidence = '"N/A — documentation update, no verification needed"'
+requires = ["na_marker"]
+judgment = []
+
+[close_evidence.by_type.decision]
+evidence = '"N/A — decision record, no verification needed"'
+requires = ["na_marker"]
+judgment = []
+
+[close_evidence.by_type.milestone]
+evidence = '"N/A — milestone marker, verify children are closed"'
+requires = ["na_marker"]
+judgment = ["children actually closed"]
+
+[close_evidence.by_type.epic]
+evidence = "Verify all children closed (`bd epic close-eligible`), then confirm each success criterion is met by the closed children's outcomes. If a criterion is unmet, create a follow-up bead before closing."
+requires = ["children_closed"]
+judgment = ["each success criterion genuinely met by the closed children"]
+
+# ---------------------------------------------------------------------------
+# 3. Fragment homes — where each rendered fragment is committed, relative to
+# the repo root. `render-rule --check` (the kit-ci regen gate) iterates this
+# table: render each fragment, extract the GENERATED-marked region from the
+# file, fail on any byte difference.
+# ---------------------------------------------------------------------------
+[fragments."git-conventions"]
+file = "cursor/rules/operating-model.mdc"
+
+[fragments."close-evidence"]
+file = "cursor/rules/bead-completion.mdc"

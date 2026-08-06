@@ -1,0 +1,426 @@
+#!/usr/bin/env python3
+"""conventions — profile-driven convention checker + rule-fragment renderer.
+
+One machine-readable profile (profiles/conventions.toml) is the single
+source of truth for the kit's data-shaped conventions. This CLI projects
+it two ways — checker verdicts and rule text — so the committed rule
+fragments and the enforcement behavior cannot drift apart. The kit-ci
+regen gate runs `render-rule --check`: it renders every fragment the
+profile declares, extracts the GENERATED-marked region from the committed
+rule file, and fails on any byte difference.
+
+Commands:
+  check-commit MESSAGE              Validate a commit message
+  check-branch NAME                 Validate a branch name
+  check-close --type TYPE REASON    Validate a close reason for a bead type
+  render-rule FRAGMENT | --check    Render a fragment / verify committed regions
+
+Exit codes: 0 ok · 1 violation or fragment drift · 2 usage error ·
+3 I/O or profile error. Check output is JSON on stdout; render-rule
+FRAGMENT emits markdown. Usage and I/O errors are JSON on stderr.
+Non-interactive.
+
+Profile path resolution: --profile flag > CONVENTIONS_PROFILE env >
+nearest profiles/conventions.toml walking up from the current directory
+(the repo root of the repo being checked).
+
+Promoted from experiments/profile-spike/ (design:
+docs/specs/2026-08-05-profile-projection-tier1.md).
+"""
+
+import argparse
+import difflib
+import json
+import os
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+PROFILE_RELPATH = Path("profiles") / "conventions.toml"
+
+# Region markers for generated fragments committed inside canonical rules.
+# The same pair wraps every fragment; one region per rule file.
+BEGIN_MARKER = "<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->"
+END_MARKER = "<!-- END GENERATED from profiles/conventions.toml -->"
+
+# Pattern-entry flags name Python `re` module constants (design-doc schema:
+# token entries are {pattern, flags} tables; the same shape serves every
+# detector in the profile).
+FLAG_NAMES = {
+    "IGNORECASE": re.IGNORECASE,
+    "MULTILINE": re.MULTILINE,
+    "DOTALL": re.DOTALL,
+    "VERBOSE": re.VERBOSE,
+    "ASCII": re.ASCII,
+}
+
+EPILOG = f"""\
+examples:
+  conventions check-commit "feat: add loading spinner (gastown-abc)"
+  conventions check-branch "feat/gastown-abc-loading-ux"
+  conventions check-close --type feature "Commit ab34f9e. AC1: verified."
+  conventions render-rule git-conventions
+  conventions render-rule --check        # the kit-ci regen gate
+
+fragments (declared in the profile's [fragments] table):
+  git-conventions  -> cursor/rules/operating-model.mdc  (## Git Conventions)
+  close-evidence   -> cursor/rules/bead-completion.mdc  (evidence table)
+
+Each fragment is committed between the marker pair
+  {BEGIN_MARKER}
+  {END_MARKER}
+and must byte-match `render-rule <fragment>` output. Regenerate by pasting
+that output over the whole marked region — never hand-edit inside it.
+
+known limitations:
+  - the branch grammar's <bead-id>/<short-description> boundary is
+    ambiguous (both kebab-case); the checker validates the envelope:
+    known type + "/" + lowercase kebab slug with >= 2 segments
+  - check-close verifies evidence SHAPE, not truth: a reason can name a
+    commit and "AC1" and still be hollow — quality stays with self-review
+    and the review lenses
+"""
+
+
+def emit(payload, stream=sys.stdout):
+    json.dump(payload, stream, sort_keys=True)
+    stream.write("\n")
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+def usage_error(message):
+    json.dump({"ok": False, "error": message, "exit_code": 2},
+              sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(2)
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        usage_error(message)
+
+
+def resolve_profile_path(flag_value):
+    if flag_value:
+        return Path(flag_value)
+    env_value = os.environ.get("CONVENTIONS_PROFILE")
+    if env_value:
+        return Path(env_value)
+    cwd = Path.cwd().resolve()
+    for candidate_dir in [cwd, *cwd.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+    emit_error(
+        f"no {PROFILE_RELPATH} found walking up from {cwd}; "
+        "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
+
+
+def load_profile(flag_value):
+    path = resolve_profile_path(flag_value)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f), path.resolve()
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        emit_error(f"cannot load profile {path}: {exc}", "io", 3)
+
+
+def repo_root_for(profile_path):
+    """Repo root of the repo being checked: the directory holding profiles/."""
+    if profile_path.parent.name == PROFILE_RELPATH.parent.name:
+        return profile_path.parent.parent
+    return profile_path.parent
+
+
+def compile_entry(entry, where):
+    """Compile a pattern entry: a bare regex string or a {pattern, flags} table."""
+    if isinstance(entry, str):
+        pattern, flag_names = entry, []
+    elif isinstance(entry, dict) and "pattern" in entry:
+        pattern, flag_names = entry["pattern"], entry.get("flags", [])
+    else:
+        emit_error(f"{where}: expected a pattern string or "
+                   "a {pattern, flags} table", "profile", 3)
+    flags = 0
+    for name in flag_names:
+        if name not in FLAG_NAMES:
+            emit_error(f"{where}: unknown flag {name!r} "
+                       f"(known: {sorted(FLAG_NAMES)})", "profile", 3)
+        flags |= FLAG_NAMES[name]
+    try:
+        return re.compile(pattern, flags)
+    except re.error as exc:
+        emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
+                   "profile", 3)
+
+
+# --------------------------------------------------------------------------
+# Checkers — every violation carries a code traceable to the profile field
+# that produced it.
+# --------------------------------------------------------------------------
+
+def check_commit(profile, message):
+    spec = profile["commit"]
+    violations = []
+    m = re.match(r"^([a-z]+): (.+)$", message, re.DOTALL)
+    if not m:
+        violations.append({
+            "code": "commit-format",
+            "detail": f"message does not match `{spec['format']}`",
+        })
+        return violations
+    ctype, summary = m.group(1), m.group(2)
+    if ctype not in spec["types"]:
+        violations.append({
+            "code": "commit-type",
+            "detail": f"type `{ctype}` not in allowed types {spec['types']}",
+        })
+    summary_first_line = summary.splitlines()[0]
+    if len(summary_first_line) >= spec["summary_max_chars"]:
+        violations.append({
+            "code": "commit-summary-length",
+            "detail": (f"summary is {len(summary_first_line)} chars; "
+                       f"cap is under {spec['summary_max_chars']}"),
+        })
+    return violations
+
+
+def check_branch(profile, name):
+    spec = profile["branch"]
+    violations = []
+    parts = name.split("/", 1)
+    if len(parts) != 2:
+        violations.append({
+            "code": "branch-format",
+            "detail": f"branch does not match `{spec['format']}`",
+        })
+        return violations
+    btype, slug = parts
+    if btype not in spec["types"]:
+        violations.append({
+            "code": "branch-type",
+            "detail": f"type `{btype}` not in allowed types {spec['types']}",
+        })
+    if not re.match(spec["slug_pattern"], slug):
+        violations.append({
+            "code": "branch-slug",
+            "detail": (f"`{slug}` does not match slug pattern "
+                       f"`{spec['slug_pattern']}` "
+                       "(kebab-case, bead id + description)"),
+        })
+    return violations
+
+
+def check_close(profile, bead_type, reason):
+    spec = profile["close_evidence"]
+    violations = []
+    type_spec = spec["by_type"].get(bead_type)
+    if type_spec is None:
+        return [{
+            "code": "close-unknown-type",
+            "detail": (f"bead type `{bead_type}` has no evidence spec; "
+                       f"known: {sorted(spec['by_type'])}"),
+        }]
+    for element in type_spec["requires"]:
+        entry = spec["elements"][element]
+        detector = compile_entry(entry, f"close_evidence.elements.{element}")
+        if not detector.search(reason):
+            violations.append({
+                "code": f"close-missing-{element.replace('_', '-')}",
+                "detail": (f"close reason lacks required element "
+                           f"`{element}`: {entry['description']}"),
+            })
+    exempt = compile_entry(spec["iou_exempt"], "close_evidence.iou_exempt")
+    scrubbed = exempt.sub("", reason)
+    for phrase in spec["iou_phrases"]:
+        if phrase.lower() in scrubbed.lower():
+            violations.append({
+                "code": "close-iou-phrase",
+                "detail": (f"`{phrase}` is an IOU, not evidence "
+                           "(bead-completion: do not defer AC verification)"),
+            })
+    return violations
+
+
+# --------------------------------------------------------------------------
+# Renderers — one function per fragment the profile declares. Output is the
+# full marked region: BEGIN marker, fragment body, END marker.
+# --------------------------------------------------------------------------
+
+def render_git_conventions(profile):
+    c, b = profile["commit"], profile["branch"]
+    commit_types = ", ".join(f"`{t}`" for t in c["types"])
+    branch_types = ", ".join(f"`{t}`" for t in b["types"])
+    lines = [
+        "## Git Conventions",
+        "",
+        f"- Commit messages: `{c['format']}` — types {commit_types}; "
+        f"summaries under {c['summary_max_chars']} characters. "
+        f"Branch naming: `{b['format']}` — types {branch_types}.",
+    ]
+    for law in profile["git"]["judgment"]:
+        lines.append(f"- {law}")
+    return lines
+
+
+def render_close_evidence(profile):
+    lines = [
+        "| Bead type | Required evidence |",
+        "|-----------|------------------|",
+    ]
+    for type_name, type_spec in profile["close_evidence"]["by_type"].items():
+        if not type_spec.get("row", True):
+            continue
+        label = type_spec.get("row_label", type_name.capitalize())
+        lines.append(f"| {label} | {type_spec['evidence']} |")
+    return lines
+
+
+RENDERERS = {
+    "git-conventions": render_git_conventions,
+    "close-evidence": render_close_evidence,
+}
+
+
+def render_fragment(profile, name):
+    body = RENDERERS[name](profile)
+    return "\n".join([BEGIN_MARKER, *body, END_MARKER])
+
+
+def extract_region(text):
+    """Returns the marked region (markers inclusive), or None if the marker
+    pair is absent, duplicated, or out of order."""
+    lines = text.splitlines()
+    begins = [i for i, line in enumerate(lines) if line.strip() == BEGIN_MARKER]
+    ends = [i for i, line in enumerate(lines) if line.strip() == END_MARKER]
+    if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
+        return None
+    return "\n".join(lines[begins[0]:ends[0] + 1])
+
+
+def check_fragments(profile, root):
+    results = []
+    for name, frag_spec in profile["fragments"].items():
+        if name not in RENDERERS:
+            emit_error(f"profile declares fragment {name!r} but this CLI has "
+                       f"no renderer for it (known: {sorted(RENDERERS)})",
+                       "profile", 3)
+        rendered = render_fragment(profile, name)
+        relfile = frag_spec["file"]
+        result = {"fragment": name, "file": relfile, "status": "ok",
+                  "diff": []}
+        target = root / relfile
+        if not target.is_file():
+            result["status"] = "missing-file"
+        else:
+            committed = extract_region(target.read_text(encoding="utf-8"))
+            if committed is None:
+                result["status"] = "missing-markers"
+            elif committed != rendered:
+                result["status"] = "drift"
+                result["diff"] = list(difflib.unified_diff(
+                    committed.splitlines(), rendered.splitlines(),
+                    fromfile=f"{relfile} (committed region)",
+                    tofile=f"render-rule {name} (from profile)",
+                    lineterm=""))
+        results.append(result)
+    return results
+
+
+# --------------------------------------------------------------------------
+
+
+def run_check(kind, violations, subject):
+    ok = not violations
+    emit({"ok": ok, "check": kind, "subject": subject,
+          "violations": violations})
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="conventions",
+        description=(
+            "Profile-driven convention checker + rule-fragment renderer. "
+            "Checks read profiles/conventions.toml at runtime; render-rule "
+            "projects the same profile as rule text. Exit codes: 0 ok, "
+            "1 violation/drift, 2 usage error, 3 I/O or profile error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--profile",
+                        help="path to profile TOML (default: resolution "
+                             "chain in the description)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("check-commit", help="validate a commit message")
+    p.add_argument("message")
+
+    p = sub.add_parser("check-branch", help="validate a branch name")
+    p.add_argument("name")
+
+    p = sub.add_parser("check-close", help="validate a close reason")
+    p.add_argument("--type", required=True, dest="bead_type",
+                   help="bead type (bug, feature, spike, ...)")
+    p.add_argument("reason")
+
+    p = sub.add_parser(
+        "render-rule",
+        help="render a fragment as markdown / --check committed regions")
+    p.add_argument("fragment", nargs="?",
+                   help="fragment name from the profile's [fragments] table")
+    p.add_argument("--check", action="store_true",
+                   help="verify every committed region byte-matches its "
+                        "render; exit 1 on drift (the kit-ci regen gate)")
+
+    args = parser.parse_args(argv)
+    profile, profile_path = load_profile(args.profile)
+
+    try:
+        if args.command == "check-commit":
+            return run_check("commit", check_commit(profile, args.message),
+                             args.message)
+        if args.command == "check-branch":
+            return run_check("branch", check_branch(profile, args.name),
+                             args.name)
+        if args.command == "check-close":
+            return run_check(
+                "close",
+                check_close(profile, args.bead_type, args.reason),
+                {"type": args.bead_type, "reason": args.reason},
+            )
+        if args.command == "render-rule":
+            known = sorted(profile.get("fragments", {}))
+            if args.check:
+                root = repo_root_for(profile_path)
+                results = check_fragments(profile, root)
+                ok = all(r["status"] == "ok" for r in results)
+                emit({"ok": ok, "check": "fragments", "root": str(root),
+                      "fragments": results})
+                return 0 if ok else 1
+            if not args.fragment:
+                usage_error("render-rule needs a fragment name or --check; "
+                            f"fragments: {known}")
+            if args.fragment not in known or args.fragment not in RENDERERS:
+                usage_error(f"unknown fragment {args.fragment!r}; "
+                            f"fragments: {known}")
+            print(render_fragment(profile, args.fragment))
+            return 0
+    except KeyError as exc:
+        emit_error(f"profile {profile_path} is missing required key: {exc}",
+                   "profile", 3)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

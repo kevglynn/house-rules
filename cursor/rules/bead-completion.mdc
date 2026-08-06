@@ -24,6 +24,7 @@ The same agent that did the work re-reads each acceptance criterion (`bd show <i
 
 Every close reason must include evidence mapped to acceptance criteria and reference a commit hash, branch name, or PR URL (format and worked examples: the skill). After closing, `--suggest-next` shows newly unblocked issues; `--claim-next` auto-claims the next highest-priority ready one.
 
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
 | Bead type | Required evidence |
 |-----------|------------------|
 | Bug | Test output showing bug is reproduced and fixed |
@@ -36,6 +37,7 @@ Every close reason must include evidence mapped to acceptance criteria and refer
 | Decision | "N/A — decision record, no verification needed" |
 | Milestone | "N/A — milestone marker, verify children are closed" |
 | Epic | Verify all children closed (`bd epic close-eligible`), then confirm each success criterion is met by the closed children's outcomes. If a criterion is unmet, create a follow-up bead before closing. |
+<!-- END GENERATED from profiles/conventions.toml -->
 
 **Checker:** `scripts/close-reason-lint` (kit-distributed) mechanizes the shape half of this policy — `bd list --status=closed --json | close-reason-lint` flags closed beads whose reasons lack a commit-ref or AC-mapping shape (`--json` for agents); whether the mapped evidence is any good stays with self-review and the review lenses. Shapes, exemptions, and worked examples in `close-reason-lint --help`.
 

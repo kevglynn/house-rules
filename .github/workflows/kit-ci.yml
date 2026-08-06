@@ -1,7 +1,9 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Two gates: (1) the claude/rules projection must match the cursor/rules
-# canon (sync-rules.sh --check --local), (2) all shell scripts pass
-# shellcheck at warning severity.
+# Three gates: (1) the claude/rules projection must match the cursor/rules
+# canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
+# must match their render from profiles/conventions.toml (conventions
+# render-rule --check), (3) all shell scripts pass shellcheck at warning
+# severity.
 
 name: kit ci
 
@@ -24,6 +26,24 @@ jobs:
             exit 1
           fi
           git checkout -- claude/rules/pragmatic-tdd.md
+          echo "gate correctly rejects seeded drift"
+
+  fragment-regen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run conventions test suite
+        run: python3 scripts/tests/test_conventions.py
+      - name: Rule fragments match profile render
+        run: python3 scripts/conventions render-rule --check
+      - name: Gate self-test — seeded fragment drift must fail the check
+        run: |
+          sed -i 's/summaries under 72 characters/summaries under 720 characters/' cursor/rules/operating-model.mdc
+          if python3 scripts/conventions render-rule --check; then
+            echo "seeded fragment drift did NOT fail the gate" >&2
+            exit 1
+          fi
+          git checkout -- cursor/rules/operating-model.mdc
           echo "gate correctly rejects seeded drift"
 
   shellcheck:
