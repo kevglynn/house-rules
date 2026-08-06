@@ -182,7 +182,9 @@ def compile_entry(entry, where):
 # close-reason-lint, banned-token-scan) — part of the distributed plumbing
 # block whose canonical text lives in this file. This CLI itself never
 # calls it: for `conventions`, profile absence is an error
-# (resolve_profile_path), not a fallback.
+# (resolve_profile_path), not a fallback. The block's closed-over
+# dependencies — emit_error and PROFILE_RELPATH — are part of the verbatim
+# contract, pinned across copies by ResolveSectionPromotionTest.
 def resolve_section(flag_value, section_name, builder, fallback, noun,
                     root=None):
     """Resolve a profile section per the standalone-checker posture:

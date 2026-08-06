@@ -29,7 +29,7 @@ Content self-matching, two idioms:
   - Data files (the profile and every distributed copy of it): a catalog
     cannot assemble its own tokens from parts, so the scanner honors a
     declared-token region contract — lines between the marker pair (the
-    catalog's scan exclude_marker with ":begin" / ":end" appended) are
+    catalog's exclude_marker with ":begin" / ":end" appended) are
     catalog DATA, and matching is suppressed there, whatever the file's
     path or name.
 
@@ -103,7 +103,10 @@ NUM = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 
 def _word_pat(token):
     """Whole-word/phrase pattern string for a token; spaces match any
-    whitespace run. Tokens carry no regex metacharacters, so no escaping."""
+    whitespace run. No escaping: the profile carries these same pattern
+    strings unescaped, so escaping here would break the byte-parity pin.
+    The no-metacharacters premise is itself pinned by
+    test_fallback_displays_carry_no_regex_metacharacters."""
     return r"\b" + token.replace(" ", r"\s+") + r"\b"
 
 
@@ -127,7 +130,7 @@ def _entry(display, pattern=None, flags=("IGNORECASE",)):
 # the ":begin"-suffixed form (joined at runtime, never at rest in this
 # file) opens a declared-token region.
 FALLBACK_TOKENS = {
-    "scan": {"exclude_marker": "banned-token-scan:declared-tokens"},
+    "exclude_marker": "banned-token-scan:declared-tokens",
     "classes": {
         "time_units": {
             "report_as": CLS_TIME,
@@ -195,8 +198,6 @@ FALLBACK_TOKENS = {
     },
 }
 
-_MARK = FALLBACK_TOKENS["scan"]["exclude_marker"]
-
 EPILOG = f"""\
 token classes (agent-identity rule, banned when framing work-to-be-done):
   {CLS_TIME}: {_hours}, {_days}, {_weeks}, {_months}, {_quarters},
@@ -229,11 +230,15 @@ catalog source:
 
 declared-token data (content-side exclusion contract):
   a catalog data file is itself token-laden, so its catalog region is
-  bracketed by marker lines — the catalog's scan exclude_marker
-  ("{_MARK}") with ":begin" / ":end" appended — and matching is
-  suppressed between them. This keeps the profile that carries the
-  catalog, and every distributed copy of it, clean at any path, while
-  real prose keeps flagging.
+  bracketed by marker lines — the catalog's exclude_marker
+  ("{FALLBACK_TOKENS['exclude_marker']}") with ":begin" / ":end"
+  appended — and matching is suppressed between them. Markers count only
+  as whole tokens (a marker embedded in a longer word is inert); a
+  begin+end pair on one line is a complete one-line region. This keeps
+  the profile that carries the catalog, and every distributed copy of
+  it, clean at any path, while real prose keeps flagging. JSON output
+  reports excluded_regions / unterminated_regions counts so suppression
+  is never silent.
 
 known limitations:
   - whole-word matching only: inflected forms ("{_schedule}d",
@@ -244,7 +249,11 @@ known limitations:
     bans the plural forms
   - a begin marker with no end marker suppresses matching to the end of
     that source; the contract is content-side, so a marker pasted into
-    prose excludes that prose (accident hazard, not adversary defense)
+    prose excludes that prose (accident hazard, not adversary defense —
+    the unterminated_regions count in JSON output surfaces the accident)
+  - profile discovery anchors at the invoking directory, not at each
+    scanned file's location: scanning another repo's files applies THIS
+    repo's catalog (pass --profile to pin the intended one)
 """
 
 
@@ -269,7 +278,9 @@ class JsonArgumentParser(argparse.ArgumentParser):
 # Profile plumbing — discover_profile, resolve_profile_path, load_profile,
 # compile_entry, resolve_section, and FLAG_NAMES are verbatim copies from
 # scripts/conventions (the canonical copy; Planner decision on the tlp
-# epic — do not fork the behavior).
+# epic — do not fork the behavior). The block's closed-over dependencies
+# — emit_error and PROFILE_RELPATH — are part of the verbatim contract
+# and pinned equal across copies by ResolveSectionPromotionTest.
 # --------------------------------------------------------------------------
 
 # Pattern-entry flags name Python `re` module constants (design-doc schema:
@@ -382,13 +393,13 @@ def build_tokens(spec, origin):
     declared-token region markers. `origin` names the catalog source
     (profile path or the built-in fallback) for errors."""
     try:
-        marker = spec["scan"]["exclude_marker"]
+        marker = spec["exclude_marker"]
         classes = spec["classes"]
     except (KeyError, TypeError) as exc:
         emit_error(f"{origin}: [tokens] catalog is missing required key: "
                    f"{exc}", "profile", 3)
     if not isinstance(marker, str) or not marker:
-        emit_error(f"{origin}: tokens.scan.exclude_marker must be a "
+        emit_error(f"{origin}: tokens.exclude_marker must be a "
                    "non-empty string", "profile", 3)
     if not isinstance(classes, dict):
         emit_error(f"{origin}: [tokens.classes] must be a table of named "
@@ -416,19 +427,44 @@ def build_tokens(spec, origin):
     }
 
 
+def _marker_at(line, marker):
+    """Index where `marker` stands as a whole token in `line` (not embedded
+    in a longer word like "...:beginner"), else -1. Word-ish boundary on
+    both sides so a marker-shaped substring cannot open or close a region."""
+    idx = line.find(marker)
+    while idx != -1:
+        end = idx + len(marker)
+        before_ok = idx == 0 or not (line[idx - 1].isalnum()
+                                     or line[idx - 1] in "_-")
+        after_ok = end >= len(line) or not (line[end].isalnum()
+                                            or line[end] in "_-")
+        if before_ok and after_ok:
+            return idx
+        idx = line.find(marker, idx + 1)
+    return -1
+
+
 def scan_text(name, text, catalog):
+    """Returns (findings, regions_suppressed, unterminated_regions)."""
     findings = []
+    regions = 0
+    unterminated = 0
     excluded = False
     for lineno, line in enumerate(text.splitlines(), start=1):
         # Declared-token data region: between the begin/end marker lines
         # nothing is a candidate — the content IS the catalog. Marker
         # lines themselves are part of the region.
         if excluded:
-            if catalog["exclude_end"] in line:
+            if _marker_at(line, catalog["exclude_end"]) != -1:
                 excluded = False
             continue
-        if catalog["exclude_begin"] in line:
-            excluded = True
+        begin = _marker_at(line, catalog["exclude_begin"])
+        if begin != -1:
+            regions += 1
+            # A begin+end pair on one line is a complete one-line region:
+            # that line is suppressed, scanning resumes on the next.
+            after = begin + len(catalog["exclude_begin"])
+            excluded = _marker_at(line[after:], catalog["exclude_end"]) == -1
             continue
         taken = {}  # class -> list of consumed (start, end) spans
         for cls, display, pattern in catalog["matchers"]:
@@ -445,7 +481,9 @@ def scan_text(name, text, catalog):
                     "token": display,
                     "text": line.strip()[:200],
                 })
-    return findings
+    if excluded:
+        unterminated += 1
+    return findings, regions, unterminated
 
 
 def main(argv=None):
@@ -490,8 +528,13 @@ def main(argv=None):
         args.profile, "tokens", build_tokens, FALLBACK_TOKENS, "catalog")
 
     findings = []
+    regions = unterminated = 0
     for name, text in sources:
-        findings.extend(scan_text(name, text, catalog))
+        file_findings, file_regions, file_unterm = scan_text(
+            name, text, catalog)
+        findings.extend(file_findings)
+        regions += file_regions
+        unterminated += file_unterm
     exit_code = 1 if findings else 0
 
     if args.json:
@@ -500,6 +543,8 @@ def main(argv=None):
             "grammar_source": grammar_source,
             "files_scanned": len(sources),
             "findings": findings,
+            "excluded_regions": regions,
+            "unterminated_regions": unterminated,
         }, sys.stdout, sort_keys=True)
         sys.stdout.write("\n")
         return exit_code
@@ -508,8 +553,12 @@ def main(argv=None):
         print(f"{f['file']}:{f['line']}: [{f['class']}] {f['token']} — "
               f"{f['text']}")
     status = "clean" if not findings else f"{len(findings)} candidate hit(s)"
+    suppressed = ""
+    if regions:
+        unterm = f", {unterminated} unterminated" if unterminated else ""
+        suppressed = f" [declared-token regions suppressed: {regions}{unterm}]"
     print(f"Scanned {len(sources)} file(s): {status}. "
-          f"[grammar: {grammar_source}]")
+          f"[grammar: {grammar_source}]{suppressed}")
     return exit_code
 
 

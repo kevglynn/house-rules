@@ -92,26 +92,26 @@ def run_cli(args, stdin_text=None, cwd=None, env_extra=None):
     )
 
 
-def alt_tokens_profile():
-    """A minimal-but-complete [tokens] profile whose single class and token
-    differ from the kit's, so tests can prove the catalog comes from the
-    profile, not any built-in. Render-only keys (rule_label, rule_items,
-    rule_note) are deliberately absent — the checker must not require
-    them."""
-    return (
-        "schema_version = 1\n"
-        'profile = "fixture"\n'
-        "\n"
-        "[tokens.scan]\n"
-        'exclude_marker = "fixture-scan:declared-tokens"\n'
-        "\n"
-        "[tokens.classes.jargon]\n"
-        'report_as = "jargon-units"\n'
-        "entries = [\n"
-        "  { display = \"flubber\", pattern = '\\bflubber\\b',"
-        ' flags = ["IGNORECASE"] },\n'
-        "]\n"
-    )
+# A minimal-but-complete [tokens] profile whose single class, token, and
+# exclude marker differ from the kit's, so tests can prove the catalog —
+# marker included — comes from the profile, not any built-in. Render-only
+# keys (rule_label, rule_items, rule_note) are deliberately absent — the
+# checker must not require them.
+ALT_MARK = "fixture-scan:declared-tokens"
+ALT_TOKENS_PROFILE = (
+    "schema_version = 1\n"
+    'profile = "fixture"\n'
+    "\n"
+    "[tokens]\n"
+    f'exclude_marker = "{ALT_MARK}"\n'
+    "\n"
+    "[tokens.classes.jargon]\n"
+    'report_as = "jargon-units"\n'
+    "entries = [\n"
+    "  { display = \"flubber\", pattern = '\\bflubber\\b',"
+    ' flags = ["IGNORECASE"] },\n'
+    "]\n"
+)
 
 
 class BannedTokenScanTest(unittest.TestCase):
@@ -410,7 +410,7 @@ class ProfileCatalogTest(ProfileFixtureTest):
     def test_profile_flag_drives_the_catalog(self):
         # Under the alt profile "flubber" is the only token — the kit
         # catalog's tokens must NOT flag; under the kit profile, reverse.
-        alt = self.write("alt.toml", alt_tokens_profile())
+        alt = self.write("alt.toml", ALT_TOKENS_PROFILE)
         text = f"pure flubber, take 2 {W_WEEKS}\n"
         r, out = self.scan_json(text, args=["--profile", str(alt)])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -422,7 +422,7 @@ class ProfileCatalogTest(ProfileFixtureTest):
         self.assertEqual([f["class"] for f in out["findings"]], [C_TIME])
 
     def test_env_profile_is_honored(self):
-        alt = self.write("alt.toml", alt_tokens_profile())
+        alt = self.write("alt.toml", ALT_TOKENS_PROFILE)
         r, out = self.scan_json(
             "pure flubber\n", env_extra={"CONVENTIONS_PROFILE": str(alt)})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -431,7 +431,7 @@ class ProfileCatalogTest(ProfileFixtureTest):
                         out["grammar_source"])
 
     def test_profile_flag_beats_env(self):
-        alt = self.write("alt.toml", alt_tokens_profile())
+        alt = self.write("alt.toml", ALT_TOKENS_PROFILE)
         env = {"CONVENTIONS_PROFILE": str(alt)}
         # env alone: the alt catalog flags flubber
         r, out = self.scan_json("pure flubber\n", env_extra=env)
@@ -449,7 +449,7 @@ class ProfileCatalogTest(ProfileFixtureTest):
         # A profile at <cwd>/profiles/conventions.toml is discovered from
         # the invoker's directory (stdin/files tool with no --root — the
         # close-reason-lint anchor).
-        self.write("profiles/conventions.toml", alt_tokens_profile())
+        self.write("profiles/conventions.toml", ALT_TOKENS_PROFILE)
         r, out = self.scan_json("pure flubber\n", cwd=str(self.root))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(out["findings"][0]["token"], "flubber")
@@ -502,14 +502,14 @@ class ProfileCatalogTest(ProfileFixtureTest):
     def test_incomplete_tokens_section_is_profile_error_exit_3(self):
         partial = self.write(
             "partial.toml",
-            "schema_version = 1\n[tokens.scan]\nexclude_marker = \"x\"\n")
+            "schema_version = 1\n[tokens]\nexclude_marker = \"x\"\n")
         r = run_cli(["--json", "--profile", str(partial)], stdin_text="x\n")
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
         err = json.loads(r.stderr)
         self.assertEqual(err["error_kind"], "profile")
 
     def test_bad_entry_shape_is_profile_error_exit_3(self):
-        bad = self.write("bad-entry.toml", alt_tokens_profile().replace(
+        bad = self.write("bad-entry.toml", ALT_TOKENS_PROFILE.replace(
             "pattern = '\\bflubber\\b'", "pattern = 3"))
         r = run_cli(["--json", "--profile", str(bad)], stdin_text="x\n")
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
@@ -517,21 +517,22 @@ class ProfileCatalogTest(ProfileFixtureTest):
         self.assertEqual(err["error_kind"], "profile")
 
     def test_grammar_source_names_the_discovered_profile(self):
-        r, out = self.scan_json("all clear\n", cwd=str(REPO))
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue(out["grammar_source"].endswith("conventions.toml"),
-                        out["grammar_source"])
+        # The JSON grammar_source key is pinned by the contract test below;
+        # this covers the human-output echo only.
         r = run_cli([], stdin_text="all clear\n", cwd=str(REPO))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("[grammar:", r.stdout)
 
-    def test_json_contract_gains_grammar_source_only(self):
-        # Additive key only — the rest of the payload shape is consumed by
-        # target repos and must not change.
+    def test_json_contract_gains_additive_keys_only(self):
+        # Additive keys only (grammar_source + the region-suppression
+        # counters) — the rest of the payload shape is consumed by target
+        # repos and must not change.
         r, out = self.scan_json(f"take 2 {W_WEEKS}\n",
                                 args=["--profile", str(PROFILE)])
         self.assertEqual(r.returncode, 1)
         self.assertEqual(set(out),
-                         {"ok", "files_scanned", "findings", "grammar_source"})
+                         {"ok", "files_scanned", "findings", "grammar_source",
+                          "excluded_regions", "unterminated_regions"})
 
 
 class DeclaredTokenExclusionTest(ProfileFixtureTest):
@@ -573,10 +574,12 @@ class DeclaredTokenExclusionTest(ProfileFixtureTest):
 
     def test_declared_region_suppresses_only_the_region(self):
         # Both directions in one file: hits before and after the region
-        # still flag; catalog-shaped content inside it does not.
+        # still flag; catalog-shaped content inside it does not. A token on
+        # the begin-marker line itself pins the documented contract that
+        # marker lines are part of the region.
         p = self.write("doc.md", (
             f"take 2 {W_WEEKS} to assess\n"
-            f"{MARK_BEGIN} catalog data\n"
+            f"{MARK_BEGIN} catalog data {W_BALLPARK}\n"
             f"{W_TIMELINE} {W_BALLPARK}\n"
             f"pattern = '\\b{W_WEEKS}\\b'\n"
             f"{MARK_END}\n"
@@ -587,14 +590,65 @@ class DeclaredTokenExclusionTest(ProfileFixtureTest):
         self.assertEqual(sorted((f["line"], f["token"])
                                 for f in out["findings"]),
                          [(1, W_WEEKS), (6, W_TIMELINE)])
+        self.assertEqual(out["excluded_regions"], 1)
+        self.assertEqual(out["unterminated_regions"], 0)
+
+    def test_profile_exclude_marker_drives_suppression(self):
+        # The active profile's marker — not the kit's — is the exclusion
+        # contract. A region bracketed by the alt profile's marker
+        # suppresses that profile's token; the kit marker means nothing
+        # under the alt profile (its region does NOT suppress).
+        alt = self.write("alt.toml", ALT_TOKENS_PROFILE)
+        theirs = self.write("theirs.md",
+                            f"{ALT_MARK}:begin\nflubber\n{ALT_MARK}:end\n")
+        r = run_cli([str(theirs), "--json", "--profile", str(alt)])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(json.loads(r.stdout)["excluded_regions"], 1)
+        ours = self.write("ours.md",
+                          f"{MARK_BEGIN}\nflubber\n{MARK_END}\n")
+        r = run_cli([str(ours), "--json", "--profile", str(alt)])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual([f["token"] for f in out["findings"]], ["flubber"])
+        self.assertEqual(out["excluded_regions"], 0)
+
+    def test_same_line_begin_end_pair_is_a_one_line_region(self):
+        # A begin+end pair on one line suppresses that line only —
+        # scanning resumes on the next line instead of running to EOF.
+        p = self.write("doc.md",
+                       f"{MARK_BEGIN} {W_WEEKS} {MARK_END}\n"
+                       f"take 2 {W_WEEKS}\n")
+        r = run_cli([str(p), "--json", "--profile", str(PROFILE)])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual([(f["line"], f["token"]) for f in out["findings"]],
+                         [(2, W_WEEKS)])
+        self.assertEqual(out["excluded_regions"], 1)
+        self.assertEqual(out["unterminated_regions"], 0)
+
+    def test_marker_superstring_does_not_open_a_region(self):
+        # A marker embedded in a longer word is inert — it must not open
+        # a region and swallow the rest of the file.
+        p = self.write("doc.md",
+                       f"see the {MARK_BEGIN}ner-notes\n"
+                       f"take 2 {W_WEEKS}\n")
+        r = run_cli([str(p), "--json", "--profile", str(PROFILE)])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual([(f["line"], f["token"]) for f in out["findings"]],
+                         [(2, W_WEEKS)])
+        self.assertEqual(out["excluded_regions"], 0)
 
     def test_unterminated_region_excludes_to_eof(self):
         # Documented ceiling: a begin marker with no end marker excludes
         # the rest of that source (accident hazard, not adversary defense).
+        # The unterminated_regions counter surfaces the accident.
         r, out = self.scan_json(f"{MARK_BEGIN}\ntake 2 {W_WEEKS}\n",
                                 args=["--profile", str(PROFILE)])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
+        self.assertEqual(out["excluded_regions"], 1)
+        self.assertEqual(out["unterminated_regions"], 1)
 
     def test_region_state_does_not_leak_across_files(self):
         # An unterminated region in one file must not swallow the next.
@@ -638,8 +692,8 @@ class FallbackParityTest(ProfileFixtureTest):
         fallback = mod.FALLBACK_TOKENS
         with open(PROFILE, "rb") as f:
             section = tomllib.load(f)["tokens"]
-        self.assertEqual(fallback["scan"]["exclude_marker"],
-                         section["scan"]["exclude_marker"])
+        self.assertEqual(fallback["exclude_marker"],
+                         section["exclude_marker"])
         # Class group names AND order (matcher order is behavior: overlap
         # dedupe keeps the first-matched span per class).
         self.assertEqual(list(fallback["classes"]), list(section["classes"]))
@@ -659,6 +713,24 @@ class FallbackParityTest(ProfileFixtureTest):
         # The catalog is genuinely the full 34-token set.
         self.assertEqual(sum(len(c["entries"])
                              for c in fallback["classes"].values()), 34)
+
+    def test_fallback_displays_carry_no_regex_metacharacters(self):
+        # _word_pat interpolates displays into patterns without re.escape
+        # (escaping would break the byte-parity with the profile's pattern
+        # strings above). That is safe only while displays stay free of
+        # regex metacharacters — this pins the premise.
+        loader = SourceFileLoader("banned_token_scan_meta_pin", str(CLI))
+        spec = importlib.util.spec_from_loader(
+            "banned_token_scan_meta_pin", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        forbidden = set(".^$*+?{}[]()|\\")
+        for group, cls in mod.FALLBACK_TOKENS["classes"].items():
+            for entry in cls["entries"]:
+                self.assertFalse(
+                    set(entry["display"]) & forbidden,
+                    f"classes.{group} display {entry['display']!r} carries "
+                    "a regex metacharacter — _word_pat does not escape")
 
     def test_fallback_behavioral_parity_with_kit_profile(self):
         # Every class, the case-sensitive entry both ways, dedupe,

@@ -202,7 +202,9 @@ class JsonArgumentParser(argparse.ArgumentParser):
 # Profile plumbing — discover_profile, resolve_profile_path, load_profile,
 # compile_entry, resolve_section, and FLAG_NAMES are verbatim copies from
 # scripts/conventions (the canonical copy; Planner decision on the tlp
-# epic — do not fork the behavior).
+# epic — do not fork the behavior). The block's closed-over dependencies
+# — emit_error and PROFILE_RELPATH — are part of the verbatim contract
+# and pinned equal across copies by ResolveSectionPromotionTest.
 # --------------------------------------------------------------------------
 
 # Pattern-entry flags name Python `re` module constants (design-doc schema:

@@ -517,15 +517,20 @@ class ProfileGrammarTest(FixtureTest):
     def test_explicit_profile_without_defer_section_is_error_exit_3(self):
         # Explicit selection is loud: the caller named a grammar source
         # that has no grammar — silent fallback would hide the mistake.
+        # Both explicit sources (flag and env var) get the same posture.
         with tempfile.TemporaryDirectory() as tmp:
             alt = Path(tmp) / "alt.toml"
             alt.write_text("schema_version = 1\n")
             self.write("a.py", BAD_NO_TRIGGER)
-            r, out = self.scan_json("--profile", str(alt))
-            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
-            err = json.loads(r.stderr)
-            self.assertFalse(err["ok"])
-            self.assertEqual(err["error_kind"], "profile")
+            for source, extra, env_extra in (
+                    ("flag", ("--profile", str(alt)), None),
+                    ("env", (), {"CONVENTIONS_PROFILE": str(alt)})):
+                with self.subTest(source=source):
+                    r, out = self.scan_json(*extra, env_extra=env_extra)
+                    self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+                    err = json.loads(r.stderr)
+                    self.assertFalse(err["ok"])
+                    self.assertEqual(err["error_kind"], "profile")
 
     def test_clauses_as_array_of_tables_is_profile_error_exit_3(self):
         # [[defer.clauses]] parses as a list, not a table of named clause

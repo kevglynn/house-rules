@@ -25,6 +25,11 @@
 #   - Pass-through prose enters the profile only when it lives inside a law
 #     paragraph a fragment must render; standalone why-paragraphs stay
 #     hand-written in the rule file, outside the marked region.
+#   - Key vocabulary: `rule_*` is the blessed prefix for render-only keys
+#     (consumed by fragment renderers, never by checkers); new sections use
+#     `display` for a matcher's human-readable name. [defer.clauses].label
+#     and [close_evidence.elements].description are grandfathered spellings
+#     from before this convention — do not propagate them to new sections.
 
 schema_version = 1
 profile = "process-kit"
@@ -327,7 +332,10 @@ severity = "warning"
 # order, and one enumeration item can stand for a composed matcher
 # ("N <unit>" families). A class's rule_items count must equal its
 # entries count — the renderer enforces this so a catalog edit cannot
-# silently skip the rendered rule.
+# silently skip the rendered rule. Ceiling: the count guard catches
+# added/removed entries, not an in-place edit that changes one entry
+# while leaving the counts equal — the regen gate's byte-match is what
+# catches those.
 #
 # Content-side exclusion contract (design doc + the gsx Tier 1 note): this
 # section is token-laden BY DESIGN — a catalog cannot be assembled from
@@ -339,8 +347,6 @@ severity = "warning"
 # itself open or close a region.
 # ---------------------------------------------------------------------------
 [tokens]
-
-[tokens.scan]
 exclude_marker = "banned-token-scan:declared-tokens"
 
 # banned-token-scan:declared-tokens:begin — catalog data, scanner-excluded

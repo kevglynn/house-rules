@@ -521,8 +521,11 @@ class ResolveSectionPromotionTest(unittest.TestCase):
     four-token-substitution drift class: any copy diverging from the canon
     fails here, not in a target repo."""
 
+    # emit_error and PROFILE_RELPATH are the block's closed-over
+    # dependencies — pinning the functions alone would let a divergent
+    # error emitter or profile path slip through byte-identical plumbing.
     PLUMBING = ("discover_profile", "resolve_profile_path", "load_profile",
-                "compile_entry", "resolve_section")
+                "compile_entry", "resolve_section", "emit_error")
     CHECKERS = ("defer-lint", "close-reason-lint", "banned-token-scan")
 
     @staticmethod
@@ -533,13 +536,6 @@ class ResolveSectionPromotionTest(unittest.TestCase):
         mod = importlib.util.module_from_spec(spec)
         loader.exec_module(mod)
         return mod
-
-    def test_resolve_section_is_canonical_in_conventions(self):
-        # The canon carries resolve_section even though `conventions`
-        # itself never falls back — it is the distributed plumbing text.
-        canon = self.load_cli(CLI)
-        self.assertTrue(callable(getattr(canon, "resolve_section", None)),
-                        "scripts/conventions has no resolve_section")
 
     def test_plumbing_block_is_verbatim_across_consumers(self):
         canon = self.load_cli(CLI)
@@ -553,6 +549,8 @@ class ResolveSectionPromotionTest(unittest.TestCase):
                         f"{checker}: {fn} drifted from the canon copy")
                 self.assertEqual(mod.FLAG_NAMES, canon.FLAG_NAMES,
                                  f"{checker}: FLAG_NAMES drifted")
+                self.assertEqual(mod.PROFILE_RELPATH, canon.PROFILE_RELPATH,
+                                 f"{checker}: PROFILE_RELPATH drifted")
 
 
 class CliConventionsTest(unittest.TestCase):
