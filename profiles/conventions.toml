@@ -15,8 +15,16 @@
 #
 # Pattern entries: a detector is either a bare regex string or a
 # { pattern = '...', flags = ["IGNORECASE", ...] } table; flags name Python
-# `re` module constants. Later children (token catalog, defer grammar, TDD
-# obligations) add their sections here using the same entry shape.
+# `re` module constants. Later children (token catalog, TDD obligations)
+# add their sections here using the same entry shape.
+#
+# Schema notes:
+#   - `judgment` lists are checker-side annotations and never render — with
+#     one legacy exception: [git].judgment IS rendered verbatim as fragment
+#     bullets.
+#   - Pass-through prose enters the profile only when it lives inside a law
+#     paragraph a fragment must render; standalone why-paragraphs stay
+#     hand-written in the rule file, outside the marked region.
 
 schema_version = 1
 profile = "process-kit"
@@ -210,18 +218,15 @@ format = "<what was simplified>. ceiling: <known limitation>. upgrade when: <tri
 # example uses the first one.
 comment_prefixes = ["//", "#", "/* */", "--"]
 continuation_note = "the ceiling and trigger may continue on the following comment line(s)"
-no_trigger_law = [
-  "A deferral without a trigger is just a TODO with a fancier name.",
-  "If you can't name when to revisit, either the simplification is permanent (no comment needed) or you don't understand the ceiling yet (investigate before deferring).",
-]
+no_trigger_law = "A deferral without a trigger is just a TODO with a fancier name. If you can't name when to revisit, either the simplification is permanent (no comment needed) or you don't understand the ceiling yet (investigate before deferring)."
 marker_meaning = "deliberate simplification with known limits (structured — ceiling + trigger required)"
 marker_comparison = [
   { marker = "TODO", meaning = "unstructured reminder" },
   { marker = "FIXME", meaning = "actually broken" },
 ]
-judgment = [
-  "ceiling and trigger must name a real limitation and a real revisit condition — the checker verifies presence, not meaning",
-]
+# Judgment note (checker-side, never rendered): ceiling and trigger must
+# name a real limitation and a real revisit condition — the checker
+# verifies presence, not meaning.
 
 # What the checker accepts: regex alternates for comment prefixes on the
 # marker line and on continuation lines (block-comment interiors and
@@ -253,8 +258,8 @@ source_exts = [
 # The no-trigger law, checker-shaped: a defer missing an error-severity
 # clause fails the scan (exit 1); warning-severity clauses report without
 # failing. Table order below is the order findings list missing clauses.
-# `label` is the display name the rendered rule quotes; `pattern` is what
-# the checker matches in collected comment text.
+# `label` (upgrade-when only) is the display name the rendered rule
+# quotes; `pattern` is what the checker matches in collected comment text.
 [defer.clauses."upgrade-when"]
 label = "upgrade when:"
 pattern = 'upgrade\s+when:'
@@ -262,7 +267,6 @@ flags = ["IGNORECASE"]
 severity = "error"
 
 [defer.clauses.ceiling]
-label = "ceiling:"
 pattern = 'ceiling:'
 flags = ["IGNORECASE"]
 severity = "warning"

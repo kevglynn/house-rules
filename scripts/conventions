@@ -108,6 +108,20 @@ class JsonArgumentParser(argparse.ArgumentParser):
         usage_error(message)
 
 
+def discover_profile(start_dir):
+    """Nearest profiles/conventions.toml walking up from start_dir, stopping
+    at the repo boundary (.git) so an ancestor repo's profile is never
+    picked up. Returns None when absent — the caller decides whether
+    absence is an error (this CLI) or a fallback (standalone checkers)."""
+    for candidate_dir in [start_dir, *start_dir.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        if (candidate_dir / ".git").exists():
+            break
+    return None
+
+
 def resolve_profile_path(flag_value):
     if flag_value:
         return Path(flag_value)
@@ -115,13 +129,9 @@ def resolve_profile_path(flag_value):
     if env_value:
         return Path(env_value)
     cwd = Path.cwd().resolve()
-    for candidate_dir in [cwd, *cwd.parents]:
-        candidate = candidate_dir / PROFILE_RELPATH
-        if candidate.is_file():
-            return candidate
-        # Stop at the repo boundary: never pick up an ancestor repo's profile.
-        if (candidate_dir / ".git").exists():
-            break
+    found = discover_profile(cwd)
+    if found:
+        return found
     emit_error(
         f"no {PROFILE_RELPATH} found walking up from {cwd}; "
         "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
@@ -299,7 +309,7 @@ def render_defer_convention(profile):
     d = profile["defer"]
     marker = d["marker_word"] + d["marker_suffix"]
     prefixes = ", ".join(f"`{p}`" for p in d["comment_prefixes"])
-    law = " ".join(d["no_trigger_law"])
+    law = d["no_trigger_law"]
     trigger = d["clauses"]["upgrade-when"]["label"]
     comparison = "; ".join(f"`{m['marker']}` = {m['meaning']}"
                            for m in d["marker_comparison"])

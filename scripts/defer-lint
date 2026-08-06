@@ -12,10 +12,12 @@ file set) is read from profiles/conventions.toml — the single source of
 truth the rule fragment is rendered from. Resolution: --profile flag >
 CONVENTIONS_PROFILE env > nearest profiles/conventions.toml walking up
 from the scan root (the repo being checked). A tree with no discoverable
-profile, or a profile without a [defer] section, falls back to the
-built-in copy of the same grammar so the checker keeps working standalone
-(advisory posture); a profile that is present but unreadable or invalid
-is an error, never a silent fallback.
+profile falls back to the built-in copy of the same grammar so the
+checker keeps working standalone (advisory posture); a DISCOVERED profile
+without a [defer] section also falls back (it predates the section). But
+explicit selection is loud: a --profile/env profile missing [defer], or
+any profile that is unreadable or invalid, is an error — never a silent
+fallback. The JSON payload and human summary echo grammar_source.
 
 Multi-line aware: ceiling/upgrade-when clauses often continue on the
 following comment line(s); continuation lines are scanned before a clause
@@ -158,9 +160,10 @@ class JsonArgumentParser(argparse.ArgumentParser):
 
 
 # --------------------------------------------------------------------------
-# Profile plumbing — resolve_profile_path, load_profile, compile_entry, and
-# FLAG_NAMES are verbatim copies from scripts/conventions (the canonical
-# copy; Planner decision on the tlp epic — do not fork the behavior).
+# Profile plumbing — discover_profile, resolve_profile_path, load_profile,
+# compile_entry, and FLAG_NAMES are verbatim copies from scripts/conventions
+# (the canonical copy; Planner decision on the tlp epic — do not fork the
+# behavior).
 # --------------------------------------------------------------------------
 
 # Pattern-entry flags name Python `re` module constants (design-doc schema:
@@ -175,6 +178,20 @@ FLAG_NAMES = {
 }
 
 
+def discover_profile(start_dir):
+    """Nearest profiles/conventions.toml walking up from start_dir, stopping
+    at the repo boundary (.git) so an ancestor repo's profile is never
+    picked up. Returns None when absent — the caller decides whether
+    absence is an error (this CLI) or a fallback (standalone checkers)."""
+    for candidate_dir in [start_dir, *start_dir.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        if (candidate_dir / ".git").exists():
+            break
+    return None
+
+
 def resolve_profile_path(flag_value):
     if flag_value:
         return Path(flag_value)
@@ -182,13 +199,9 @@ def resolve_profile_path(flag_value):
     if env_value:
         return Path(env_value)
     cwd = Path.cwd().resolve()
-    for candidate_dir in [cwd, *cwd.parents]:
-        candidate = candidate_dir / PROFILE_RELPATH
-        if candidate.is_file():
-            return candidate
-        # Stop at the repo boundary: never pick up an ancestor repo's profile.
-        if (candidate_dir / ".git").exists():
-            break
+    found = discover_profile(cwd)
+    if found:
+        return found
     emit_error(
         f"no {PROFILE_RELPATH} found walking up from {cwd}; "
         "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
@@ -225,22 +238,6 @@ def compile_entry(entry, where):
                    "profile", 3)
 
 
-def find_profile_for(root):
-    """Non-fatal profile discovery for the scanned tree: nearest
-    profiles/conventions.toml walking up from the scan root (the repo root
-    of the repo being checked — spec's checker resolution), stopping at the
-    .git boundary. Returns None when absent: unlike `conventions`, this
-    checker keeps working profile-less (standalone advisory posture), so
-    absence selects the built-in fallback instead of an error."""
-    for candidate_dir in [root, *root.parents]:
-        candidate = candidate_dir / PROFILE_RELPATH
-        if candidate.is_file():
-            return candidate
-        if (candidate_dir / ".git").exists():
-            break
-    return None
-
-
 def build_grammar(spec, origin):
     """Compile a [defer] grammar spec into matchers. `origin` names the
     grammar source (profile path or the built-in fallback) for errors."""
@@ -256,13 +253,17 @@ def build_grammar(spec, origin):
     except (KeyError, TypeError) as exc:
         emit_error(f"{origin}: [defer] grammar is missing required key: "
                    f"{exc}", "profile", 3)
+    if not isinstance(clause_specs, dict):
+        emit_error(f"{origin}: [defer.clauses] must be a table of named "
+                   "clause tables, not an array", "profile", 3)
     clauses = []
     for name, entry in clause_specs.items():
         severity = entry.get("severity") if isinstance(entry, dict) else None
         if severity not in ("error", "warning"):
             emit_error(f"{origin}: defer.clauses.{name} severity must be "
                        "'error' or 'warning'", "profile", 3)
-        clauses.append((name, compile_entry(entry, f"defer.clauses.{name}"),
+        clauses.append((name,
+                        compile_entry(entry, f"{origin}: defer.clauses.{name}"),
                         severity))
     try:
         defer_re = re.compile(
@@ -270,8 +271,8 @@ def build_grammar(spec, origin):
             + re.escape(marker) + r"[ \t]*(?P<rest>.*)")
         cont_re = re.compile(
             r"^[ \t]*(?:" + "|".join(cont_prefixes) + r")[ \t]?(?P<rest>.*)")
-    except re.error as exc:
-        emit_error(f"{origin}: invalid comment-prefix pattern: {exc}",
+    except (re.error, TypeError) as exc:
+        emit_error(f"{origin}: invalid comment-prefix list: {exc}",
                    "profile", 3)
     return {
         "marker": marker,
@@ -287,17 +288,28 @@ def build_grammar(spec, origin):
 
 def resolve_grammar(flag_value, root):
     """Grammar per the resolution chain: explicit profile (flag/env) >
-    discovered profile at/above the scan root > built-in fallback. Absence
-    falls back; a named-or-found profile that fails to load is an error."""
+    discovered profile at/above the scan root > built-in fallback. Returns
+    (grammar, source_label). Absence of any profile falls back, and so
+    does a DISCOVERED profile without a [defer] section (it predates the
+    section); but an EXPLICITLY selected profile missing the section is a
+    profile error — the caller named a grammar source that has no grammar.
+    A named-or-found profile that fails to load is always an error."""
     explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
-    discovered = None if explicit else find_profile_for(root)
+    discovered = None if explicit else discover_profile(root)
     if explicit or discovered:
         profile, profile_path = load_profile(
             flag_value if explicit else str(discovered))
         section = profile.get(_D[:-1])
         if section is not None:
-            return build_grammar(section, str(profile_path))
-    return build_grammar(FALLBACK_DEFER, "built-in fallback grammar")
+            return (build_grammar(section, str(profile_path)),
+                    str(profile_path))
+        if explicit:
+            emit_error(
+                f"{profile_path}: profile has no [{_D[:-1]}] section "
+                "(explicitly selected profiles must carry the grammar)",
+                "profile", 3)
+    return (build_grammar(FALLBACK_DEFER, "built-in fallback grammar"),
+            "built-in fallback")
 
 
 def iter_source_files(root, grammar):
@@ -350,6 +362,10 @@ def collect_defers(lines, grammar):
             continue
         lineno = i + 1
         parts = [m.group("rest")]
+        # Block folding keys off literal /* and */ — C-style delimiters are
+        # hard-coded even though line prefixes are profile-configurable. A
+        # grammar whose block comments use other delimiters gets plain
+        # continuation-prefix folding instead.
         in_block = m.group("marker").startswith("/*") and "*/" not in m.group("rest")
         j = i + 1
         while j < n:
@@ -438,7 +454,7 @@ def main(argv=None):
         emit_error(f"root is not a directory: {root}", "io", 3)
     root = root.resolve()
 
-    grammar = resolve_grammar(args.profile, root)
+    grammar, grammar_source = resolve_grammar(args.profile, root)
     files_scanned, files_skipped, defer_count, findings = scan_tree(
         root, grammar)
     errors = [f for f in findings if f["severity"] == "error"]
@@ -449,6 +465,7 @@ def main(argv=None):
         json.dump({
             "ok": not errors,
             "root": str(root),
+            "grammar_source": grammar_source,
             "files_scanned": files_scanned,
             "files_skipped": files_skipped,
             "defer_comments": defer_count,
@@ -471,7 +488,8 @@ def main(argv=None):
     skipped = (f" ({files_skipped} unreadable/binary skipped)"
                if files_skipped else "")
     print(f"Scanned {files_scanned} files{skipped}, "
-          f"{defer_count} defer comment(s): {status}.")
+          f"{defer_count} defer comment(s): {status}. "
+          f"[grammar: {grammar_source}]")
     return exit_code
 
 

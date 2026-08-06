@@ -12,13 +12,16 @@ must never need to special-case test content.
 Run: python3 scripts/tests/test_defer_lint.py
 """
 
+import importlib.util
 import json
 import os
 import shutil
 import stat
 import subprocess
 import tempfile
+import tomllib
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 CLI = Path(__file__).resolve().parent.parent / "defer-lint"
@@ -378,8 +381,8 @@ class DeferLintTest(FixtureTest):
         self.write("a.py", GOOD_ONE_LINE + BAD_NO_TRIGGER)
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1)
-        for key in ("ok", "root", "files_scanned", "files_skipped",
-                    "defer_comments", "findings"):
+        for key in ("ok", "root", "grammar_source", "files_scanned",
+                    "files_skipped", "defer_comments", "findings"):
             self.assertIn(key, out)
         self.assertNotIn("exit_code", out)
         self.assertEqual(out["defer_comments"], 2)
@@ -500,20 +503,70 @@ class ProfileGrammarTest(FixtureTest):
         self.assertFalse(err["ok"])
         self.assertEqual(err["error_kind"], "profile")
 
-    def test_profile_without_defer_section_falls_back(self):
-        # A conventions profile that predates the [defer] section simply
-        # does not parameterize this checker — built-in grammar applies.
+    def test_discovered_profile_without_defer_section_falls_back(self):
+        # A DISCOVERED conventions profile that predates the [defer]
+        # section simply does not parameterize this checker — built-in
+        # grammar applies, and the payload says so.
         self.write("profiles/conventions.toml", "schema_version = 1\n")
         self.write("a.py", BAD_NO_TRIGGER)
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("upgrade-when", out["findings"][0]["missing"])
+        self.assertEqual(out["grammar_source"], "built-in fallback")
+
+    def test_explicit_profile_without_defer_section_is_error_exit_3(self):
+        # Explicit selection is loud: the caller named a grammar source
+        # that has no grammar — silent fallback would hide the mistake.
+        with tempfile.TemporaryDirectory() as tmp:
+            alt = Path(tmp) / "alt.toml"
+            alt.write_text("schema_version = 1\n")
+            self.write("a.py", BAD_NO_TRIGGER)
+            r, out = self.scan_json("--profile", str(alt))
+            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+            err = json.loads(r.stderr)
+            self.assertFalse(err["ok"])
+            self.assertEqual(err["error_kind"], "profile")
+
+    def test_clauses_as_array_of_tables_is_profile_error_exit_3(self):
+        # [[defer.clauses]] parses as a list, not a table of named clause
+        # tables — must be a profile error, not a crash.
+        bad = alt_defer_profile("postpone").replace(
+            '[defer.clauses."upgrade-when"]', '[[defer.clauses]]').replace(
+            "[defer.clauses.ceiling]", "[[defer.clauses]]")
+        self.write("profiles/conventions.toml", bad)
+        self.write("a.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertEqual(err["error_kind"], "profile")
+
+    def test_non_string_comment_prefix_is_profile_error_exit_3(self):
+        bad = alt_defer_profile("postpone").replace(
+            "marker_line_prefixes = ['#+', '//+']",
+            "marker_line_prefixes = ['#+', 3]")
+        self.write("profiles/conventions.toml", bad)
+        self.write("a.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertEqual(err["error_kind"], "profile")
+
+    def test_grammar_source_names_the_discovered_profile(self):
+        self.write("profiles/conventions.toml", alt_defer_profile("postpone"))
+        self.write("a.py", "x = 1\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(
+            out["grammar_source"].endswith("conventions.toml"),
+            out["grammar_source"])
+        self.assertIn("[grammar:", self.scan().stdout)
 
     def test_fallback_parity_with_kit_profile_grammar(self):
         # Drift guard, not red-proof: the built-in fallback and the kit
         # profile's [defer] section must produce identical scans over a
-        # fixture that exercises markers, clauses, prefixes, skip dirs,
-        # extra filenames, and extensions.
+        # fixture that exercises markers, clauses (both severities and
+        # near-miss trigger text), prefixes, skip dirs, extra filenames,
+        # and extensions.
         self.write("a.py", GOOD_ONE_LINE + BAD_NO_TRIGGER)
         self.write("b.sql", f"-- {D} full scan. ceiling: x. upgrade when: y.\n")
         self.write("c.css", f"/* {D} magic number. ceiling: x. upgrade when: y. */\n")
@@ -523,6 +576,12 @@ class ProfileGrammarTest(FixtureTest):
             " * upgrade when: p99 latency matters. */\n",
         )
         self.write("Makefile", BAD_CEILING_ONLY)
+        # Warning-only path: a loosened profile severity would diverge here.
+        self.write("f.py", BAD_TRIGGER_ONLY)
+        # Near-miss trigger text: a loosened upgrade-when pattern (e.g. bare
+        # "upgrade") would stop flagging these under one grammar only.
+        self.write("g.py", f"# {D} near miss. ceiling: x. we may upgrade later.\n")
+        self.write("h.py", f"# {D} near miss. ceiling: x. upgrade sometime: y.\n")
         self.write("bin/tool", "#!/usr/bin/env python3\n" + BAD_NO_TRIGGER)
         self.write("e.toml", f"# {D} toml file. ceiling: x. upgrade when: y.\n")
         self.write("node_modules/pkg/i.js", f"// {D} vendored, skipped.\n")
@@ -532,8 +591,44 @@ class ProfileGrammarTest(FixtureTest):
         self.assertEqual(r_fallback.returncode, r_profile.returncode,
                          r_fallback.stdout + r_profile.stdout
                          + r_fallback.stderr + r_profile.stderr)
+        # grammar_source is the one legitimate difference between the runs.
+        self.assertEqual(out_fallback.pop("grammar_source"),
+                         "built-in fallback")
+        self.assertTrue(out_profile.pop("grammar_source")
+                        .endswith("conventions.toml"))
         self.assertEqual(out_fallback, out_profile)
         self.assertGreater(out_fallback["defer_comments"], 0)
+        # The fixture genuinely exercises both severity paths.
+        severities = {f["severity"] for f in out_fallback["findings"]}
+        self.assertEqual(severities, {"error", "warning"})
+
+    def test_fallback_structurally_matches_kit_profile_section(self):
+        # Structural pin, complementing the behavioral parity scan above:
+        # every checker-consumed key of the built-in fallback must equal
+        # the kit profile's [defer] section, so severity flips, pattern
+        # loosening, or list edits on either side cannot drift silently.
+        # (Deliberate unit-level exception to the subprocess-only style —
+        # sample-based scans cannot pin pattern equality.)
+        loader = SourceFileLoader("defer_lint_module", str(CLI))
+        spec = importlib.util.spec_from_loader("defer_lint_module", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        fallback = mod.FALLBACK_DEFER
+        with open(PROFILE, "rb") as f:
+            section = tomllib.load(f)["defer"]
+        self.assertEqual(fallback["marker_word"], section["marker_word"])
+        self.assertEqual(fallback["marker_suffix"], section["marker_suffix"])
+        # Clause names, order, and full checker-consumed entries.
+        self.assertEqual(list(fallback["clauses"]), list(section["clauses"]))
+        for name, entry in fallback["clauses"].items():
+            profile_entry = section["clauses"][name]
+            for key in ("pattern", "flags", "severity"):
+                self.assertEqual(entry[key], profile_entry[key],
+                                 f"clauses.{name}.{key} drifted")
+        for key in ("marker_line_prefixes", "continuation_prefixes",
+                    "skip_dirs", "extra_filenames", "source_exts"):
+            self.assertEqual(fallback["scan"][key], section["scan"][key],
+                             f"scan.{key} drifted")
 
 
 if __name__ == "__main__":

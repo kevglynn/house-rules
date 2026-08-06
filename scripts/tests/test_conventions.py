@@ -344,6 +344,15 @@ class RegenGateTest(unittest.TestCase):
         self.assertEqual([x["fragment"] for x in drifted], ["git-conventions"])
         self.assertTrue(drifted[0]["diff"])  # unified diff lines present
 
+    def test_seeded_drift_in_defer_fragment_fails_and_names_it(self):
+        f = self.root / FRAGMENT_FILES["defer-convention"]
+        f.write_text(f.read_text().replace("fancier name", "fancy name"))
+        r, out = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        drifted = [x for x in out["fragments"] if x["status"] == "drift"]
+        self.assertEqual([x["fragment"] for x in drifted],
+                         ["defer-convention"])
+
     def test_edit_outside_region_does_not_trip_the_gate(self):
         f = self.root / FRAGMENT_FILES["git-conventions"]
         f.write_text(f.read_text().replace("hand-written tail",
