@@ -150,3 +150,26 @@ following the kit's own conventions — is dogfood evidence.
 Execution follow-up: bead process-kit-r4w (release cut — rename, flip
 public, tag v0.2.0), gated on both the publication-readiness and Tier 1
 profile-projection epics closing.
+
+### A3 — 2026-08-05 — IP re-confirmed; second-consumer criterion declared met
+
+Two publish-time calls closing D3 checklist items (bead process-kit-zk6):
+
+1. **IP clearance re-confirmed.** Kevin confirms nothing has changed since
+   D4's July record (predecessor in receivership, defunct, no downstream
+   consumer, no contact or claims since). D3 checklist item "IP clear" holds
+   as of the flip decision.
+
+2. **Second-consumer criterion declared met.** The criterion asked for the
+   kit synced into one more project with the generic-core/overlay boundary
+   verified. Evidence at decision time: 15 sync targets consume the generic
+   core unmodified (own projects plus OSS clones); the overlay mechanism is
+   exercised where needed (segnolabs, 61-line overlay). Caveat recorded
+   honestly: the overlay mechanism itself has a single production consumer —
+   the other 14 targets did not need one — and the two known core leaks
+   (prose-voice trigger line, P9 owner voice parameters) are assigned to the
+   neutrality audit (process-kit-dd5), without which the publication epic
+   cannot close. Rationale for "met" over "waive": the bar's intent was to
+   prove the core is not a one-project artifact, and 15 unmodified syncs are
+   that proof at 15x the prescribed dose; waiving would understate evidence
+   that legitimately satisfies the intent.

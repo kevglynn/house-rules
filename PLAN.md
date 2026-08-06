@@ -27,7 +27,7 @@ Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0
 
 | Decision | Resolution |
 |----------|------------|
-| Kit name | Keep the working name `process-kit`; final brand deferred to the publication trigger |
+| Kit name | Final name decided 2026-08-05: **house-rules** (0001 A1); `process-kit` remains the working name until the release-cut rename (process-kit-r4w) |
 | License | Apache-2.0 (landed at publication, not before) |
 | Publication posture | Private until a readiness checklist is met (IP clear, skills stable, second-consumer proof, LICENSE + CONTRIBUTING, neutrality audit) |
 | Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |
@@ -37,6 +37,6 @@ Marker strings in the installers deliberately keep the legacy `ai-dev-playbook:`
 
 ## Backlog (after the first four skills prove out)
 
-- Second-consumer proof: sync the kit into a second project and verify the overlay boundary holds
+- ~~Second-consumer proof: sync the kit into a second project and verify the overlay boundary holds~~ — declared **met** 2026-08-05 (0001 A3): 15 sync targets consume the core unmodified; overlay exercised where needed (segnolabs); neutrality audit (process-kit-dd5) completes the boundary verification
 - Trigger layer: lifecycle automation (hooks, tracker formulas) so process fires without being asked
 - Session-close ceremony hooks; council harvest upgrade; planning-ritual skill; decision-record template
