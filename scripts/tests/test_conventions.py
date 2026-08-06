@@ -14,12 +14,15 @@ COMMIT type (Kevin, 2026-08-05). It is still not a branch type.
 Run: python3 scripts/tests/test_conventions.py
 """
 
+import importlib.util
+import inspect
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -33,6 +36,7 @@ FRAGMENT_FILES = {
     "git-conventions": "cursor/rules/operating-model.mdc",
     "close-evidence": "cursor/rules/bead-completion.mdc",
     "defer-convention": "cursor/rules/defer-convention.mdc",
+    "agent-identity": "cursor/rules/agent-identity.mdc",
 }
 
 # The defer marker, assembled from parts so this file never contains a
@@ -284,6 +288,76 @@ class RenderRuleTest(unittest.TestCase):
             "limits (structured — ceiling + trigger required); `TODO` = "
             "unstructured reminder; `FIXME` = actually broken.", text)
 
+    def test_agent_identity_fragment_carries_the_catalog(self):
+        # Byte-fidelity pins: every bullet of the generated catalog
+        # enumeration must reproduce today's hand-written rule text
+        # exactly. Banned tokens are assembled from parts (J) so this test
+        # file never carries a scannable occurrence.
+        J = "".join
+        hours, days, weeks = J(("hou", "rs")), J(("da", "ys")), J(("wee", "ks"))
+        months, quarters = J(("mon", "ths")), J(("quar", "ters"))
+        sprints = J(("spri", "nts"))
+        story_points = J(("story poi", "nts"))
+        one_dev, a_dev = J(("one dev", "eloper")), J(("a dev", "eloper"))
+        two_eng = J(("two engi", "neers"))
+        small_team, team_of = J(("small te", "am")), J(("team o", "f"))
+        more_people = J(("with more peo", "ple"))
+        eng_team = J(("engineering te", "am"))
+        timeline, schedule = J(("time", "line")), J(("sched", "ule"))
+        ambitious, aggressive = J(("ambi", "tious")), J(("aggres", "sive"))
+        on_track, eta = J(("on tra", "ck")), J(("ET", "A"))
+        by_eod, by_eow = J(("by EO", "D")), J(("by end of wee", "k"))
+        takes_a_while = J(("takes a whi", "le"))
+        takes_long, quick_win = J(("takes lo", "ng")), J(("quick w", "in"))
+        i_est, rough_est = J(("I esti", "mate")), J(("rough esti", "mate"))
+        id_est = "I'd " + J(("esti", "mate"))
+        ballpark, roughly = J(("ball", "park")), J(("roug", "hly"))
+
+        text = self.render("agent-identity")
+        lines = text.splitlines()
+        self.assertEqual(lines[0], BEGIN)
+        self.assertEqual(lines[-1], END)
+        self.assertIn("**Banned when used to frame work-to-be-done:**", text)
+        self.assertIn(
+            f"- **Time units**: `{hours}`, `{days}`, `{weeks}`, `{months}`, "
+            f"`{quarters}`, `{sprints}`, `man-{hours}`, `person-{hours}`, "
+            f"`engineer-{hours}`, `dev-{hours}`, `{story_points}`", text)
+        self.assertIn(
+            f"- **Team-size claims**: `{one_dev}`, `{a_dev}`, `{two_eng}`, "
+            f"`{small_team}`, `{team_of} N`, `{more_people}`, `{eng_team}` "
+            "(as a sizing unit)", text)
+        self.assertIn(
+            f"- **{schedule.capitalize()} framing**: `{timeline}`, "
+            f"`{schedule}`, `{ambitious}`, `{aggressive}`, `{on_track}`, "
+            f"`{eta}`, `{by_eod}`, `{by_eow}`, `{takes_a_while}`, "
+            f"`{takes_long}`, `{quick_win}` "
+            f"(as a {schedule} claim, not a scope claim)", text)
+        self.assertIn(
+            f"- **Estimation verbs**: `{i_est}`, `{id_est}`, `{rough_est}`, "
+            f"`{ballpark}`, `{roughly} N {hours}/{days}/{weeks}`", text)
+        self.assertEqual(len([l for l in lines if l.startswith("- **")]), 4)
+
+    def test_rule_items_count_mismatch_is_profile_error(self):
+        # The renderer's count guard: a catalog edit that touches entries
+        # but not rule_items (or vice versa) must fail render, not
+        # silently diverge the rendered rule from the checker.
+        J = "".join
+        rough_est, ballpark = J(("rough esti", "mate")), J(("ball", "park"))
+        target = f'"{rough_est}", "{ballpark}", '
+        original = PROFILE.read_text()
+        mutated = original.replace(target, f'"{rough_est}", ')
+        self.assertNotEqual(mutated, original,
+                            "fixture rot: rule_items target line not found")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "mutated.toml"
+            p.write_text(mutated)
+            r = run_cli(["--profile", str(p), "render-rule",
+                         "agent-identity"])
+            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+            err = json.loads(r.stderr)
+            self.assertFalse(err["ok"])
+            self.assertEqual(err["error_kind"], "profile")
+
     # --- AC2: committed regions byte-match render output ---
 
     def test_committed_regions_byte_match_render(self):
@@ -352,6 +426,19 @@ class RegenGateTest(unittest.TestCase):
         drifted = [x for x in out["fragments"] if x["status"] == "drift"]
         self.assertEqual([x["fragment"] for x in drifted],
                          ["defer-convention"])
+
+    def test_seeded_drift_in_agent_identity_fragment_fails_and_names_it(self):
+        f = self.root / FRAGMENT_FILES["agent-identity"]
+        seeded = f.read_text().replace("(as a sizing unit)",
+                                       "(as a sizing yardstick)")
+        self.assertNotEqual(seeded, f.read_text(),
+                            "fixture rot: sizing-unit note not found")
+        f.write_text(seeded)
+        r, out = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        drifted = [x for x in out["fragments"] if x["status"] == "drift"]
+        self.assertEqual([x["fragment"] for x in drifted],
+                         ["agent-identity"])
 
     def test_edit_outside_region_does_not_trip_the_gate(self):
         f = self.root / FRAGMENT_FILES["git-conventions"]
@@ -424,6 +511,48 @@ class ProfileResolutionTest(unittest.TestCase):
             bad.write_text("[commit\ntypes = not toml")
             r = run_cli(["--profile", str(bad), "check-commit", "feat: x"])
             self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+
+
+class ResolveSectionPromotionTest(unittest.TestCase):
+    """Planner decision (process-kit-8dx dispatch): the per-checker
+    fallback resolvers are one parameterized resolve_section in the
+    sanctioned plumbing block, canonical in scripts/conventions, copied
+    verbatim into every standalone checker. This pin kills the
+    four-token-substitution drift class: any copy diverging from the canon
+    fails here, not in a target repo."""
+
+    PLUMBING = ("discover_profile", "resolve_profile_path", "load_profile",
+                "compile_entry", "resolve_section")
+    CHECKERS = ("defer-lint", "close-reason-lint", "banned-token-scan")
+
+    @staticmethod
+    def load_cli(path):
+        name = path.name.replace("-", "_") + "_plumbing_pin"
+        loader = SourceFileLoader(name, str(path))
+        spec = importlib.util.spec_from_loader(name, loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+
+    def test_resolve_section_is_canonical_in_conventions(self):
+        # The canon carries resolve_section even though `conventions`
+        # itself never falls back — it is the distributed plumbing text.
+        canon = self.load_cli(CLI)
+        self.assertTrue(callable(getattr(canon, "resolve_section", None)),
+                        "scripts/conventions has no resolve_section")
+
+    def test_plumbing_block_is_verbatim_across_consumers(self):
+        canon = self.load_cli(CLI)
+        for checker in self.CHECKERS:
+            mod = self.load_cli(REPO / "scripts" / checker)
+            with self.subTest(checker=checker):
+                for fn in self.PLUMBING:
+                    self.assertEqual(
+                        inspect.getsource(getattr(mod, fn)),
+                        inspect.getsource(getattr(canon, fn)),
+                        f"{checker}: {fn} drifted from the canon copy")
+                self.assertEqual(mod.FLAG_NAMES, canon.FLAG_NAMES,
+                                 f"{checker}: FLAG_NAMES drifted")
 
 
 class CliConventionsTest(unittest.TestCase):

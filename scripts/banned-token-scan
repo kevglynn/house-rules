@@ -9,21 +9,44 @@ quoted references, agent-process units) require reading intent, so that
 judgment stays with the reader and the review lenses — this tool never
 suppresses a hit on their behalf.
 
-Content self-matching: every token literal in this file — including one
-class name — is assembled from parts, so no copy of this scanner (the kit
-one or a distributed one) ever flags its own source. Content-side
-exclusion; no path special-casing (same idiom as scripts/defer-lint).
+The token catalog (class keys, per-token patterns and flags) is read from
+profiles/conventions.toml — the single source of truth the rule's catalog
+enumeration is rendered from. Resolution: --profile flag >
+CONVENTIONS_PROFILE env > nearest profiles/conventions.toml walking up
+from the current directory. A tree with no discoverable profile falls
+back to the built-in copy of the same catalog so the checker keeps
+working standalone (advisory posture); a DISCOVERED profile without a
+[tokens] section also falls back (it predates the section). But explicit
+selection is loud: a --profile/env profile missing [tokens], or any
+profile that is unreadable or invalid, is an error — never a silent
+fallback. The JSON payload and human summary echo grammar_source.
 
-Exit codes: 0 clean · 1 candidate hits · 2 usage error · 3 I/O error.
-Human-readable output by default; --json for agents. I/O and usage errors
-are JSON on stderr in both output modes. Non-interactive.
+Content self-matching, two idioms:
+  - This source file: every token literal — including one class name —
+    is assembled from parts, so no copy of this scanner (the kit one or
+    a distributed one) ever flags its own source. Content-side exclusion;
+    no path special-casing (same idiom as scripts/defer-lint).
+  - Data files (the profile and every distributed copy of it): a catalog
+    cannot assemble its own tokens from parts, so the scanner honors a
+    declared-token region contract — lines between the marker pair (the
+    catalog's scan exclude_marker with ":begin" / ":end" appended) are
+    catalog DATA, and matching is suppressed there, whatever the file's
+    path or name.
+
+Exit codes: 0 clean · 1 candidate hits · 2 usage error · 3 I/O or profile
+error. Human-readable output by default; --json for agents. I/O and usage
+errors are JSON on stderr in both output modes. Non-interactive.
 """
 
 import argparse
 import json
+import os
 import re
 import sys
+import tomllib
 from pathlib import Path
+
+PROFILE_RELPATH = Path("profiles") / "conventions.toml"
 
 _J = "".join
 
@@ -78,66 +101,101 @@ CLS_EST = "estimation-verbs"
 NUM = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 
 
-def _word_re(token, flags=re.IGNORECASE):
-    """Whole-word/phrase regex for a token; spaces match any whitespace run."""
-    esc = re.escape(token).replace("\\ ", " ").replace(" ", r"\s+")
-    return re.compile(r"\b" + esc + r"\b", flags)
+def _word_pat(token):
+    """Whole-word/phrase pattern string for a token; spaces match any
+    whitespace run. Tokens carry no regex metacharacters, so no escaping."""
+    return r"\b" + token.replace(" ", r"\s+") + r"\b"
 
 
-def _entry(cls, display, pattern=None):
-    return (cls, display, pattern or _word_re(display))
+def _entry(display, pattern=None, flags=("IGNORECASE",)):
+    return {"display": display,
+            "pattern": pattern or _word_pat(display),
+            "flags": list(flags)}
 
 
-# Longest display first within a class so overlap dedupe keeps the most
-# specific token (person-<unit> wins over the bare unit).
-TOKENS = [
-    _entry(CLS_TIME, _engineer_hours),
-    _entry(CLS_TIME, _person_hours),
-    _entry(CLS_TIME, _story_points),
-    _entry(CLS_TIME, _man_hours),
-    _entry(CLS_TIME, _dev_hours),
-    _entry(CLS_TIME, _quarters),
-    _entry(CLS_TIME, _sprints),
-    _entry(CLS_TIME, _months),
-    _entry(CLS_TIME, _hours),
-    _entry(CLS_TIME, _weeks),
-    _entry(CLS_TIME, _days),
+# Compatibility fallback: the same catalog the profile's [tokens] section
+# carries, restricted to the keys this checker consumes (per-class
+# report_as + {display, pattern, flags} entries, and the scan exclude
+# marker; render-only keys like rule_label / rule_items are deliberately
+# absent). Used only when no profile is discoverable (or the discovered
+# profile has no [tokens] section). Parity with the kit profile is pinned
+# by the test suite — edit the profile, not this dict.
+#
+# Entry order within a class is matcher order: longest display first, so
+# overlap dedupe keeps the most specific token (person-<unit> wins over
+# the bare unit). The base exclude marker below is inert on its own — only
+# the ":begin"-suffixed form (joined at runtime, never at rest in this
+# file) opens a declared-token region.
+FALLBACK_TOKENS = {
+    "scan": {"exclude_marker": "banned-token-scan:declared-tokens"},
+    "classes": {
+        "time_units": {
+            "report_as": CLS_TIME,
+            "entries": [
+                _entry(_engineer_hours),
+                _entry(_person_hours),
+                _entry(_story_points),
+                _entry(_man_hours),
+                _entry(_dev_hours),
+                _entry(_quarters),
+                _entry(_sprints),
+                _entry(_months),
+                _entry(_hours),
+                _entry(_weeks),
+                _entry(_days),
+            ],
+        },
+        "team_size": {
+            "report_as": CLS_TEAM,
+            "entries": [
+                _entry(_with_more_people),
+                _entry(_engineering_team),
+                _entry(_one_developer),
+                _entry(_a_developer),
+                _entry(_small_team),
+                _entry(_team_of + " N",
+                       r"\b" + _team_of.replace(" ", r"\s+") + r"\s+"
+                       + NUM + r"\b"),
+                _entry("N " + _engineers,
+                       r"\b" + NUM + r"(?:\s*[-–]\s*" + NUM + r")?\s+"
+                       + _engineers + r"\b"),
+            ],
+        },
+        _schedule: {
+            "report_as": CLS_SCHED,
+            "entries": [
+                _entry(_by_end_of_week),
+                _entry(_takes_a_while),
+                _entry(_aggressive),
+                _entry(_takes_long),
+                _entry(_ambitious),
+                _entry(_quick_win),
+                _entry(_timeline),
+                _entry(_schedule),
+                _entry(_on_track),
+                _entry(_by_eod),
+                # Flag-free: lowercase "eta" is a Greek letter / word
+                # fragment; only the uppercase acronym is banned.
+                _entry(_eta, flags=()),
+            ],
+        },
+        "estimation_verbs": {
+            "report_as": CLS_EST,
+            "entries": [
+                _entry(_roughly + " N <unit>",
+                       r"\b" + _roughly + r"\s+" + NUM + r"\s+(?:" + _hours
+                       + "|" + _days + "|" + _weeks + r")\b"),
+                _entry(_rough_estimate),
+                _entry(_id_estimate,
+                       r"\bI['’]d\s+" + _estimate + r"\b"),
+                _entry(_i_estimate),
+                _entry(_ballpark),
+            ],
+        },
+    },
+}
 
-    _entry(CLS_TEAM, _with_more_people),
-    _entry(CLS_TEAM, _engineering_team),
-    _entry(CLS_TEAM, _one_developer),
-    _entry(CLS_TEAM, _a_developer),
-    _entry(CLS_TEAM, _small_team),
-    _entry(CLS_TEAM, _team_of + " N",
-           re.compile(r"\b" + _team_of.replace(" ", r"\s+") + r"\s+" + NUM
-                      + r"\b", re.IGNORECASE)),
-    _entry(CLS_TEAM, "N " + _engineers,
-           re.compile(r"\b" + NUM + r"(?:\s*[-–]\s*" + NUM + r")?\s+"
-                      + _engineers + r"\b", re.IGNORECASE)),
-
-    _entry(CLS_SCHED, _by_end_of_week),
-    _entry(CLS_SCHED, _takes_a_while),
-    _entry(CLS_SCHED, _aggressive),
-    _entry(CLS_SCHED, _takes_long),
-    _entry(CLS_SCHED, _ambitious),
-    _entry(CLS_SCHED, _quick_win),
-    _entry(CLS_SCHED, _timeline),
-    _entry(CLS_SCHED, _schedule),
-    _entry(CLS_SCHED, _on_track),
-    _entry(CLS_SCHED, _by_eod),
-    # Uppercase only: lowercase "eta" is a Greek letter / word fragment.
-    _entry(CLS_SCHED, _eta, _word_re(_eta, 0)),
-
-    _entry(CLS_EST, _roughly + " N <unit>",
-           re.compile(r"\b" + _roughly + r"\s+" + NUM + r"\s+(?:" + _hours
-                      + "|" + _days + "|" + _weeks + r")\b", re.IGNORECASE)),
-    _entry(CLS_EST, _rough_estimate),
-    _entry(CLS_EST, _id_estimate,
-           re.compile(r"\bI['\u2019]d\s+" + _estimate + r"\b",
-                      re.IGNORECASE)),
-    _entry(CLS_EST, _i_estimate),
-    _entry(CLS_EST, _ballpark),
-]
+_MARK = FALLBACK_TOKENS["scan"]["exclude_marker"]
 
 EPILOG = f"""\
 token classes (agent-identity rule, banned when framing work-to-be-done):
@@ -164,6 +222,19 @@ judgment boundary — reporter, not judge:
   detected — telling them apart requires reading intent. Every hit is a
   candidate for the reader or the review lenses to triage.
 
+catalog source:
+  profiles/conventions.toml [tokens] section when present (--profile /
+  CONVENTIONS_PROFILE / upward walk from the current directory); built-in
+  fallback with the same catalog otherwise.
+
+declared-token data (content-side exclusion contract):
+  a catalog data file is itself token-laden, so its catalog region is
+  bracketed by marker lines — the catalog's scan exclude_marker
+  ("{_MARK}") with ":begin" / ":end" appended — and matching is
+  suppressed between them. This keeps the profile that carries the
+  catalog, and every distributed copy of it, clean at any path, while
+  real prose keeps flagging.
+
 known limitations:
   - whole-word matching only: inflected forms ("{_schedule}d",
     "{_schedule}s") are not flagged
@@ -171,6 +242,9 @@ known limitations:
   - matching is per-line: a phrase wrapped across a line break escapes
   - singular units ("day", "week") are not in the catalog — the rule
     bans the plural forms
+  - a begin marker with no end marker suppresses matching to the end of
+    that source; the contract is content-side, so a marker pasted into
+    prose excludes that prose (accident hazard, not adversary defense)
 """
 
 
@@ -191,11 +265,173 @@ class JsonArgumentParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def scan_text(name, text):
+# --------------------------------------------------------------------------
+# Profile plumbing — discover_profile, resolve_profile_path, load_profile,
+# compile_entry, resolve_section, and FLAG_NAMES are verbatim copies from
+# scripts/conventions (the canonical copy; Planner decision on the tlp
+# epic — do not fork the behavior).
+# --------------------------------------------------------------------------
+
+# Pattern-entry flags name Python `re` module constants (design-doc schema:
+# token entries are {pattern, flags} tables; the same shape serves every
+# detector in the profile).
+FLAG_NAMES = {
+    "IGNORECASE": re.IGNORECASE,
+    "MULTILINE": re.MULTILINE,
+    "DOTALL": re.DOTALL,
+    "VERBOSE": re.VERBOSE,
+    "ASCII": re.ASCII,
+}
+
+
+def discover_profile(start_dir):
+    """Nearest profiles/conventions.toml walking up from start_dir, stopping
+    at the repo boundary (.git) so an ancestor repo's profile is never
+    picked up. Returns None when absent — the caller decides whether
+    absence is an error (this CLI) or a fallback (standalone checkers)."""
+    for candidate_dir in [start_dir, *start_dir.parents]:
+        candidate = candidate_dir / PROFILE_RELPATH
+        if candidate.is_file():
+            return candidate
+        if (candidate_dir / ".git").exists():
+            break
+    return None
+
+
+def resolve_profile_path(flag_value):
+    if flag_value:
+        return Path(flag_value)
+    env_value = os.environ.get("CONVENTIONS_PROFILE")
+    if env_value:
+        return Path(env_value)
+    cwd = Path.cwd().resolve()
+    found = discover_profile(cwd)
+    if found:
+        return found
+    emit_error(
+        f"no {PROFILE_RELPATH} found walking up from {cwd}; "
+        "pass --profile or set CONVENTIONS_PROFILE", "io", 3)
+
+
+def load_profile(flag_value):
+    path = resolve_profile_path(flag_value)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f), path.resolve()
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        emit_error(f"cannot load profile {path}: {exc}", "io", 3)
+
+
+def compile_entry(entry, where):
+    """Compile a pattern entry: a bare regex string or a {pattern, flags} table."""
+    if isinstance(entry, str):
+        pattern, flag_names = entry, []
+    elif isinstance(entry, dict) and "pattern" in entry:
+        pattern, flag_names = entry["pattern"], entry.get("flags", [])
+    else:
+        emit_error(f"{where}: expected a pattern string or "
+                   "a {pattern, flags} table", "profile", 3)
+    flags = 0
+    for name in flag_names:
+        if name not in FLAG_NAMES:
+            emit_error(f"{where}: unknown flag {name!r} "
+                       f"(known: {sorted(FLAG_NAMES)})", "profile", 3)
+        flags |= FLAG_NAMES[name]
+    try:
+        return re.compile(pattern, flags)
+    # TypeError: non-string pattern / non-list flags — a profile-shape
+    # error, not a missing key; without this it would surface under the
+    # caller's missing-required-key message.
+    except (re.error, TypeError) as exc:
+        emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
+                   "profile", 3)
+
+
+def resolve_section(flag_value, section_name, builder, fallback, noun,
+                    root=None):
+    """Resolve a profile section per the standalone-checker posture:
+    explicit profile (flag/env) > discovered profile at/above `root`
+    (default: the current directory) > built-in fallback. Returns
+    (built_section, source_label). Absence of any profile falls back, and
+    so does a DISCOVERED profile without the section (it predates the
+    section); but an EXPLICITLY selected profile missing the section is a
+    profile error — the caller named a source that carries no such
+    section. A named-or-found profile that fails to load is always an
+    error."""
+    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
+    if root is None:
+        root = Path.cwd().resolve()
+    discovered = None if explicit else discover_profile(root)
+    if explicit or discovered:
+        profile, profile_path = load_profile(
+            flag_value if explicit else str(discovered))
+        section = profile.get(section_name)
+        if section is not None:
+            return (builder(section, str(profile_path)), str(profile_path))
+        if explicit:
+            emit_error(
+                f"{profile_path}: profile has no [{section_name}] section "
+                f"(explicitly selected profiles must carry the {noun})",
+                "profile", 3)
+    return (builder(fallback, f"built-in fallback {noun}"),
+            "built-in fallback")
+
+
+def build_tokens(spec, origin):
+    """Compile a [tokens] catalog spec into the flat matcher list plus the
+    declared-token region markers. `origin` names the catalog source
+    (profile path or the built-in fallback) for errors."""
+    try:
+        marker = spec["scan"]["exclude_marker"]
+        classes = spec["classes"]
+    except (KeyError, TypeError) as exc:
+        emit_error(f"{origin}: [tokens] catalog is missing required key: "
+                   f"{exc}", "profile", 3)
+    if not isinstance(marker, str) or not marker:
+        emit_error(f"{origin}: tokens.scan.exclude_marker must be a "
+                   "non-empty string", "profile", 3)
+    if not isinstance(classes, dict):
+        emit_error(f"{origin}: [tokens.classes] must be a table of named "
+                   "class tables", "profile", 3)
+    matchers = []
+    for group, cls_spec in classes.items():
+        report_as = (cls_spec.get("report_as")
+                     if isinstance(cls_spec, dict) else None)
+        entries = (cls_spec.get("entries")
+                   if isinstance(cls_spec, dict) else None)
+        if not isinstance(report_as, str) or not isinstance(entries, list):
+            emit_error(f"{origin}: tokens.classes.{group} needs report_as "
+                       "and an entries list", "profile", 3)
+        for i, entry in enumerate(entries):
+            display = entry.get("display") if isinstance(entry, dict) else None
+            if not isinstance(display, str):
+                emit_error(f"{origin}: tokens.classes.{group} entry {i} "
+                           "needs a display string", "profile", 3)
+            matchers.append((report_as, display, compile_entry(
+                entry, f"{origin}: tokens.classes.{group} entry {i}")))
+    return {
+        "matchers": matchers,
+        "exclude_begin": marker + ":begin",
+        "exclude_end": marker + ":end",
+    }
+
+
+def scan_text(name, text, catalog):
     findings = []
+    excluded = False
     for lineno, line in enumerate(text.splitlines(), start=1):
+        # Declared-token data region: between the begin/end marker lines
+        # nothing is a candidate — the content IS the catalog. Marker
+        # lines themselves are part of the region.
+        if excluded:
+            if catalog["exclude_end"] in line:
+                excluded = False
+            continue
+        if catalog["exclude_begin"] in line:
+            excluded = True
+            continue
         taken = {}  # class -> list of consumed (start, end) spans
-        for cls, display, pattern in TOKENS:
+        for cls, display, pattern in catalog["matchers"]:
             for m in pattern.finditer(line):
                 span = m.span()
                 spans = taken.setdefault(cls, [])
@@ -218,14 +454,20 @@ def main(argv=None):
         description=(
             "Report candidate agent-identity banned-token hits (four "
             "classes) in text from files or stdin. Deterministic reporter: "
-            "the rule's exception judgment stays with the reader. Exit "
-            "codes: 0 clean, 1 hits, 2 usage error, 3 I/O error."
+            "the rule's exception judgment stays with the reader. The "
+            "catalog comes from profiles/conventions.toml when present "
+            "(--profile / CONVENTIONS_PROFILE / upward walk from the "
+            "current directory); built-in fallback otherwise. Exit codes: "
+            "0 clean, 1 hits, 2 usage error, 3 I/O or profile error."
         ),
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("paths", nargs="*", metavar="FILE",
                         help="Files to scan (default: stdin)")
+    parser.add_argument("--profile",
+                        help="path to profile TOML (default: resolution "
+                             "chain in the description)")
     parser.add_argument("--json", action="store_true",
                         help="Structured JSON output on stdout")
     args = parser.parse_args(argv)
@@ -244,14 +486,18 @@ def main(argv=None):
                 emit_error(f"cannot read file: {e}", "io", 3)
             sources.append((p, text))
 
+    catalog, grammar_source = resolve_section(
+        args.profile, "tokens", build_tokens, FALLBACK_TOKENS, "catalog")
+
     findings = []
     for name, text in sources:
-        findings.extend(scan_text(name, text))
+        findings.extend(scan_text(name, text, catalog))
     exit_code = 1 if findings else 0
 
     if args.json:
         json.dump({
             "ok": not findings,
+            "grammar_source": grammar_source,
             "files_scanned": len(sources),
             "findings": findings,
         }, sys.stdout, sort_keys=True)
@@ -262,7 +508,8 @@ def main(argv=None):
         print(f"{f['file']}:{f['line']}: [{f['class']}] {f['token']} — "
               f"{f['text']}")
     status = "clean" if not findings else f"{len(findings)} candidate hit(s)"
-    print(f"Scanned {len(sources)} file(s): {status}.")
+    print(f"Scanned {len(sources)} file(s): {status}. "
+          f"[grammar: {grammar_source}]")
     return exit_code
 
 

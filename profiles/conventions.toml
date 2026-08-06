@@ -15,8 +15,8 @@
 #
 # Pattern entries: a detector is either a bare regex string or a
 # { pattern = '...', flags = ["IGNORECASE", ...] } table; flags name Python
-# `re` module constants. Later children (token catalog, TDD obligations)
-# add their sections here using the same entry shape.
+# `re` module constants. Later children (TDD obligations) add their
+# sections here using the same entry shape.
 #
 # Schema notes:
 #   - `judgment` lists are checker-side annotations and never render — with
@@ -309,7 +309,117 @@ flags = ["IGNORECASE"]
 severity = "warning"
 
 # ---------------------------------------------------------------------------
-# 4. Fragment homes — where each rendered fragment is committed, relative to
+# 4. Banned-token catalog (agent-identity rule)
+# Law home: cursor/rules/agent-identity.mdc catalog enumeration (generated).
+# scripts/banned-token-scan reads this section at runtime; resolution and
+# fallback posture match [defer] / [close_evidence] (standalone advisory
+# posture, test-pinned parity with the checker's built-in copy).
+#
+# Entry shape: { display, pattern, flags } — `display` is the token name
+# findings report; `pattern` is the matcher; flags name `re` constants.
+# The one flag-free entry is deliberate: that acronym is banned in its
+# uppercase form only. Entry order within a class is MATCHER order:
+# longest display first, so overlap dedupe keeps the most specific token
+# (person-<unit> wins over the bare unit).
+#
+# `rule_label` / `rule_items` / `rule_note` are render-only: the rule's
+# enumeration order and spellings are pedagogical and differ from matcher
+# order, and one enumeration item can stand for a composed matcher
+# ("N <unit>" families). A class's rule_items count must equal its
+# entries count — the renderer enforces this so a catalog edit cannot
+# silently skip the rendered rule.
+#
+# Content-side exclusion contract (design doc + the gsx Tier 1 note): this
+# section is token-laden BY DESIGN — a catalog cannot be assembled from
+# parts the way [defer]'s marker is. The contract: lines between the two
+# marker lines below (the exclude_marker with ":begin" / ":end" appended)
+# are declared token DATA, and the scanner suppresses matching there — in
+# this file and in every distributed copy, at any path. The suffixes are
+# stored apart from the base marker so the config line below cannot
+# itself open or close a region.
+# ---------------------------------------------------------------------------
+[tokens]
+
+[tokens.scan]
+exclude_marker = "banned-token-scan:declared-tokens"
+
+# banned-token-scan:declared-tokens:begin — catalog data, scanner-excluded
+[tokens.classes.time_units]
+report_as = "time-units"
+rule_label = "Time units"
+rule_items = [
+  "hours", "days", "weeks", "months", "quarters", "sprints", "man-hours",
+  "person-hours", "engineer-hours", "dev-hours", "story points",
+]
+entries = [
+  { display = "engineer-hours", pattern = '\bengineer-hours\b', flags = ["IGNORECASE"] },
+  { display = "person-hours", pattern = '\bperson-hours\b', flags = ["IGNORECASE"] },
+  { display = "story points", pattern = '\bstory\s+points\b', flags = ["IGNORECASE"] },
+  { display = "man-hours", pattern = '\bman-hours\b', flags = ["IGNORECASE"] },
+  { display = "dev-hours", pattern = '\bdev-hours\b', flags = ["IGNORECASE"] },
+  { display = "quarters", pattern = '\bquarters\b', flags = ["IGNORECASE"] },
+  { display = "sprints", pattern = '\bsprints\b', flags = ["IGNORECASE"] },
+  { display = "months", pattern = '\bmonths\b', flags = ["IGNORECASE"] },
+  { display = "hours", pattern = '\bhours\b', flags = ["IGNORECASE"] },
+  { display = "weeks", pattern = '\bweeks\b', flags = ["IGNORECASE"] },
+  { display = "days", pattern = '\bdays\b', flags = ["IGNORECASE"] },
+]
+
+[tokens.classes.team_size]
+report_as = "team-size"
+rule_label = "Team-size claims"
+rule_note = "as a sizing unit"
+rule_items = [
+  "one developer", "a developer", "two engineers", "small team",
+  "team of N", "with more people", "engineering team",
+]
+entries = [
+  { display = "with more people", pattern = '\bwith\s+more\s+people\b', flags = ["IGNORECASE"] },
+  { display = "engineering team", pattern = '\bengineering\s+team\b', flags = ["IGNORECASE"] },
+  { display = "one developer", pattern = '\bone\s+developer\b', flags = ["IGNORECASE"] },
+  { display = "a developer", pattern = '\ba\s+developer\b', flags = ["IGNORECASE"] },
+  { display = "small team", pattern = '\bsmall\s+team\b', flags = ["IGNORECASE"] },
+  { display = "team of N", pattern = '\bteam\s+of\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b', flags = ["IGNORECASE"] },
+  { display = "N engineers", pattern = '\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*[-–]\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten))?\s+engineers\b', flags = ["IGNORECASE"] },
+]
+
+[tokens.classes.schedule]
+report_as = "schedule-framing"
+rule_label = "Schedule framing"
+rule_note = "as a schedule claim, not a scope claim"
+rule_items = [
+  "timeline", "schedule", "ambitious", "aggressive", "on track", "ETA",
+  "by EOD", "by end of week", "takes a while", "takes long", "quick win",
+]
+entries = [
+  { display = "by end of week", pattern = '\bby\s+end\s+of\s+week\b', flags = ["IGNORECASE"] },
+  { display = "takes a while", pattern = '\btakes\s+a\s+while\b', flags = ["IGNORECASE"] },
+  { display = "aggressive", pattern = '\baggressive\b', flags = ["IGNORECASE"] },
+  { display = "takes long", pattern = '\btakes\s+long\b', flags = ["IGNORECASE"] },
+  { display = "ambitious", pattern = '\bambitious\b', flags = ["IGNORECASE"] },
+  { display = "quick win", pattern = '\bquick\s+win\b', flags = ["IGNORECASE"] },
+  { display = "timeline", pattern = '\btimeline\b', flags = ["IGNORECASE"] },
+  { display = "schedule", pattern = '\bschedule\b', flags = ["IGNORECASE"] },
+  { display = "on track", pattern = '\bon\s+track\b', flags = ["IGNORECASE"] },
+  { display = "by EOD", pattern = '\bby\s+EOD\b', flags = ["IGNORECASE"] },
+  { display = "ETA", pattern = '\bETA\b', flags = [] },
+]
+
+[tokens.classes.estimation_verbs]
+report_as = "estimation-verbs"
+rule_label = "Estimation verbs"
+rule_items = ["I estimate", "I'd estimate", "rough estimate", "ballpark", "roughly N hours/days/weeks"]
+entries = [
+  { display = "roughly N <unit>", pattern = '\broughly\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:hours|days|weeks)\b', flags = ["IGNORECASE"] },
+  { display = "rough estimate", pattern = '\brough\s+estimate\b', flags = ["IGNORECASE"] },
+  { display = "I'd estimate", pattern = "\\bI['’]d\\s+estimate\\b", flags = ["IGNORECASE"] },
+  { display = "I estimate", pattern = '\bI\s+estimate\b', flags = ["IGNORECASE"] },
+  { display = "ballpark", pattern = '\bballpark\b', flags = ["IGNORECASE"] },
+]
+# banned-token-scan:declared-tokens:end
+
+# ---------------------------------------------------------------------------
+# 5. Fragment homes — where each rendered fragment is committed, relative to
 # the repo root. `render-rule --check` (the kit-ci regen gate) iterates this
 # table: render each fragment, extract the GENERATED-marked region from the
 # file, fail on any byte difference.
@@ -327,3 +437,6 @@ file = "cursor/rules/bead-completion.mdc"
 
 [fragments."defer-convention"]
 file = "cursor/rules/defer-convention.mdc"
+
+[fragments."agent-identity"]
+file = "cursor/rules/agent-identity.mdc"

@@ -178,6 +178,41 @@ def compile_entry(entry, where):
                    "profile", 3)
 
 
+# resolve_section is the standalone checkers' section resolver (defer-lint,
+# close-reason-lint, banned-token-scan) — part of the distributed plumbing
+# block whose canonical text lives in this file. This CLI itself never
+# calls it: for `conventions`, profile absence is an error
+# (resolve_profile_path), not a fallback.
+def resolve_section(flag_value, section_name, builder, fallback, noun,
+                    root=None):
+    """Resolve a profile section per the standalone-checker posture:
+    explicit profile (flag/env) > discovered profile at/above `root`
+    (default: the current directory) > built-in fallback. Returns
+    (built_section, source_label). Absence of any profile falls back, and
+    so does a DISCOVERED profile without the section (it predates the
+    section); but an EXPLICITLY selected profile missing the section is a
+    profile error — the caller named a source that carries no such
+    section. A named-or-found profile that fails to load is always an
+    error."""
+    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
+    if root is None:
+        root = Path.cwd().resolve()
+    discovered = None if explicit else discover_profile(root)
+    if explicit or discovered:
+        profile, profile_path = load_profile(
+            flag_value if explicit else str(discovered))
+        section = profile.get(section_name)
+        if section is not None:
+            return (builder(section, str(profile_path)), str(profile_path))
+        if explicit:
+            emit_error(
+                f"{profile_path}: profile has no [{section_name}] section "
+                f"(explicitly selected profiles must carry the {noun})",
+                "profile", 3)
+    return (builder(fallback, f"built-in fallback {noun}"),
+            "built-in fallback")
+
+
 # --------------------------------------------------------------------------
 # Checkers — every violation carries a code traceable to the profile field
 # that produced it.
@@ -337,10 +372,33 @@ def render_defer_convention(profile):
     ]
 
 
+def render_agent_identity(profile):
+    # rule_items order and spellings are the rule's own (render-only keys):
+    # matcher entries are ordered for overlap dedupe and name composed
+    # patterns abstractly ("N <unit>"), which is not how the law reads.
+    lines = ["**Banned when used to frame work-to-be-done:**", ""]
+    for group, cls_spec in profile["tokens"]["classes"].items():
+        items = cls_spec["rule_items"]
+        if len(items) != len(cls_spec["entries"]):
+            emit_error(
+                f"tokens.classes.{group}: rule_items lists {len(items)} "
+                f"item(s) but entries carries {len(cls_spec['entries'])} — "
+                "a catalog edit must update both, or the rendered rule "
+                "silently diverges from the checker", "profile", 3)
+        rendered = ", ".join(f"`{item}`" for item in items)
+        line = f"- **{cls_spec['rule_label']}**: {rendered}"
+        note = cls_spec.get("rule_note")
+        if note:
+            line += f" ({note})"
+        lines.append(line)
+    return lines
+
+
 RENDERERS = {
     "git-conventions": render_git_conventions,
     "close-evidence": render_close_evidence,
     "defer-convention": render_defer_convention,
+    "agent-identity": render_agent_identity,
 }
 
 

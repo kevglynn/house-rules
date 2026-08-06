@@ -200,9 +200,9 @@ class JsonArgumentParser(argparse.ArgumentParser):
 
 # --------------------------------------------------------------------------
 # Profile plumbing — discover_profile, resolve_profile_path, load_profile,
-# compile_entry, and FLAG_NAMES are verbatim copies from scripts/conventions
-# (the canonical copy; Planner decision on the tlp epic — do not fork the
-# behavior).
+# compile_entry, resolve_section, and FLAG_NAMES are verbatim copies from
+# scripts/conventions (the canonical copy; Planner decision on the tlp
+# epic — do not fork the behavior).
 # --------------------------------------------------------------------------
 
 # Pattern-entry flags name Python `re` module constants (design-doc schema:
@@ -280,6 +280,36 @@ def compile_entry(entry, where):
                    "profile", 3)
 
 
+def resolve_section(flag_value, section_name, builder, fallback, noun,
+                    root=None):
+    """Resolve a profile section per the standalone-checker posture:
+    explicit profile (flag/env) > discovered profile at/above `root`
+    (default: the current directory) > built-in fallback. Returns
+    (built_section, source_label). Absence of any profile falls back, and
+    so does a DISCOVERED profile without the section (it predates the
+    section); but an EXPLICITLY selected profile missing the section is a
+    profile error — the caller named a source that carries no such
+    section. A named-or-found profile that fails to load is always an
+    error."""
+    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
+    if root is None:
+        root = Path.cwd().resolve()
+    discovered = None if explicit else discover_profile(root)
+    if explicit or discovered:
+        profile, profile_path = load_profile(
+            flag_value if explicit else str(discovered))
+        section = profile.get(section_name)
+        if section is not None:
+            return (builder(section, str(profile_path)), str(profile_path))
+        if explicit:
+            emit_error(
+                f"{profile_path}: profile has no [{section_name}] section "
+                f"(explicitly selected profiles must carry the {noun})",
+                "profile", 3)
+    return (builder(fallback, f"built-in fallback {noun}"),
+            "built-in fallback")
+
+
 def build_shape(spec, origin):
     """Compile a [close_evidence] shape spec into matchers and type sets.
     `origin` names the shape source (profile path or the built-in
@@ -339,31 +369,12 @@ def build_shape(spec, origin):
 
 
 def resolve_shape(flag_value):
-    """Shape per the resolution chain: explicit profile (flag/env) >
-    discovered profile at/above the cwd (this is a stdin tool with no
-    --root; the invoker's repo is the discovery anchor) > built-in
-    fallback. Returns (shape, source_label). Absence of any profile falls
-    back, and so does a DISCOVERED profile without a [close_evidence]
-    section (it predates the section); but an EXPLICITLY selected profile
-    missing the section is a profile error — the caller named a shape
-    source that has no shape. A named-or-found profile that fails to load
-    is always an error."""
-    explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
-    discovered = None if explicit else discover_profile(Path.cwd().resolve())
-    if explicit or discovered:
-        profile, profile_path = load_profile(
-            flag_value if explicit else str(discovered))
-        section = profile.get("close_evidence")
-        if section is not None:
-            return (build_shape(section, str(profile_path)),
-                    str(profile_path))
-        if explicit:
-            emit_error(
-                f"{profile_path}: profile has no [close_evidence] section "
-                "(explicitly selected profiles must carry the shape)",
-                "profile", 3)
-    return (build_shape(FALLBACK_CLOSE_EVIDENCE, "built-in fallback shape"),
-            "built-in fallback")
+    """Shape per the shared resolution posture (resolve_section): explicit
+    profile (flag/env) > discovered profile at/above the cwd (this is a
+    stdin tool with no --root; the invoker's repo is the discovery
+    anchor) > built-in fallback. Returns (shape, source_label)."""
+    return resolve_section(flag_value, "close_evidence", build_shape,
+                           FALLBACK_CLOSE_EVIDENCE, "shape")
 
 
 def lint_beads(beads, shape):
