@@ -74,12 +74,16 @@ done
 
 # --- Block rendering ---
 
-# defer: marker strings keep the legacy "ai-dev-playbook:" prefix.
-# ceiling: ~/CLAUDE.md blocks installed by the predecessor playbook carry this
-# marker; renaming it would append duplicate blocks instead of updating in place.
-# upgrade when: the final kit name lands — rename markers + migrate legacy blocks.
-marker_begin() { printf '<!-- BEGIN ai-dev-playbook:%s -->' "$1"; }
-marker_end()   { printf '<!-- END ai-dev-playbook:%s -->' "$1"; }
+# Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
+# ~/CLAUDE.md blocks installed by the predecessor playbook carry the legacy
+# "ai-dev-playbook:" prefix, so every block-boundary scan below recognizes
+# BOTH prefixes: a legacy (or mixed) file is rewritten in place under the new
+# markers, never duplicated. Keep the legacy recognition until no machine
+# still carries old-marker blocks.
+marker_begin() { printf '<!-- BEGIN house-rules:%s -->' "$1"; }
+marker_end()   { printf '<!-- END house-rules:%s -->' "$1"; }
+legacy_marker_begin() { printf '<!-- BEGIN ai-dev-playbook:%s -->' "$1"; }
+legacy_marker_end()   { printf '<!-- END ai-dev-playbook:%s -->' "$1"; }
 
 block_source_path() { printf '%s/%s.md' "$SAFETY_NET_DIR" "$1"; }
 
@@ -103,19 +107,28 @@ render_block() {
 
 has_block() {
   local id="$1"
-  [ -f "$CLAUDE_MD" ] && grep -qF "$(marker_begin "$id")" "$CLAUDE_MD"
+  [ -f "$CLAUDE_MD" ] || return 1
+  grep -qF "$(marker_begin "$id")" "$CLAUDE_MD" \
+    || grep -qF "$(legacy_marker_begin "$id")" "$CLAUDE_MD"
+}
+
+has_legacy_block() {
+  local id="$1"
+  [ -f "$CLAUDE_MD" ] && grep -qF "$(legacy_marker_begin "$id")" "$CLAUDE_MD"
 }
 
 current_block_content() {
   local id="$1"
   [ -f "$CLAUDE_MD" ] || return 1
-  local begin end in_block=0
+  local begin end lbegin lend in_block=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
+  lbegin="$(legacy_marker_begin "$id")"
+  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ "$line" = "$begin" ]; then in_block=1; fi
+    if [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; then in_block=1; fi
     [ $in_block -eq 1 ] && printf '%s\n' "$line"
-    if [ "$line" = "$end" ]; then in_block=0; fi
+    if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then in_block=0; fi
   done < "$CLAUDE_MD"
 }
 
@@ -152,11 +165,13 @@ replace_block() {
   local id="$1"
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
-  local begin end in_block=0 emitted=0
+  local begin end lbegin lend in_block=0 emitted=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
+  lbegin="$(legacy_marker_begin "$id")"
+  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
+    if [ $in_block -eq 0 ] && { [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; }; then
       in_block=1
       if [ $emitted -eq 0 ]; then
         render_block "$id"
@@ -165,7 +180,7 @@ replace_block() {
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$end" ]; then
+      if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then
         in_block=0
       fi
       continue
@@ -181,16 +196,18 @@ remove_block() {
   has_block "$id" || return 0
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
-  local begin end in_block=0
+  local begin end lbegin lend in_block=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
+  lbegin="$(legacy_marker_begin "$id")"
+  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
+    if [ $in_block -eq 0 ] && { [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; }; then
       in_block=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$end" ]; then
+      if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then
         in_block=0
       fi
       continue
@@ -320,8 +337,8 @@ case "$MODE" in
     echo ""
     echo "Note: if you previously pasted the snippet into Cursor's user"
     echo "rules, remove it manually via Cursor → Settings → Rules for AI."
-    echo "(An auto-imported CLAUDE rule needs no action — it follows"
-    echo "~/CLAUDE.md on the next Cursor restart.)"
+    echo "(An auto-imported CLAUDE rule needs no action — it follows the"
+    echo "file ~/CLAUDE.md on the next Cursor restart.)"
     exit 0
     ;;
 
@@ -338,6 +355,9 @@ case "$MODE" in
       if ! has_block "$id"; then
         append_block_new "$id"
         echo "✓ Added block '$id' to $CLAUDE_MD"
+      elif has_legacy_block "$id"; then
+        replace_block "$id"
+        echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers"
       elif block_is_current "$id"; then
         echo "✓ Block '$id' is already current (no changes)"
       else

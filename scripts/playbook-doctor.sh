@@ -348,9 +348,12 @@ echo ""
 # ---------- AGENTS.md playbook section ----------
 #
 # playbook-init.sh stamps the AGENTS.md playbook section with a
-# machine-parseable version marker (<!-- ai-dev-playbook:version X.Y.Z -->)
+# machine-parseable version marker (<!-- house-rules:version X.Y.Z -->)
 # sourced from the kit's VERSION file. A stale stamp means the section's
 # doctor/sync instructions and exit-code contract may describe an older kit.
+# Sections written before the house-rules rename carry legacy
+# "ai-dev-playbook:" markers — recognized here (presence + stamp) and flagged
+# for migration; re-running playbook-init.sh rewrites them in place.
 #
 # Deliberately text-only (warn — no exit 3 / SUMMARY key): the section is
 # discovery documentation, not executable machinery like rules or the
@@ -361,20 +364,24 @@ echo ""
 echo "AGENTS.md:"
 
 agents_md="$PROJECT_ROOT/AGENTS.md"
-agents_marker="<!-- BEGIN ai-dev-playbook:agents-md -->"
+agents_marker="<!-- BEGIN house-rules:agents-md -->"
+agents_marker_legacy="<!-- BEGIN ai-dev-playbook:agents-md -->"
 kit_version=""
 [ -f "$PLAYBOOK_ROOT/VERSION" ] && kit_version="$(tr -d '[:space:]' < "$PLAYBOOK_ROOT/VERSION")"
 
 if $is_playbook_repo; then
   echo "  – kit repo itself: AGENTS.md is authored, not generated (stamp check skipped)"
-elif [ ! -f "$agents_md" ] || ! grep -qF "$agents_marker" "$agents_md" 2>/dev/null; then
+elif [ ! -f "$agents_md" ] || ! grep -qF -e "$agents_marker" -e "$agents_marker_legacy" "$agents_md" 2>/dev/null; then
   # Informational, not a failure: pre-AGENTS.md bootstraps are legitimate.
   echo "  – No playbook section in AGENTS.md (re-run playbook-init.sh to add it)"
 elif [ -z "$kit_version" ]; then
   check_warn "Kit VERSION file missing at $PLAYBOOK_ROOT/VERSION — cannot check the AGENTS.md section stamp"
 else
-  target_version="$(sed -n 's/.*<!-- ai-dev-playbook:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
-  if [ "$target_version" = "$kit_version" ]; then
+  target_version="$(sed -n 's/.*<!-- house-rules:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
+  [ -z "$target_version" ] && target_version="$(sed -n 's/.*<!-- ai-dev-playbook:version \([^ ]*\) -->.*/\1/p' "$agents_md" | head -n1)"
+  if grep -qF "$agents_marker_legacy" "$agents_md"; then
+    check_warn "AGENTS.md playbook section carries legacy ai-dev-playbook markers (stamped ${target_version:-<no stamp — pre-versioning init>}) — re-run: bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both (migrates the section in place)"
+  elif [ "$target_version" = "$kit_version" ]; then
     check_pass "AGENTS.md playbook section current (v$kit_version)"
   else
     check_warn "AGENTS.md playbook section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both (refreshes the section in place)"
