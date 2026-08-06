@@ -44,25 +44,21 @@ from pathlib import Path
 
 PROFILE_RELPATH = Path("profiles") / "conventions.toml"
 
-# Aliases normalized before the per-type lookup — tolerance for both
-# spellings in bd data, not a shape the profile carries.
-TYPE_ALIASES = {"doc": "docs"}
-
 # Compatibility fallback: the same shape the profile's [close_evidence]
 # section carries, restricted to the keys this checker consumes (the
-# commit_ref / ac_mapping detectors, per-type requires + ref_severity,
-# IOU phrase list + exemption; check-close-only keys like description and
-# the other element detectors are deliberately absent). Used only when no
-# profile is discoverable (or the discovered profile has no
-# [close_evidence] section). Parity with the kit profile is pinned by the
-# test suite — edit the profile, not this dict.
+# commit_ref / ac_mapping detectors, per-type requires +
+# commit_ref_severity, IOU phrase list + exemption; check-close-only keys
+# like description and the other element detectors are deliberately
+# absent). Used only when no profile is discoverable (or the discovered
+# profile has no [close_evidence] section). Parity with the kit profile is
+# pinned by the test suite — edit the profile, not this dict.
 FALLBACK_CLOSE_EVIDENCE = {
     # IOU phrases mark deferral-instead-of-evidence — banned in every
     # close reason (bead-completion "Do not defer AC verification"). The
     # one sanctioned deferral form is exempted below; the follow-up bead
-    # must exist at close time.
+    # must exist at close time. Substring-matched: "verified later" also
+    # covers "will be verified later".
     "iou_phrases": [
-        "will be verified later",
         "will be re-verified",
         "deferred to PR review",
         "deferred to integration",
@@ -108,18 +104,21 @@ FALLBACK_CLOSE_EVIDENCE = {
         },
     },
     # Per-type requires (order mirrors the profile). Types whose requires
-    # name na_marker or children_closed are exempt from this stream lint;
-    # ref_severity "warning" (default "error") softens a missing
+    # are entirely prose-shaped (na_marker / children_closed) are exempt
+    # from this stream lint — mixed lists stay checked;
+    # commit_ref_severity "warning" (default "error") softens a missing
     # commit-ref for summary-evidence types.
     "by_type": {
         "bug": {"requires": ["commit_ref", "ac_mapping"]},
         "feature": {"requires": ["commit_ref", "ac_mapping"]},
         "story": {"requires": ["commit_ref", "ac_mapping"]},
         "spike": {"requires": ["findings_summary"],
-                  "ref_severity": "warning"},
+                  "commit_ref_severity": "warning"},
         "refactor": {"requires": ["commit_ref"]},
-        "chore": {"requires": ["commit_ref"], "ref_severity": "warning"},
-        "config": {"requires": ["commit_ref"], "ref_severity": "warning"},
+        "chore": {"requires": ["commit_ref"],
+                  "commit_ref_severity": "warning"},
+        "config": {"requires": ["commit_ref"],
+                   "commit_ref_severity": "warning"},
         "task": {"requires": ["commit_ref", "ac_mapping"]},
         "docs": {"requires": ["na_marker"]},
         "decision": {"requires": ["na_marker"]},
@@ -273,7 +272,10 @@ def compile_entry(entry, where):
         flags |= FLAG_NAMES[name]
     try:
         return re.compile(pattern, flags)
-    except re.error as exc:
+    # TypeError: non-string pattern / non-list flags — a profile-shape
+    # error, not a missing key; without this it would surface under the
+    # caller's missing-required-key message.
+    except (re.error, TypeError) as exc:
         emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
                    "profile", 3)
 
@@ -310,16 +312,19 @@ def build_shape(spec, origin):
         if not isinstance(requires, list):
             emit_error(f"{origin}: close_evidence.by_type.{name} needs a "
                        "requires list", "profile", 3)
-        severity = entry.get("ref_severity", "error")
+        severity = entry.get("commit_ref_severity", "error")
         if severity not in ("error", "warning"):
             emit_error(f"{origin}: close_evidence.by_type.{name} "
-                       "ref_severity must be 'error' or 'warning'",
+                       "commit_ref_severity must be 'error' or 'warning'",
                        "profile", 3)
         # Exemption is requires-driven: a type whose required evidence is
-        # an N/A marker or a children-closed statement closes with
-        # canonical prose, not a commit — there is no commit/AC shape for
-        # this checker to demand of it.
-        if {"na_marker", "children_closed"} & set(requires):
+        # ENTIRELY prose-shaped (N/A marker / children-closed statement)
+        # closes with canonical prose, not a commit — there is no
+        # commit/AC shape for this checker to demand of it. A mixed list
+        # (prose-shaped + artifact elements) stays checked: check-close
+        # would enforce the artifact elements, and silently dropping them
+        # here would fork the two checkers' verdicts.
+        if requires and set(requires) <= {"na_marker", "children_closed"}:
             exempt_types.add(name)
         elif severity == "warning":
             soft_ref_types.add(name)
@@ -333,17 +338,18 @@ def build_shape(spec, origin):
     }
 
 
-def resolve_shape(flag_value, root):
+def resolve_shape(flag_value):
     """Shape per the resolution chain: explicit profile (flag/env) >
-    discovered profile at/above `root` > built-in fallback. Returns
-    (shape, source_label). Absence of any profile falls back, and so does
-    a DISCOVERED profile without a [close_evidence] section (it predates
-    the section); but an EXPLICITLY selected profile missing the section
-    is a profile error — the caller named a shape source that has no
-    shape. A named-or-found profile that fails to load is always an
-    error."""
+    discovered profile at/above the cwd (this is a stdin tool with no
+    --root; the invoker's repo is the discovery anchor) > built-in
+    fallback. Returns (shape, source_label). Absence of any profile falls
+    back, and so does a DISCOVERED profile without a [close_evidence]
+    section (it predates the section); but an EXPLICITLY selected profile
+    missing the section is a profile error — the caller named a shape
+    source that has no shape. A named-or-found profile that fails to load
+    is always an error."""
     explicit = bool(flag_value or os.environ.get("CONVENTIONS_PROFILE"))
-    discovered = None if explicit else discover_profile(root)
+    discovered = None if explicit else discover_profile(Path.cwd().resolve())
     if explicit or discovered:
         profile, profile_path = load_profile(
             flag_value if explicit else str(discovered))
@@ -373,7 +379,9 @@ def lint_beads(beads, shape):
             skipped += 1
             continue
         issue_type = (b.get("issue_type") or "task").lower()
-        lint_type = TYPE_ALIASES.get(issue_type, issue_type)
+        # "doc" is normalized to "docs" before the per-type lookup —
+        # tolerance for both spellings in bd data, not profile shape.
+        lint_type = "docs" if issue_type == "doc" else issue_type
         if lint_type in shape["exempt_types"]:
             exempt += 1
             continue
@@ -394,6 +402,11 @@ def lint_beads(beads, shape):
             # MUST is universal; there is nothing to map otherwise.
             if acs and not shape["ac_mapping"].search(reason):
                 missing.append("ac-mapping")
+            # IOU matching semantics (scrub iou_exempt first, then
+            # case-insensitive substring per phrase) are LOCKSTEP with
+            # scripts/conventions check_close — the phrase list is shared
+            # profile data, but these two code sites must agree on how it
+            # is matched; change both together.
             scrubbed = shape["iou_exempt"].sub("", reason)
             ious = [p for p in shape["iou_phrases"]
                     if p.lower() in scrubbed.lower()]
@@ -440,7 +453,7 @@ def main(argv=None):
     if sys.stdin.isatty():
         emit_error("no input: pipe bd JSON (e.g. bd list "
                    "--status=closed --json)", "usage", 2)
-    shape, grammar_source = resolve_shape(args.profile, Path.cwd().resolve())
+    shape, grammar_source = resolve_shape(args.profile)
     raw = sys.stdin.read()
 
     try:

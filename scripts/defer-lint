@@ -233,7 +233,10 @@ def compile_entry(entry, where):
         flags |= FLAG_NAMES[name]
     try:
         return re.compile(pattern, flags)
-    except re.error as exc:
+    # TypeError: non-string pattern / non-list flags — a profile-shape
+    # error, not a missing key; without this it would surface under the
+    # caller's missing-required-key message.
+    except (re.error, TypeError) as exc:
         emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
                    "profile", 3)
 

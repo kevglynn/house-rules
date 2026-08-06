@@ -43,8 +43,8 @@ BARE_REASON = "Done."
 
 def bead(id="pk-1", issue_type="feature", reason=GOOD_REASON,
          acs="- shows a loading indicator\n- renders the error state",
-         status="closed", **extra):
-    b = {
+         status="closed"):
+    return {
         "id": id,
         "title": "fixture bead",
         "issue_type": issue_type,
@@ -52,14 +52,17 @@ def bead(id="pk-1", issue_type="feature", reason=GOOD_REASON,
         "close_reason": reason,
         "acceptance_criteria": acs,
     }
-    b.update(extra)
-    return b
 
 
 def run_cli(args, stdin_text=None, cwd=None, env_extra=None):
     # CONVENTIONS_PROFILE is scrubbed so a profile configured in the
     # developer's environment can never leak shape into a fixture run
     # (same hygiene as test_defer_lint.py / test_conventions.py).
+    # NOTE on cwd: runs without an explicit cwd inherit the test runner's
+    # directory, so profile-agnostic tests pick up the DISCOVERED kit
+    # profile inside this repo and the built-in fallback outside it. Safe
+    # only because FallbackParityTest pins the two shapes equal — keep
+    # that pin, or pass cwd/--profile explicitly.
     env = {k: v for k, v in os.environ.items() if k != "CONVENTIONS_PROFILE"}
     if env_extra:
         env.update(env_extra)
@@ -73,17 +76,26 @@ def run_cli(args, stdin_text=None, cwd=None, env_extra=None):
     )
 
 
+def lint_json(beads, *extra, cwd=None, env_extra=None):
+    """Run the CLI in --json mode on a bead list; returns (result, payload)."""
+    r = run_cli(["--json", *extra], stdin_text=json.dumps(beads),
+                cwd=cwd, env_extra=env_extra)
+    payload = json.loads(r.stdout) if r.stdout.strip() else None
+    return r, payload
+
+
 def alt_close_profile(docs_requires="na_marker"):
-    """A minimal-but-complete [close_evidence] profile with detectors, an
-    IOU list, and per-type requires that all differ from the kit's, so
-    tests can prove the shape comes from the profile, not any built-in."""
+    """A minimal-but-complete [close_evidence] profile whose detectors,
+    IOU list, IOU exemption, and per-type requires all differ from the
+    kit's, so tests can prove the shape comes from the profile, not any
+    built-in."""
     return (
         "schema_version = 1\n"
         'profile = "fixture"\n'
         "\n"
         "[close_evidence]\n"
         'iou_phrases = ["will be verified later", "handshake promise"]\n'
-        "iou_exempt = { pattern = 'deferred to bead \\S+',"
+        "iou_exempt = { pattern = 'sanctioned:.*',"
         ' flags = ["IGNORECASE"] }\n'
         "\n"
         "[close_evidence.elements.commit_ref]\n"
@@ -100,7 +112,7 @@ def alt_close_profile(docs_requires="na_marker"):
         "[close_evidence.by_type.feature]\n"
         'requires = ["commit_ref", "ac_mapping"]\n'
         "\n"
-        # No ref_severity: the default (error) applies — the kit profile's
+        # No commit_ref_severity: the default (error) applies — the kit profile's
         # chore softening must be shown to be profile data, not code.
         "[close_evidence.by_type.chore]\n"
         'requires = ["commit_ref"]\n'
@@ -111,19 +123,10 @@ def alt_close_profile(docs_requires="na_marker"):
 
 
 class CloseReasonLintTest(unittest.TestCase):
-    def lint(self, beads, *extra):
-        payload = json.dumps(beads)
-        return run_cli(["--json", *extra], stdin_text=payload)
-
-    def lint_json(self, beads, *extra):
-        r = self.lint(beads, *extra)
-        payload = json.loads(r.stdout) if r.stdout.strip() else None
-        return r, payload
-
     # --- AC: flags closed beads whose reasons lack a commit-ref ---
 
     def test_reason_without_commit_ref_is_flagged_exit_1(self):
-        r, out = self.lint_json([bead(reason=NO_REF_REASON)])
+        r, out = lint_json([bead(reason=NO_REF_REASON)])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse(out["ok"])
         self.assertEqual(len(out["findings"]), 1)
@@ -133,25 +136,25 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(f["severity"], "error")
 
     def test_hex_hash_counts_as_commit_ref(self):
-        r, out = self.lint_json(
+        r, out = lint_json(
             [bead(reason="Landed in 1920608. AC1: verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_pr_url_counts_as_commit_ref(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="See https://github.com/o/r/pull/42 — AC1: verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_conventional_branch_name_counts_as_commit_ref(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="On feat/pk-1-loading-state. AC1: verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_branch_keyword_form_counts_as_commit_ref(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Pushed to branch spike-exploration. AC1: verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
@@ -159,7 +162,7 @@ class CloseReasonLintTest(unittest.TestCase):
     def test_decimal_word_alone_is_not_a_commit_ref(self):
         # "closed 20260804" is a date, but hex-plausible; the checker is a
         # candidate reporter — what must NOT count is a non-hex word.
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="AC1: verified. Deployed to staging zone.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
@@ -167,7 +170,7 @@ class CloseReasonLintTest(unittest.TestCase):
     def test_all_letter_hex_word_is_not_a_commit_ref(self):
         # Near-miss guard: 7+ chars of pure hex alphabet with no digit is
         # an English word, not a hash.
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="AC1: verified. Config was effaced deliberately.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
@@ -177,7 +180,7 @@ class CloseReasonLintTest(unittest.TestCase):
         # alternation; a dotted or hyphenless slug is a path, not a branch.
         for path in ("docs/specs/plan.md", "test/utils.py"):
             with self.subTest(path=path):
-                r, out = self.lint_json([bead(
+                r, out = lint_json([bead(
                     reason=f"AC1: verified via {path} walkthrough.")])
                 self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                 self.assertIn("commit-ref", out["findings"][0]["missing"])
@@ -185,7 +188,7 @@ class CloseReasonLintTest(unittest.TestCase):
     def test_branch_keyword_followed_by_prose_is_not_a_ref(self):
         # "the branch after merge" cites no branch; the keyword form only
         # counts when followed by a branch-shaped name.
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Deleted the branch after merge. AC1: verified.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
@@ -193,27 +196,27 @@ class CloseReasonLintTest(unittest.TestCase):
     # --- AC: flags closed beads whose reasons lack AC-mapping shape ---
 
     def test_reason_without_ac_mapping_is_flagged_exit_1(self):
-        r, out = self.lint_json([bead(reason=NO_AC_REASON)])
+        r, out = lint_json([bead(reason=NO_AC_REASON)])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         f = out["findings"][0]
         self.assertIn("ac-mapping", f["missing"])
         self.assertEqual(f["severity"], "error")
 
     def test_numbered_ac_reference_counts_as_mapping(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Commit ab34f9e. AC 1 and AC-2 both verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_acceptance_criteria_phrase_counts_as_mapping(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Commit ab34f9e. All acceptance criteria verified by test run.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_lowercase_ac_word_fragment_is_not_mapping(self):
         # "acid", "reach", etc. must not satisfy the AC-mapping shape.
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Commit ab34f9e. Reached acid-test parity each way.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("ac-mapping", out["findings"][0]["missing"])
@@ -222,25 +225,25 @@ class CloseReasonLintTest(unittest.TestCase):
         # Word-bounded lowercase "ac" (the English fragment, e.g. an AC
         # unit) must not satisfy the shape — the token rule is case-
         # sensitive by design.
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Commit ab34f9e. Fixed the ac unit wiring.")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("ac-mapping", out["findings"][0]["missing"])
 
     def test_singular_acceptance_criterion_phrase_counts_as_mapping(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             reason="Commit ab34f9e. The single acceptance criterion is verified.")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_bead_without_acceptance_criteria_skips_ac_mapping_check(self):
         # Cannot demand mapping to ACs that do not exist.
-        r, out = self.lint_json([bead(reason=NO_AC_REASON, acs="")])
+        r, out = lint_json([bead(reason=NO_AC_REASON, acs="")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
 
     def test_missing_both_reports_both_in_one_finding(self):
-        r, out = self.lint_json([bead(reason=BARE_REASON)])
+        r, out = lint_json([bead(reason=BARE_REASON)])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(len(out["findings"]), 1)
         self.assertEqual(sorted(out["findings"][0]["missing"]),
@@ -249,7 +252,7 @@ class CloseReasonLintTest(unittest.TestCase):
     # --- Empty reason ---
 
     def test_empty_close_reason_is_flagged(self):
-        r, out = self.lint_json([bead(reason="")])
+        r, out = lint_json([bead(reason="")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("close-reason", out["findings"][0]["missing"])
 
@@ -266,14 +269,14 @@ class CloseReasonLintTest(unittest.TestCase):
             bead(id="pk-e", issue_type="epic",
                  reason="All children closed; success criteria met."),
         ]
-        r, out = self.lint_json(beads)
+        r, out = lint_json(beads)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
         self.assertEqual(out["beads_exempt"], 4)
         self.assertEqual(out["beads_checked"], 0)
 
     def test_chore_missing_commit_ref_is_warning_exit_0(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             issue_type="chore", reason="Swept stale branches.", acs="")])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(out["ok"])
@@ -283,7 +286,7 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(f["severity"], "warning")
 
     def test_spike_missing_commit_ref_is_warning_exit_0(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             issue_type="spike",
             reason="Question answered: AC1 approach is viable.",
             acs="- is the approach viable?")])
@@ -291,7 +294,7 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(out["findings"][0]["severity"], "warning")
 
     def test_chore_with_acs_still_gets_ac_mapping_error(self):
-        r, out = self.lint_json([bead(
+        r, out = lint_json([bead(
             issue_type="chore", reason="Swept stale branches.",
             acs="- sweep completes")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -306,7 +309,7 @@ class CloseReasonLintTest(unittest.TestCase):
             bead(id="pk-t", issue_type="task", reason=BARE_REASON, acs=""),
             {"id": "pk-u", "status": "closed", "close_reason": BARE_REASON},
         ]
-        r, out = self.lint_json(beads)
+        r, out = lint_json(beads)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(len(out["findings"]), 2)
         for f in out["findings"]:
@@ -318,18 +321,18 @@ class CloseReasonLintTest(unittest.TestCase):
     def test_non_closed_beads_are_skipped(self):
         beads = [bead(reason=BARE_REASON, status="open"),
                  bead(id="pk-2", reason=BARE_REASON, status="in_progress")]
-        r, out = self.lint_json(beads)
+        r, out = lint_json(beads)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
         self.assertEqual(out["beads_skipped"], 2)
 
     def test_status_matching_is_case_insensitive(self):
-        r, out = self.lint_json([bead(reason=BARE_REASON, status="Closed")])
+        r, out = lint_json([bead(reason=BARE_REASON, status="Closed")])
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(len(out["findings"]), 1)
 
     def test_single_object_input_is_accepted(self):
-        r, out = self.lint_json(bead(reason=BARE_REASON))
+        r, out = lint_json(bead(reason=BARE_REASON))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(len(out["findings"]), 1)
 
@@ -354,7 +357,7 @@ class CloseReasonLintTest(unittest.TestCase):
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
 
     def test_empty_array_is_clean_exit_0(self):
-        r, out = self.lint_json([])
+        r, out = lint_json([])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["beads_checked"], 0)
 
@@ -370,7 +373,7 @@ class CloseReasonLintTest(unittest.TestCase):
     # --- Output shapes ---
 
     def test_json_top_level_shape(self):
-        r, out = self.lint_json([bead(), bead(id="pk-2", reason=BARE_REASON)])
+        r, out = lint_json([bead(), bead(id="pk-2", reason=BARE_REASON)])
         self.assertEqual(r.returncode, 1)
         for key in ("ok", "beads_checked", "beads_exempt", "beads_skipped",
                     "findings", "grammar_source"):
@@ -419,12 +422,6 @@ class ProfileFixtureTest(unittest.TestCase):
         p.write_text(content)
         return p
 
-    def lint_json(self, beads, *extra, cwd=None, env_extra=None):
-        r = run_cli(["--json", *extra], stdin_text=json.dumps(beads),
-                    cwd=cwd, env_extra=env_extra)
-        payload = json.loads(r.stdout) if r.stdout.strip() else None
-        return r, payload
-
 
 class ProfileShapeTest(ProfileFixtureTest):
     """AC1: detectors, per-type requires, and the IOU list are read from
@@ -439,10 +436,10 @@ class ProfileShapeTest(ProfileFixtureTest):
         # AC tag; under the kit profile CR-9 is nothing.
         alt = self.write("alt.toml", alt_close_profile())
         beads = [bead(reason="Change record CR-9 shipped. AC 1 verified.")]
-        r, out = self.lint_json(beads, "--profile", str(alt))
+        r, out = lint_json(beads, "--profile", str(alt))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
-        r, out = self.lint_json(beads, "--profile", str(PROFILE))
+        r, out = lint_json(beads, "--profile", str(PROFILE))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
 
@@ -455,14 +452,52 @@ class ProfileShapeTest(ProfileFixtureTest):
             "checked.toml", alt_close_profile(docs_requires="commit_ref"))
         beads = [bead(issue_type="docs",
                       reason="Tidied the handbook wording.", acs="")]
-        r, out = self.lint_json(beads, "--profile", str(alt_exempt))
+        r, out = lint_json(beads, "--profile", str(alt_exempt))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["beads_exempt"], 1)
         self.assertEqual(out["beads_checked"], 0)
-        r, out = self.lint_json(beads, "--profile", str(alt_checked))
+        r, out = lint_json(beads, "--profile", str(alt_checked))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(out["beads_checked"], 1)
         self.assertIn("commit-ref", out["findings"][0]["missing"])
+
+    def test_mixed_requires_type_stays_checked(self):
+        # Exemption demands an ENTIRELY prose-shaped requires list. A
+        # hybrid type (na_marker + commit_ref) still owes the artifact
+        # evidence — silently exempting it would fork this checker's
+        # verdict from check-close, which enforces every named element.
+        hybrid = self.write("hybrid.toml", alt_close_profile()
+                            + "\n[close_evidence.by_type.hybrid]\n"
+                              'requires = ["na_marker", "commit_ref"]\n')
+        beads = [bead(issue_type="hybrid",
+                      reason="N/A — but no artifact cited.", acs="")]
+        r, out = lint_json(beads, "--profile", str(hybrid))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["beads_checked"], 1)
+        self.assertEqual(out["beads_exempt"], 0)
+        self.assertIn("commit-ref", out["findings"][0]["missing"])
+
+    def test_unknown_type_is_checked_at_error_severity(self):
+        # A type the profile does not know must get the full check at
+        # error severity — never silently join the exemptions or the
+        # softened types.
+        r, out = lint_json([bead(issue_type="gizmo", reason=BARE_REASON)],
+                           "--profile", str(PROFILE))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["beads_checked"], 1)
+        self.assertEqual(out["beads_exempt"], 0)
+        self.assertEqual(out["findings"][0]["severity"], "error")
+
+    def test_doc_alias_is_normalized_to_docs(self):
+        # bd data carries both "doc" and "docs"; the alias must land the
+        # bead on docs' exemption, not the unknown-type full check.
+        r, out = lint_json([bead(issue_type="doc",
+                                 reason="N/A — documentation update.",
+                                 acs="")],
+                           "--profile", str(PROFILE))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["beads_exempt"], 1)
+        self.assertEqual(out["beads_checked"], 0)
 
     def test_profile_iou_list_drives_verdict(self):
         # The reason satisfies BOTH detector sets; only the alt profile's
@@ -470,33 +505,33 @@ class ProfileShapeTest(ProfileFixtureTest):
         alt = self.write("alt.toml", alt_close_profile())
         beads = [bead(
             reason="Commit ab34f9e CR-9. AC1 verified. handshake promise.")]
-        r, out = self.lint_json(beads, "--profile", str(PROFILE))
+        r, out = lint_json(beads, "--profile", str(PROFILE))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
-        r, out = self.lint_json(beads, "--profile", str(alt))
+        r, out = lint_json(beads, "--profile", str(alt))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         f = out["findings"][0]
         self.assertIn("handshake promise", f["iou"])
         self.assertEqual(f["severity"], "error")
 
-    def test_profile_ref_severity_is_profile_data(self):
+    def test_profile_commit_ref_severity_is_profile_data(self):
         # The kit profile softens chore's missing commit-ref to a warning
-        # via ref_severity; the alt profile omits the key, so the default
+        # via commit_ref_severity; the alt profile omits the key, so the default
         # (error) applies — severity is data, not code.
         alt = self.write("alt.toml", alt_close_profile())
         beads = [bead(issue_type="chore",
                       reason="Swept stale branches.", acs="")]
-        r, out = self.lint_json(beads, "--profile", str(PROFILE))
+        r, out = lint_json(beads, "--profile", str(PROFILE))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"][0]["severity"], "warning")
-        r, out = self.lint_json(beads, "--profile", str(alt))
+        r, out = lint_json(beads, "--profile", str(alt))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(out["findings"][0]["severity"], "error")
 
     def test_env_profile_is_honored(self):
         alt = self.write("alt.toml", alt_close_profile())
         beads = [bead(reason="Change record CR-9 shipped. AC 1 verified.")]
-        r, out = self.lint_json(
+        r, out = lint_json(
             beads, env_extra={"CONVENTIONS_PROFILE": str(alt)})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
@@ -508,10 +543,10 @@ class ProfileShapeTest(ProfileFixtureTest):
         beads = [bead(reason="Commit ab34f9e on main. AC1: verified.")]
         env = {"CONVENTIONS_PROFILE": str(alt)}
         # env alone: the alt grammar rejects a plain hex hash
-        r, out = self.lint_json(beads, env_extra=env)
+        r, out = lint_json(beads, env_extra=env)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         # flag wins: kit profile accepts it
-        r, out = self.lint_json(beads, "--profile", str(PROFILE),
+        r, out = lint_json(beads, "--profile", str(PROFILE),
                                 env_extra=env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(out["grammar_source"].endswith("conventions.toml"),
@@ -556,7 +591,7 @@ class ProfileShapeTest(ProfileFixtureTest):
         # [close_evidence] section simply does not parameterize this
         # checker — the built-in shape applies, and the payload says so.
         self.write("profiles/conventions.toml", "schema_version = 1\n")
-        r, out = self.lint_json([bead(reason=BARE_REASON)],
+        r, out = lint_json([bead(reason=BARE_REASON)],
                                 cwd=str(self.root))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(sorted(out["findings"][0]["missing"]),
@@ -565,15 +600,15 @@ class ProfileShapeTest(ProfileFixtureTest):
 
     def test_no_profile_anywhere_falls_back(self):
         (self.root / ".git").mkdir()  # stop the upward walk at the fixture
-        r, out = self.lint_json([bead()], cwd=str(self.root))
+        r, out = lint_json([bead()], cwd=str(self.root))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["grammar_source"], "built-in fallback")
-        r, out = self.lint_json([bead(reason=BARE_REASON)],
+        r, out = lint_json([bead(reason=BARE_REASON)],
                                 cwd=str(self.root))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
 
     def test_grammar_source_names_the_discovered_profile(self):
-        r, out = self.lint_json([bead()], cwd=str(REPO))
+        r, out = lint_json([bead()], cwd=str(REPO))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(out["grammar_source"].endswith("conventions.toml"),
                         out["grammar_source"])
@@ -586,20 +621,36 @@ class IouPhraseTest(ProfileFixtureTest):
     now reaches the stream linter via the profile's iou_phrases list."""
 
     def test_iou_phrase_is_flagged_error(self):
-        r, out = self.lint_json(
+        r, out = lint_json(
             [bead(reason="Commit ab34f9e. AC1: done. "
                          "AC2 will be verified later.")],
             "--profile", str(PROFILE))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse(out["ok"])
         f = out["findings"][0]
         self.assertEqual(f["missing"], [])
-        self.assertIn("will be verified later", f["iou"])
+        self.assertIn("verified later", f["iou"])
         self.assertEqual(f["severity"], "error")
+
+    def test_profile_iou_exempt_drives_verdict(self):
+        # The reason satisfies BOTH profiles' detectors and carries an IOU
+        # phrase both profiles list — only the exemption pattern differs.
+        # The kit profile exempts "deferred to bead <id>"; the alt profile
+        # scrubs everything after "sanctioned:", swallowing the phrase.
+        alt = self.write("alt.toml", alt_close_profile())
+        beads = [bead(reason="Commit ab34f9e CR-9. AC1 and AC 1 verified. "
+                             "sanctioned: rest will be verified later.")]
+        r, out = lint_json(beads, "--profile", str(alt))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        r, out = lint_json(beads, "--profile", str(PROFILE))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("verified later", out["findings"][0]["iou"])
 
     def test_sanctioned_deferral_is_not_flagged(self):
         # "deferred to bead <id>" is the one sanctioned deferral form —
         # iou_exempt scrubs it before the phrase scan.
-        r, out = self.lint_json(
+        r, out = lint_json(
             [bead(reason="Commit ab34f9e. AC1: done. "
                          "AC2 deferred to bead pk-99.")],
             "--profile", str(PROFILE))
@@ -609,14 +660,14 @@ class IouPhraseTest(ProfileFixtureTest):
     def test_iou_on_soft_type_is_error_not_warning(self):
         # chore's missing commit-ref softens to a warning, but an IOU
         # phrase is a violation regardless of type.
-        r, out = self.lint_json(
+        r, out = lint_json(
             [bead(issue_type="chore", acs="",
                   reason="Swept stale branches. Will be verified later.")],
             "--profile", str(PROFILE))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         f = out["findings"][0]
         self.assertEqual(f["severity"], "error")
-        self.assertIn("will be verified later", f["iou"])
+        self.assertIn("verified later", f["iou"])
 
     def test_human_output_names_iou_phrase(self):
         r = run_cli(["--profile", str(PROFILE)], stdin_text=json.dumps(
@@ -624,7 +675,7 @@ class IouPhraseTest(ProfileFixtureTest):
                          "AC2 will be verified later.")]))
         self.assertEqual(r.returncode, 1)
         self.assertIn("IOU", r.stdout)
-        self.assertIn("will be verified later", r.stdout)
+        self.assertIn("verified later", r.stdout)
 
 
 class ReconciledProfilePinsTest(ProfileFixtureTest):
@@ -635,7 +686,7 @@ class ReconciledProfilePinsTest(ProfileFixtureTest):
     --profile <kit profile> so the profile data path is what's tested."""
 
     def pin(self, beads):
-        return self.lint_json(beads, "--profile", str(PROFILE))
+        return lint_json(beads, "--profile", str(PROFILE))
 
     def test_all_letter_hex_word_is_not_a_hash(self):
         r, out = self.pin([bead(
@@ -711,15 +762,15 @@ class FallbackParityTest(ProfileFixtureTest):
                              f"elements.{element}.pattern drifted")
             self.assertEqual(fb.get("flags", []), prof.get("flags", []),
                              f"elements.{element}.flags drifted")
-        # Type set (and order), per-type requires, per-type ref_severity.
+        # Type set (and order), per-type requires, per-type commit_ref_severity.
         self.assertEqual(list(fallback["by_type"]), list(section["by_type"]))
         for name, entry in fallback["by_type"].items():
             profile_entry = section["by_type"][name]
             self.assertEqual(entry["requires"], profile_entry["requires"],
                              f"by_type.{name}.requires drifted")
-            self.assertEqual(entry.get("ref_severity", "error"),
-                             profile_entry.get("ref_severity", "error"),
-                             f"by_type.{name}.ref_severity drifted")
+            self.assertEqual(entry.get("commit_ref_severity", "error"),
+                             profile_entry.get("commit_ref_severity", "error"),
+                             f"by_type.{name}.commit_ref_severity drifted")
         # IOU phrase list and the sanctioned-deferral exemption.
         self.assertEqual(fallback["iou_phrases"], section["iou_phrases"])
         self.assertEqual(fallback["iou_exempt"]["pattern"],
@@ -766,8 +817,8 @@ class FallbackParityTest(ProfileFixtureTest):
             bead(id="unknown-type", issue_type="gizmo", reason=BARE_REASON),
         ]
         (self.root / ".git").mkdir()  # profile-less tree → fallback
-        r_fb, out_fb = self.lint_json(beads, cwd=str(self.root))
-        r_prof, out_prof = self.lint_json(beads, "--profile", str(PROFILE))
+        r_fb, out_fb = lint_json(beads, cwd=str(self.root))
+        r_prof, out_prof = lint_json(beads, "--profile", str(PROFILE))
         self.assertEqual(r_fb.returncode, r_prof.returncode,
                          r_fb.stdout + r_prof.stdout
                          + r_fb.stderr + r_prof.stderr)

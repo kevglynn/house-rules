@@ -70,33 +70,50 @@ judgment = [
 # ---------------------------------------------------------------------------
 # 2. Close-evidence shape, per bead type
 # Law home: cursor/rules/bead-completion.mdc evidence table (generated).
-# Per type: `evidence` is the law prose rendered into the table's "Required
-# evidence" column; `requires` names the machine-checked elements
-# (`conventions check-close`); `judgment` is what no checker can verify.
-# `row = false` keeps a type checker-known without a table row (task shares
-# feature's shape but the committed table never had a Task row; config is
-# folded into the "Chore/config" row). `row_label` overrides the default
-# capitalized type name.
 #
-# scripts/close-reason-lint (the distributed production close checker) also
-# reads this section at runtime; a tree with no discoverable profile — or a
-# discovered profile without this section — falls back to the checker's
-# built-in copy of the same shape (test-pinned structural parity), matching
-# the [defer] posture. Two stream-linter reads beyond check-close's:
-#   - a type whose `requires` name na_marker or children_closed is EXEMPT
-#     from the stream lint (its canonical close is N/A prose or a
-#     children-closed statement — no commit/AC shape to demand);
-#   - `ref_severity` (default "error") softens that type's missing
-#     commit-ref finding to a warning — summary-evidence types only
-#     (check-close keeps requiring the element where `requires` names it).
+# This section has two readers with different scopes — the contract per key:
+#
+#   `evidence`     rendered into the table's "Required evidence" column.
+#   `judgment`     annotation no checker can verify (never rendered here).
+#   `requires`     names this type's evidence elements. `conventions
+#                  check-close` (kit CI only, never distributed) enforces
+#                  every named element and validates that named elements
+#                  exist in the element library. `close-reason-lint` (the
+#                  distributed stream checker) consumes `requires` ONLY to
+#                  classify types: a type whose requires are entirely
+#                  prose-shaped (the two schema-reserved element names
+#                  na_marker and children_closed) is EXEMPT from the stream
+#                  lint — its canonical close is N/A prose or a
+#                  children-closed statement, no commit/AC shape to demand.
+#                  Mixed lists (prose-shaped + artifact elements) stay
+#                  checked. The stream checker does NOT enforce other
+#                  requires entries and does NOT validate element existence
+#                  — a profile can be stream-linter-valid yet
+#                  check-close-invalid.
+#   `commit_ref_severity`  stream-linter only (default "error"): softens
+#                  that type's missing commit-ref finding to a warning —
+#                  summary-evidence types only. check-close is unaffected
+#                  and still errors where `requires` names commit_ref.
+#   `row`/`row_label`  rendering only: `row = false` keeps a type
+#                  checker-known without a table row (task shares feature's
+#                  shape but the committed table never had a Task row;
+#                  config folds into the "Chore/config" row); `row_label`
+#                  overrides the default capitalized type name.
+#
+# The stream checker always enforces commit_ref presence, AC-mapping when
+# the bead carries ACs, and the IOU ban on every non-exempt type — that
+# scope is code, not `requires` data. Resolution/fallback posture matches
+# [defer]: no discoverable profile, or a discovered profile without this
+# section, falls back to the checker's built-in copy (test-pinned
+# structural parity); explicit selection missing the section is an error.
 # ---------------------------------------------------------------------------
 [close_evidence]
 # IOU phrases mark deferral-instead-of-evidence — banned in every close
 # reason (bead-completion "Do not defer AC verification"). The one
 # sanctioned deferral form is exempted below; the follow-up bead must exist
 # at close time.
+# Substring-matched: "verified later" also covers "will be verified later".
 iou_phrases = [
-  "will be verified later",
   "will be re-verified",
   "deferred to PR review",
   "deferred to integration",
@@ -164,7 +181,7 @@ evidence = "Summary of findings; whether the question was answered"
 requires = ["findings_summary"]
 # Stream linter: spike evidence is findings, not a commit — a missing
 # commit-ref reports at warning severity.
-ref_severity = "warning"
+commit_ref_severity = "warning"
 judgment = ["findings are real; the spike question was actually answered"]
 
 [close_evidence.by_type.refactor]
@@ -178,14 +195,14 @@ evidence = "Brief summary of what was done"
 requires = ["commit_ref"]
 # Stream linter: the table asks only a brief summary, so a missing
 # commit-ref reports at warning severity (check-close still requires it).
-ref_severity = "warning"
+commit_ref_severity = "warning"
 judgment = ["summary reflects what was done"]
 
 # Folded into the "Chore/config" row above; checker treats it as its own type.
 [close_evidence.by_type.config]
 row = false
 requires = ["commit_ref"]
-ref_severity = "warning"
+commit_ref_severity = "warning"
 judgment = ["summary reflects what was done"]
 
 # Checker-known; the committed table has no Task row (same shape as feature).

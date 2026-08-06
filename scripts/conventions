@@ -170,7 +170,10 @@ def compile_entry(entry, where):
         flags |= FLAG_NAMES[name]
     try:
         return re.compile(pattern, flags)
-    except re.error as exc:
+    # TypeError: non-string pattern / non-list flags — a profile-shape
+    # error, not a missing key; without this it would surface under the
+    # caller's missing-required-key message.
+    except (re.error, TypeError) as exc:
         emit_error(f"{where}: invalid pattern {pattern!r}: {exc}",
                    "profile", 3)
 
@@ -256,6 +259,10 @@ def check_close(profile, bead_type, reason):
                 "detail": (f"close reason lacks required element "
                            f"`{element}`: {entry['description']}"),
             })
+    # IOU matching semantics (scrub iou_exempt first, then case-insensitive
+    # substring per phrase) are LOCKSTEP with scripts/close-reason-lint —
+    # the phrase list is shared profile data, but the two code sites must
+    # agree on how it is matched; change both together.
     exempt = compile_entry(spec["iou_exempt"], "close_evidence.iou_exempt")
     scrubbed = exempt.sub("", reason)
     for phrase in spec["iou_phrases"]:
