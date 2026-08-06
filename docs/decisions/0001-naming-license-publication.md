@@ -106,5 +106,23 @@ nothing until there are consumers asking for it.
 
 ## Amendments
 
-_None yet. Later changes are recorded here as dated amendments (A1, A2, …) per
-the decision-record convention, rather than by rewriting the decisions above._
+### A1 — 2026-08-05 — Final name: `house-rules` (supersedes D1's deferral)
+
+The publication trigger fired (bead process-kit-8nx); per D1, the deferral
+expires. Kevin's decision: the kit's final public name is **house-rules**
+("House rules for AI coding agents").
+
+Basis (research recorded on bead process-kit-myp): `process-kit` is
+compromised — an active same-niche project (`projectious-work/processkit`,
+agentic skill packages), a commercial ProcessKit SaaS, and an archived PyPI
+`process-kit` all hold the name; `house-rules` has no GitHub occupant in the
+agent space (largest exact-name holders: a game-mod framework at 48 stars and
+a dead sbt plugin), fits the kit exactly (the rules of the house that agents
+working in a repo must follow; per-project overlays are each house's own
+rules), and is the owner's natural vocabulary.
+
+Repo/remote mechanics: the public repository will be named `house-rules`
+(hyphenated). Whether that happens by renaming this repo or by clean-cut
+export to a fresh repo is the git-history exposure decision (D-history,
+tracked on bead process-kit-zta) — the marker migration (new prefix
+`house-rules:`, bead process-kit-0em) proceeds independently of that choice.
