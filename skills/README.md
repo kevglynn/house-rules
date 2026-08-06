@@ -10,10 +10,10 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [systematic-debugging](systematic-debugging/SKILL.md) | Hypothesis-driven bug investigation | "debug this", "why is this broken", unexpected failures, failed fix attempts |
 | [council](council/SKILL.md) | Parallel multi-model analysis: diverse AI voices examine one task, synthesized into a briefing | "convene a council", "get perspectives", "diverse review" |
 | [workspace-kickoff](workspace-kickoff/SKILL.md) | Orient in a new or resumed workspace: read orientation files, report, wait for direction | "start this workspace", "pick up where we left off", "begin session" |
-| [ponytail-help](ponytail-help/SKILL.md) | Index for the ponytail family: which skill or rule fits the task | "use ponytail", "ponytail help", unsure which ponytail skill applies |
-| [ponytail-review](ponytail-review/SKILL.md) | Simplification review of a diff or file set | "ponytail review", over-engineering suspicion on a change |
-| [ponytail-audit](ponytail-audit/SKILL.md) | Repo-wide over-engineering scan: dead code, stdlib replacements, YAGNI | "ponytail audit", periodic hygiene pass |
-| [ponytail-debt](ponytail-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "ponytail debt", defer-ledger review |
+| [graybeard-help](graybeard-help/SKILL.md) | Index for the graybeard family: which skill or rule fits the task | "use graybeard", "graybeard help", unsure which graybeard skill applies |
+| [graybeard-review](graybeard-review/SKILL.md) | Simplification review of a diff or file set | "graybeard review", over-engineering suspicion on a change |
+| [graybeard-audit](graybeard-audit/SKILL.md) | Repo-wide over-engineering scan: dead code, stdlib replacements, YAGNI | "graybeard audit", periodic hygiene pass |
+| [graybeard-debt](graybeard-debt/SKILL.md) | Harvest `defer:` comments and flag rotting deferrals | "graybeard debt", defer-ledger review |
 | [pragmatic-tdd](pragmatic-tdd/SKILL.md) | Per-bead-type TDD playbooks: bug/feature/story/refactor steps, red-proof ceremony, zero-signal taxonomy | "pragmatic tdd", starting a bug/feature/refactor bead, "write the failing test", "red-proof" |
 | [tier1-review](tier1-review/SKILL.md) | Multi-lens same-model review (roster owned by the skill): parallel dispatch, triage table, fix commits, close evidence | "tier 1 review", "multi-lens review", feature/refactor bead reaches self-review-done |
 | [tier2-handoff](tier2-handoff/SKILL.md) | Cross-model review handoff: deterministic prompt assembler (`assemble.py`), response triage, close evidence | "tier 2 review", "cross-model review", "assemble the review prompt" |

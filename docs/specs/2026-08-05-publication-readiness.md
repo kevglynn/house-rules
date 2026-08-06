@@ -32,9 +32,12 @@ Six lanes, one epic:
    rename the `ai-dev-playbook:` marker prefix and ship a one-shot migration
    that rewrites legacy-marker blocks in place (AGENTS.md sections in target
    repos, `~/CLAUDE.md` safety-net blocks, rc-file alias blocks) so re-runs
-   update instead of duplicating. Same change renames the predecessor mention
-   in `ponytail-playbook.mdc` (0001 D1: "migrated in the same change that
-   lands the final name"). Blocked on the name decision.
+   update instead of duplicating. Was blocked on the name decision; unblocked
+   2026-08-05 (name: house-rules, 0001 A1 — new prefix `house-rules:`). The
+   in-rule predecessor mention this lane originally carried was handled early
+   by the graybeard rename (process-kit-8nx.1, added to the epic 2026-08-05):
+   that rename's credit-line rewrite removed the `ai-dev-playbook` phrase, so
+   0em's scope is the installer markers and target-side migration only.
 3. **Neutrality/overlay audit.** 0001 D3's audit item: no overlay/
    consumer-specific content (packet vocabulary, reader personas, receipts,
    project names) in the public core. Known hits: `skills/prose-voice`'s

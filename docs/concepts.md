@@ -56,7 +56,7 @@ The rules are the same regardless of which AI tool you use (Cursor, Claude Code,
 | Session lifecycle | Mandatory session start/close protocol — `bd prime`, in-progress check, knowledge capture |
 | Parallel subagent safety | Prevents file-edit conflicts between parent agent and running subagents |
 | Defer convention | Mark deliberate simplifications with `defer:` comments: ceiling + upgrade trigger |
-| Ponytail playbook | Lazy senior dev implementation ladder — minimal, correct code before new abstractions |
+| Graybeard playbook | Lazy senior dev implementation ladder — minimal, correct code before new abstractions |
 
 ### 4. Scratchpad — cross-session memory
 

@@ -1,15 +1,15 @@
 ---
-name: ponytail-audit
+name: graybeard-audit
 description: >
-  Whole-repo audit for over-engineering. Like ponytail-review, but scans the
+  Whole-repo audit for over-engineering. Like graybeard-review, but scans the
   entire codebase instead of a diff: a ranked list of what to delete, simplify,
   or replace with stdlib/native equivalents. Use when the user says "audit this
   codebase", "audit for over-engineering", "what can I delete from this repo",
-  "find bloat", "ponytail-audit", or "/ponytail-audit". One-shot report, does
+  "find bloat", "graybeard-audit", or "/graybeard-audit". One-shot report, does
   not apply fixes.
 ---
 
-ponytail-review, repo-wide. Scan the whole tree instead of a diff. Rank
+graybeard-review, repo-wide. Scan the whole tree instead of a diff. Rank
 findings biggest cut first.
 
 ## Tags
@@ -35,4 +35,4 @@ and performance are explicitly out of scope. Route them to a normal review
 pass. Lists findings, applies nothing. One-shot.
 Never print a per-repo savings number ("you saved X lines/tokens here") — the
 unbuilt version was never written, so there is no real baseline to subtract from.
-"stop ponytail-audit" or "normal mode" to revert.
+"stop graybeard-audit" or "normal mode" to revert.

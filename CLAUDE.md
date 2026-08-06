@@ -15,7 +15,7 @@ This repo's governance rules are in `.claude/rules/*.md` (auto-loaded by Claude 
 - **parallel-subagent-safety** — no foreground edits to files in a running subagent's blast radius
 - **session-lifecycle** — mandatory session start/close protocol
 - **defer-convention** — deliberate simplifications need a ceiling + upgrade trigger
-- **ponytail-playbook** — minimal, correct code; stdlib/native/reuse before new
+- **graybeard-playbook** — minimal, correct code; stdlib/native/reuse before new
 
 **These rules are not optional.** When creating beads, closing beads, writing tests, or planning work, follow the standards in `.claude/rules/`. If unsure, read the relevant rule file before proceeding.
 

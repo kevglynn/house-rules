@@ -1,9 +1,9 @@
 ---
-name: ponytail-debt
+name: graybeard-debt
 description: >
   Harvest every `defer:` comment in the codebase into a debt ledger, so the
   deliberate shortcuts and deferrals get tracked instead of rotting into "later
-  means never". Use when the user says "ponytail debt", "/ponytail-debt",
+  means never". Use when the user says "graybeard debt", "/graybeard-debt",
   "what did we defer", "list the shortcuts", "debt ledger", or "what did we
   mark to do later". One-shot report, changes nothing.
 ---
@@ -49,5 +49,5 @@ End with `<N> markers, <M> with no trigger.` Nothing found: `No defer: debt. Cle
 ## Boundaries
 
 Reads and reports only, changes nothing. To persist it, ask and it writes the
-ledger to a file (e.g. `DEFER-DEBT.md`). One-shot. "stop ponytail-debt" or
+ledger to a file (e.g. `DEFER-DEBT.md`). One-shot. "stop graybeard-debt" or
 "normal mode" to revert.

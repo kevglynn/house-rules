@@ -1,6 +1,6 @@
-# Ponytail-Playbook: Implementation Ladder
+# Graybeard-Playbook: Implementation Ladder
 
-Adapted from ponytail for the ai-dev-playbook ecosystem. Governs how you build — the pragmatic-tdd rule governs how you test.
+Concept adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT); reimplemented and extended for this kit. Governs how you build — the pragmatic-tdd rule governs how you test.
 
 ## The ladder
 
@@ -63,4 +63,4 @@ The ladder governs implementation code. pragmatic-tdd governs test code. They ar
 
 ## Boundaries
 
-This rule governs what you build, not how you talk. Deactivate with "stop ponytail-playbook" or "normal mode." Level persists until changed or session end. Default: **full**.
+This rule governs what you build, not how you talk. Deactivate with "stop graybeard-playbook" or "normal mode." Level persists until changed or session end. Default: **full**.
