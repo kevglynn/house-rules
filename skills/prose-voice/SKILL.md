@@ -59,7 +59,7 @@ Before:
 > decision happened the way the record says it did.
 
 After:
-> The assembly is a durable record of the decision — what context was
+> The assembly is a durable record of the decision: what context was
 > provided, how it was scored, and what the agent saw. Observability traces
 > capture what happened at runtime; the assembly captures what informed the
 > outcome.
@@ -124,7 +124,7 @@ Before:
 After:
 > Signing is not built. Content addressing proves the record hasn't
 > changed if you trust the fingerprint computation. Cryptographic signing
-> proves who produced it — separate work.
+> proves who produced it, which is separate work.
 
 ### P5 — Parallel sentence openers
 
@@ -173,6 +173,10 @@ a vibes check:
 7. **Word-count the draft against its channel ceiling** (P8). Over the
    ceiling → cut whole items and hold them in reserve for a follow-up.
    Do not get there by trimming the surviving sentences into fragments.
+8. **Scan punctuation against the user's fingerprint** (P9). Any em dash
+   in prose drafted in the user's voice → replace it (comma, colon,
+   parentheses, or sentence split). Ellipses stay in casual registers
+   and out of formal ones.
 
 If you catch the pattern mid-draft, fix it inline and keep going. The
 reader never sees the first draft.
@@ -287,13 +291,39 @@ Before (~95 words):
 
 After (~40 words):
 > The mockup item is already Week 2. One heads-up before the deck goes in
-> front of him: the trust-scores panel has to come out — no numeric score
+> front of him: the trust-scores panel has to come out. No numeric score
 > anywhere, his own objection ("what's the difference between a 90 and a
 > 70").
 
 Both carry the same ask. What went: a restatement of the schedule the
 recipient set himself, the reasoning behind a decision he was party to,
 and "nothing new is needed there."
+
+## P9 — Punctuation fingerprint
+
+Punctuation is a voice signature the same way word choice is, and model
+defaults are recognizable: em dashes chained through every paragraph are
+the single most-cited AI tell. The law is generic. Match the user's own
+fingerprint, never the model's default. The parameters below belong to
+this kit's owner; drafting for a different principal means learning
+theirs first, and if the kit ever grows more users these lines move to a
+per-user overlay.
+
+**Owner parameters:**
+
+- **Em dashes: banned outright in prose drafted in the user's voice.**
+  Replace each one with a comma, a colon, parentheses, or a sentence
+  split, whichever the sentence wants. No budget, no exceptions; the
+  reader knows the user doesn't write them.
+- **The ellipsis is the user's native connector in ad hoc registers**
+  (chat, texts, quick emails). Leave it alone in casual messages, and
+  keep it out of formal register: documents, packets, specs, anything
+  ready to forward.
+
+Scope: this pattern governs prose drafted in the user's voice. The
+catalog's own explanatory text and agent-to-agent output are exempt (the
+skill-wide skip list already covers them), but the worked good-examples
+above do follow the owner parameters.
 
 ## When Reviewing Other Agents' Work
 
