@@ -41,7 +41,7 @@ Six lanes, one epic:
 3. **Neutrality/overlay audit.** 0001 D3's audit item: no overlay/
    consumer-specific content (packet vocabulary, reader personas, receipts,
    project names) in the public core. Known hits: `skills/prose-voice`'s
-   "for Chris," "for Manas" trigger line, and P9's owner parameters (em-dash
+   trigger line naming two reader personas, and P9's owner parameters (em-dash
    ban, ellipsis register — flagged for overlay extraction at P9 authoring
    time). The per-project overlay convention (`.agents/overlay.md`, PLAN.md
    design rule) exists on paper; the extraction mechanism for *per-user*

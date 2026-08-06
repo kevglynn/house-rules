@@ -34,7 +34,7 @@ def packet(grid_rows, strip_placement):
     """A minimal blueprint-conformant packet.
 
     strip_placement: "after-grid" (the shipped template order),
-    "before-grid" (the G2 packet's placement), or "absent".
+    "before-grid" (the placement the live packet used), or "absent".
     """
     rows = "\n".join(
         f"| checklist item {i} | **SHIPPED** — evidence prose for row {i}, "

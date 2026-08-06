@@ -25,8 +25,7 @@ always-on `prose-voice` rule is the tripwire that tells you to read this.
   pre-whitepapers, packets, deck copy, primers, emails, briefs, README
   narratives, design doc prose sections
 - Any artifact addressed to a named reader or described as "ready to
-  send" (the user overlay below may name reader personas that always
-  count)
+  send"
 - When the user says "voice sweep," "make it not sound like AI," or
   "check the voice"
 
@@ -175,10 +174,8 @@ a vibes check:
 7. **Word-count the draft against its channel ceiling** (P8). Over the
    ceiling → cut whole items and hold them in reserve for a follow-up.
    Do not get there by trimming the surviving sentences into fragments.
-8. **Scan punctuation against the user's fingerprint** (P9). Apply the
-   user overlay's punctuation parameters where an overlay exists;
-   otherwise check the draft against the principal's own writing and
-   strip model-default tics (em-dash chains, formal-register ellipses).
+8. **Scan punctuation against the user's fingerprint** (P9); P9 carries
+   the overlay → principal's-writing → restrained-default ladder.
 
 If you catch the pattern mid-draft, fix it inline and keep going. The
 reader never sees the first draft.
@@ -309,13 +306,11 @@ the single most-cited AI tell. The law is generic. Match the user's own
 fingerprint, never the model's default.
 
 The fingerprint itself is per-user data, not skill content — read it
-from the user overlay (see "User Overlay" below). Typical parameters:
-which marks are banned outright in the user's voice and what replaces
-them, and which connectors are native to which registers (casual vs
-formal). With no overlay, learn the fingerprint from the principal's own
-writing — their emails, documents, and messages are the reference. With
-no sample either, default to restrained punctuation: no em-dash chains,
-no ellipses in formal register.
+from the user overlay (see "User Overlay" below). With no overlay, learn
+the fingerprint from the principal's own writing — their emails,
+documents, and messages are the reference. With no sample either,
+default to restrained punctuation: no em-dash chains, no ellipses in
+formal register.
 
 Scope: this pattern governs prose drafted in the user's voice. The
 catalog's own explanatory text and agent-to-agent output are exempt (the
@@ -334,12 +329,11 @@ key both define. Keys this skill reads:
 
 | Key | Meaning | Default when absent |
 |---|---|---|
-| Reader personas | Named recipients whose artifacts always count as human-facing prose | None — the generic "When to Use" triggers govern |
-| Punctuation fingerprint | Banned marks and their replacements; register rules for native connectors (P9) | Learn from the principal's own writing; else the restrained default |
+| `reader_personas` | Named recipients whose artifacts always count as human-facing prose; project-overlay personas add to (never replace) the user's | None — the generic "When to Use" triggers govern |
+| `punctuation_fingerprint` | Banned marks and their replacements; register rules for native connectors (P9) | Learn from the principal's own writing; else the restrained default |
 
 The skill behaves sensibly with no overlay file and no section: every
-pattern above is generic law and applies as written. A missing overlay
-is normal, never an error.
+pattern above is generic law and applies as written.
 
 ## When Reviewing Other Agents' Work
 

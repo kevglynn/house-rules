@@ -23,7 +23,7 @@ Curated agent skills that work with any project bootstrapped by this kit. Each s
 | [graph-planning](graph-planning/SKILL.md) | Planner playbook for multi-bead breakdowns: decomposition heuristics, `bd create --graph`, graph verification, mid-flight epic management | "plan this epic", "break down this initiative", "graph planning", a breakdown reaching 3+ beads |
 | [bead-authoring](bead-authoring/SKILL.md) | Single-bead lifecycle playbook: authoring worked examples, dedupe search, validation mechanics, wisps, JIT verification, self-review, close-reason format, the `bd remember` when/when-not manual | "write this bead", "draft the bd create", "close this bead", "should I remember this" |
 
-## Project Overlay Convention
+## Overlay Convention
 
 Skills that need project-specific parameters (model assignments, reader
 rosters, paths, extra focus areas) read them from **one file in the
@@ -39,8 +39,9 @@ anything that follows the user across projects rather than belonging to one
 repo) live in a **machine-global overlay: `~/.agents/overlay.md`**, same
 format, one `## <skill-name>` section per skill. A skill that reads
 per-user keys checks both files; the per-project file wins for any key both
-define. Both files are optional — a skill behaves sensibly when neither
-exists.
+define, and both files are optional. Conflict resolution is replace, not
+merge, unless a skill's key table documents additive behavior for a
+roster-shaped key.
 
 ## How to Use
 
@@ -73,7 +74,7 @@ Or reference it directly in a conversation by asking the agent to read the SKILL
 ### What makes a good shared skill
 
 - **Universally applicable** — useful across most projects, not domain-specific
-- **Generic core / project overlay** — the SKILL.md never names a project, a person, or a project-specific parameter; project specifics (rosters, model assignments, paths) live in a per-project overlay file in the consuming repo, and the skill documents the overlay keys it reads
+- **Generic core / overlay** — the SKILL.md never names a project, a person, or a project- or user-specific parameter; project specifics (rosters, model assignments, paths) live in the per-project overlay, user specifics (voice, personal reader personas) in the machine-global overlay (see the Overlay Convention above), and the skill documents the overlay keys it reads
 - **Structured process** — teaches a repeatable method, not just tips
 - **Beads-integrated** — works with the kit's beads workflow where relevant
 - **Proven** — based on patterns that have demonstrably improved outcomes
@@ -112,4 +113,4 @@ Reference files (if needed) go in `skills/<skill-name>/` alongside the SKILL.md 
 - [ ] Process is structured with clear phases
 - [ ] Anti-patterns section exists — only when it names failure modes the core process doesn't already state; omit it rather than restate phases or cited rules
 - [ ] No domain-specific assumptions (works for any project)
-- [ ] No project names, people, or project-specific parameters in the core (overlay-ready)
+- [ ] No project names, people, or project/user-specific parameters in the core (overlay-ready, both scopes)

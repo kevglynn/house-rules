@@ -7,7 +7,7 @@ alwaysApply: true
 
 When producing prose a human will read or forward — positioning docs, pre-whitepapers, packets, deck copy, primers, emails, briefs, or any artifact described as "ready to send" — read and follow `skills/prose-voice` before writing. The skill carries the pattern catalog (contrastive pivots, mic-drop closers, triplet escalation, gravitas inflation, parallel openers, complement framing, length inflation, punctuation fingerprint), budgets per pattern, worked before/after examples, and a mechanical self-correction protocol to run before finalizing.
 
-Punctuation is part of voice: match the user's fingerprint, not model defaults. Per-user parameters (banned marks and their replacements, register rules) live in the machine-global user overlay (`~/.agents/overlay.md` § `prose-voice`) — the skill documents the keys it reads and applies the generic law when no overlay exists.
+Punctuation is part of voice: match the user's fingerprint, not model defaults. Per-user parameters (banned marks, register rules) live in the machine-global user overlay (`~/.agents/overlay.md` § `prose-voice`; a per-project overlay wins on conflicts); generic law applies when none exists.
 
 Lexical economy is not optional. Messages, chats, and emails carry word ceilings, and depth is held in reserve for follow-ups instead of pre-loaded — a reader should absorb the whole thing without delay, friction, or hesitation. Documents may be comprehensive, and still face the skill's cut test.
 
