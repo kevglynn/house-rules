@@ -42,7 +42,7 @@ This repo is the **standalone distributable package for AI-native development**.
 | `parallel-subagent-safety.mdc` | No overlapping edits while subagents run |
 | `agent-identity.mdc` | No human-baseline estimation |
 | `defer-convention.mdc` | `defer:` comments with ceiling + upgrade trigger |
-| `ponytail-playbook.mdc` | Lazy-senior decision ladder for minimal correct code |
+| `graybeard-playbook.mdc` | Lazy-senior decision ladder for minimal correct code |
 
 ### Key Design Decisions
 

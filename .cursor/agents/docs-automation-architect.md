@@ -34,7 +34,7 @@ This repo is the **standalone distributable package for AI-native development**.
 
 ### Skills (current state)
 - Process skills: `tier1-review`, `tier2-handoff`, `packet`, `packet-deepdive`
-- Supporting: `council`, `workspace-kickoff`, ponytail family, brainstorming, systematic-debugging
+- Supporting: `council`, `workspace-kickoff`, graybeard family, brainstorming, systematic-debugging
 - Convention: generic core / project overlay (`.agents/overlay.md`)
 
 ### What's Open (from PLAN.md)

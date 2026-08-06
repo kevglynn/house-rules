@@ -30,7 +30,7 @@ This repo is the **standalone distributable package for AI-native development**.
 | `parallel-subagent-safety.mdc` | No edits in a running subagent's blast radius |
 | `agent-identity.mdc` | No human-baseline time estimates; describes complexity/scope/risk instead |
 | `defer-convention.mdc` | `defer:` comments include ceiling + upgrade trigger |
-| `ponytail-playbook.mdc` | Minimal-correct decision ladder when the skill/rule is active |
+| `graybeard-playbook.mdc` | Minimal-correct decision ladder when the skill/rule is active |
 
 ### Key Dates for Before/After Analysis
 

@@ -175,7 +175,7 @@ Any surface is characterized on six axes:
 Distribution imposes a placement constraint of its own: on kit-synced repos
 the rule surface is kit-exclusive (the sync's stale cleanup deletes local
 rule files), so the workspace-local always-on surface is an orientation-doc
-section (AGENTS.md/CLAUDE.md), not a rule (verified 2026-08-04, segnolabs).
+section (AGENTS.md/CLAUDE.md), not a rule (verified 2026-08-04 in a consuming repo).
 
 A **canonical specification** (authoritative definition a capability's other
 surfaces project from) remains available as a surface, in two forms with
