@@ -214,9 +214,9 @@ def verify(md_text: str, page_html: str) -> int:
     # the END of the grid table plus a short margin — never a fixed character
     # offset: grid rows carry linked evidence of arbitrary width, and a fixed
     # 1800-char window false-WARNed template-conformant packets, which trains
-    # authors to ignore the verifier (segnolabs-cga). A strip placed above
-    # the grid (equally in the eye-span; the G2 packet's order) sits inside
-    # the same window.
+    # authors to ignore the verifier (found live on a consuming project's
+    # gate packet). A strip placed above the grid (equally in the eye-span;
+    # the order that live packet used) sits inside the same window.
     grid_lines = [m.end() for m in re.finditer(r"^\|.*$", grid, flags=re.M)]
     strip_zone = grid[: (grid_lines[-1] + 600) if grid_lines else 0]
     if not re.search(r"^>\s+\S", strip_zone, flags=re.M):

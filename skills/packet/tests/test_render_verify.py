@@ -66,7 +66,7 @@ STRIP_WARN = "no divergence strip"
 
 class RenderVerifyStripTest(unittest.TestCase):
     def test_template_order_with_long_grid_does_not_warn(self):
-        # The bug (segnolabs-cga): a fixed 1800-char scan window pushed a
+        # The bug: a fixed 1800-char scan window pushed a
         # template-conformant strip out of range once grid rows carried
         # rich evidence. 40 realistic rows ≈ 5KB of table.
         result = verify(packet(grid_rows=40, strip_placement="after-grid"))
@@ -79,9 +79,9 @@ class RenderVerifyStripTest(unittest.TestCase):
         self.assertNotIn(STRIP_WARN, result.stderr)
 
     def test_strip_above_the_grid_does_not_warn(self):
-        # The G2 packet's placement (the workaround for this bug): the
-        # strip sits between the heading and the grid. Both orders are in
-        # the grid's eye-span; the check must accept both.
+        # The placement the live packet used as a workaround for this
+        # bug: the strip sits between the heading and the grid. Both
+        # orders are in the grid's eye-span; the check must accept both.
         result = verify(packet(grid_rows=40, strip_placement="before-grid"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(STRIP_WARN, result.stderr)

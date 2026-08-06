@@ -181,7 +181,7 @@ strip_frontmatter() {
 # .claude/rules/ is silently removed on the next sync. Repo-local always-on
 # guidance in a synced repo belongs in that repo's own AGENTS.md/CLAUDE.md
 # sections (or a skill), never in the synced rules directories.
-# Verified 2026-08-04 (foreclosed a planned segnolabs workspace rule);
+# Verified 2026-08-04 (foreclosed a planned workspace rule in a consuming repo);
 # also documented in README § "What syncs automatically".
 
 cleanup_stale_cursor() {

@@ -34,6 +34,14 @@ sensibly when the file or its section is absent. Do not invent per-skill
 overlay files — if the single-file convention stops fitting, change the
 convention here, not in one skill.
 
+Per-user parameters (voice fingerprints, personal reader personas —
+anything that follows the user across projects rather than belonging to one
+repo) live in a **machine-global overlay: `~/.agents/overlay.md`**, same
+format, one `## <skill-name>` section per skill. A skill that reads
+per-user keys checks both files; the per-project file wins for any key both
+define. Both files are optional — a skill behaves sensibly when neither
+exists.
+
 ## How to Use
 
 ### Cursor

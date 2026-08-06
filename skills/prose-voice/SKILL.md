@@ -24,7 +24,9 @@ always-on `prose-voice` rule is the tripwire that tells you to read this.
 - Writing or editing any prose a human will read or send: positioning docs,
   pre-whitepapers, packets, deck copy, primers, emails, briefs, README
   narratives, design doc prose sections
-- Any artifact described as "for Chris," "for Manas," or "ready to send"
+- Any artifact addressed to a named reader or described as "ready to
+  send" (the user overlay below may name reader personas that always
+  count)
 - When the user says "voice sweep," "make it not sound like AI," or
   "check the voice"
 
@@ -173,10 +175,10 @@ a vibes check:
 7. **Word-count the draft against its channel ceiling** (P8). Over the
    ceiling → cut whole items and hold them in reserve for a follow-up.
    Do not get there by trimming the surviving sentences into fragments.
-8. **Scan punctuation against the user's fingerprint** (P9). Any em dash
-   in prose drafted in the user's voice → replace it (comma, colon,
-   parentheses, or sentence split). Ellipses stay in casual registers
-   and out of formal ones.
+8. **Scan punctuation against the user's fingerprint** (P9). Apply the
+   user overlay's punctuation parameters where an overlay exists;
+   otherwise check the draft against the principal's own writing and
+   strip model-default tics (em-dash chains, formal-register ellipses).
 
 If you catch the pattern mid-draft, fix it inline and keep going. The
 reader never sees the first draft.
@@ -199,8 +201,8 @@ reader never sees the first draft.
 ## Scope Boundaries
 
 - This skill governs **voice and rhetorical pattern**, not content
-  accuracy. Content claims are governed by the claims verifier and the
-  competitive-provenance-reality memory.
+  accuracy. Content claims are governed by whatever fact-checking
+  mechanism the project uses.
 - Strong claims are fine — theatrical delivery is not. Say the strong
   thing directly.
 - Metaphors and analogies are fine when they clarify. They're not fine
@@ -304,26 +306,40 @@ and "nothing new is needed there."
 Punctuation is a voice signature the same way word choice is, and model
 defaults are recognizable: em dashes chained through every paragraph are
 the single most-cited AI tell. The law is generic. Match the user's own
-fingerprint, never the model's default. The parameters below belong to
-this kit's owner; drafting for a different principal means learning
-theirs first, and if the kit ever grows more users these lines move to a
-per-user overlay.
+fingerprint, never the model's default.
 
-**Owner parameters:**
-
-- **Em dashes: banned outright in prose drafted in the user's voice.**
-  Replace each one with a comma, a colon, parentheses, or a sentence
-  split, whichever the sentence wants. No budget, no exceptions; the
-  reader knows the user doesn't write them.
-- **The ellipsis is the user's native connector in ad hoc registers**
-  (chat, texts, quick emails). Leave it alone in casual messages, and
-  keep it out of formal register: documents, packets, specs, anything
-  ready to forward.
+The fingerprint itself is per-user data, not skill content — read it
+from the user overlay (see "User Overlay" below). Typical parameters:
+which marks are banned outright in the user's voice and what replaces
+them, and which connectors are native to which registers (casual vs
+formal). With no overlay, learn the fingerprint from the principal's own
+writing — their emails, documents, and messages are the reference. With
+no sample either, default to restrained punctuation: no em-dash chains,
+no ellipses in formal register.
 
 Scope: this pattern governs prose drafted in the user's voice. The
 catalog's own explanatory text and agent-to-agent output are exempt (the
 skill-wide skip list already covers them), but the worked good-examples
-above do follow the owner parameters.
+above follow the restrained default.
+
+## User Overlay
+
+Voice parameters are per-user, not per-project: they follow the
+principal across every repo they work in. They live in a machine-global
+overlay at `~/.agents/overlay.md`, under a `## prose-voice` section —
+the same one-file, one-section-per-skill format as the per-project
+`.agents/overlay.md` (shared overlay convention). If a project overlay
+also carries a `## prose-voice` section, the project value wins for any
+key both define. Keys this skill reads:
+
+| Key | Meaning | Default when absent |
+|---|---|---|
+| Reader personas | Named recipients whose artifacts always count as human-facing prose | None — the generic "When to Use" triggers govern |
+| Punctuation fingerprint | Banned marks and their replacements; register rules for native connectors (P9) | Learn from the principal's own writing; else the restrained default |
+
+The skill behaves sensibly with no overlay file and no section: every
+pattern above is generic law and applies as written. A missing overlay
+is normal, never an error.
 
 ## When Reviewing Other Agents' Work
 
