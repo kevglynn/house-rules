@@ -13,7 +13,7 @@ Multi-agent review is required when:
 - A component is decomposed (split into multiple production files)
 - A shared component is created or significantly changed
 - A structural refactor touches 3+ production files (excluding tests, docs, generated files, mechanical renames)
-- The change affects accessibility, state management, or CSS architecture
+- The change affects a load-bearing boundary the project treats as high-risk (state management, auth, data integrity, public API surface)
 
 NOT required for: bug fixes with clear, narrow scope; config/chore/docs beads; token substitutions or mechanical migrations with no structural change; test-only or docs-only changes.
 
