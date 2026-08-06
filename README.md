@@ -1,186 +1,130 @@
-# process-kit
+# house-rules
 
-> Working name (kept until publication). License (Apache-2.0), publication posture, and packaging are settled in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0001-naming-license-publication.md); publication is gated on a readiness checklist.
+Versioned agent rules, skills, and checker CLIs that give AI coding agents a real engineering process: test discipline, evidence-based completion, review gates, and session hygiene, distributed to every repo you work in from one canonical source.
 
-A portable operating kit for AI-native development — versioned agent rules, skills, and scripts that make coding-agent work repeatable across projects and tools (Cursor and Claude Code today).
+The name is literal: these are the house rules your agents work under. Works with Cursor and Claude Code today; everything is plain markdown plus stdlib-only Python and bash, so nothing locks you to a tool.
 
-> **Returning to coding after some time away?** Start with **[WELCOME.md](WELCOME.md)** — an agent-driven onboarding path designed for folks who used to code and want to come back as agent-native builders. Hand it to anyone you want to bring into this style of working.
+> **Returning to coding after time away?** Start with **[WELCOME.md](WELCOME.md)**, an agent-driven onboarding path for people who used to code and want to come back as agent-native builders.
 
-## Point an agent at any repo
+## The problem it solves
 
-The kit is installed, set up, and used by agents. After a one-time per-machine install:
+Agents execute well inside a session and forget everything between sessions. Process knowledge (what to test, when to stop, how to close work, what evidence counts) lives in prompts that don't travel. This kit packages that knowledge as versioned artifacts on four surfaces:
 
-- In any repo, tell your agent **"use the playbook."** It reads the agent-protocol block in your global rules, runs `playbook-doctor.sh --agent`, and branches on the exit code — offering bootstrap, sync, or update with your consent.
-- In any un-bootstrapped git repo, the agent prompts at session start: *"This project isn't bootstrapped with the playbook. Run init, skip, or add to ignore?"*
-- Bootstrapped repos carry an `AGENTS.md` pointing any agent (Cursor, Claude Code, Codex, Copilot, future) at the setup, the rules, and the doctor. Discovery is automatic.
+- **Rules** are always-on law: thirteen canonical rule files covering TDD discipline, task-tracking hygiene, completion evidence, review triggers, prose voice, and session lifecycle.
+- **Skills** are on-demand procedure: structured playbooks an agent loads at the moment they apply (reviews, debugging, planning breakdowns, refinement audits).
+- **Checkers** are mechanical enforcement: single-file, stdlib-only CLIs that verify what the rules prescribe, with stable exit codes for CI.
+- **Distribution** keeps all of it synchronized: one command bootstraps a repo, a doctor validates any setup, and a sync script pushes rule updates to every registered repo and its worktrees.
+
+Conventions with both a prose home and a checker home are projected from a machine-readable profile (`profiles/conventions.toml`): the rule text agents read and the verdicts checkers enforce render from the same source, and a CI gate fails when they diverge. The [v0.2.0 release notes](docs/releases/v0.2.0.md) tell that story in full.
+
+## Quickstart
 
 One-time machine setup:
 
 ```bash
-git clone https://github.com/kevglynn/process-kit ~/process-kit
-bash ~/process-kit/scripts/install-global-safety-net.sh    # per-machine agent rule blocks
-bash ~/process-kit/scripts/install-aliases.sh              # pbi, pbd shell aliases
+git clone https://github.com/kevglynn/house-rules ~/house-rules
+bash ~/house-rules/scripts/install-global-safety-net.sh    # per-machine agent rule blocks
+bash ~/house-rules/scripts/install-aliases.sh              # pbi, pbd aliases + PROCESS_KIT env var
 ```
 
-Both installers are non-interactive and safe for agents to run on your behalf. See [QUICKSTART.md](QUICKSTART.md) for the full setup.
+Then point it at a project:
 
-## What's here
-
-### `cursor/rules/` (source of truth)
-Canonical `.mdc` rule files. These are the single source — edit here, then sync to project repos. Both Cursor and Claude Code formats are generated from these files.
-
-| Rule | What it does |
-|------|-------------|
-| `beads-quality.mdc` | Bead creation standards: self-contained descriptions, `--acceptance` required, non-goals (close-side law: `bead-completion.mdc`) |
-| `pragmatic-tdd.mdc` | Signal-first TDD by bead type, zero-signal test taxonomy |
-| `bead-completion.mdc` | JIT verification, self-review against ACs, AC ownership protocol, `bd remember` knowledge capture |
-| `design-docs.mdc` | When to create committed specs (3+ beads or high-risk areas) |
-| `worktree-awareness.mdc` | Git worktree isolation: commit-early discipline, shared beads DB via redirect, no false fabrication claims |
-| `multi-agent-review.mdc` | Two-tier review protocol: same-model multi-lens (autonomous) + cross-model (human-assisted), pattern-level `bd remember` capture |
-| `operating-model.mdc` | Planner/Executor roles, mode switching, scratchpad conventions, beads task tracking, workflow |
-| `agent-identity.mdc` | No human-baseline estimation — describe complexity, scope, and risk instead of timelines |
-| `session-lifecycle.mdc` | Mandatory session start/close protocol: `bd prime`, in-progress check, knowledge capture |
-| `parallel-subagent-safety.mdc` | Prevents file-edit conflicts between parent agent and running subagents — blast radius awareness |
-| `defer-convention.mdc` | Mark deliberate simplifications with `defer:` comments: ceiling + upgrade trigger required |
-| `graybeard-playbook.mdc` | Lazy senior dev implementation ladder — minimal, correct code. Stdlib/native/reuse before new |
-
-### `claude/rules/` (generated)
-Claude Code-compatible `.md` files — same content as Cursor rules with YAML frontmatter stripped. Generated by `scripts/sync-rules.sh --format claude --local`. Do not edit directly. Deployed to `.claude/rules/` in target repos (where Claude Code auto-discovers them).
-
-### `skills/`
-Curated agent skills — structured, on-demand procedures for recurring tasks. See [skills/README.md](skills/README.md) for the full catalog (brainstorming, systematic debugging, the graybeard family, council, workspace kickoff). This is the incubation home for new process skills.
-
-### `cursor/settings-ui/`
-Optional user-level Cursor Settings UI rule for personal conventions (e.g., "always ask before using -force git"). The operating model (Planner/Executor roles, workflow, scratchpad) lives in `operating-model.mdc` and syncs automatically with all other rules.
-
-### `scripts/`
-
-| Script | What it does |
-|--------|-------------|
-| `playbook-init.sh` | One-command project setup. Copies rules, initializes beads, runs `bd hooks install` by default, creates scratchpad, emits `AGENTS.md`, registers for sync. Supports `--tool cursor\|claude\|both`, `--stealth`, `--no-hooks`, and `--skills`. Refuses non-TTY invocation without an explicit `--tool` flag. |
-| `playbook-doctor.sh` | Validates playbook setup. Checks rules, tdd-ledger CLI drift, AGENTS.md section version stamp (warn-only), beads, scratchpad, sync targets, worktrees, global safety net. `--agent` mode emits a `SUMMARY:` line and structured exit codes (`0`=ok, `2`=bootstrap_needed, `3`=drift, `1`=error). On exit 3 the SUMMARY carries what drifted: `rules_drift_cursor`, `rules_drift_claude`, or `rules_drift_both` (agents pass the right `--format` to `sync-rules.sh`), or `ledger_drift` / `defer_lint_drift` / `close_reason_lint_drift` / `banned_token_scan_drift` when the matching distributed CLI (`scripts/tdd-ledger`, `scripts/defer-lint`, `scripts/close-reason-lint`, `scripts/banned-token-scan`) is stale vs the kit copy (fix: re-copy from the kit). Rules drift wins the SUMMARY when several drift; the losing findings still appear in the text output. Agents branch on the SUMMARY key, not the bare exit code. |
-| `install-global-safety-net.sh` | One-time per-machine install. Writes marker-delimited blocks into `~/CLAUDE.md` (`agent-identity`, `session-start` bootstrap check, `agent-protocol`) and generates a Cursor user-rules paste snippet. Content lives in `global-safety-net/*.md` — add a file + registry entry to add a concern. Supports `--check`, `--uninstall`, `--print-cursor-snippet`. |
-| `install-aliases.sh` | One-time per-machine install. Writes `~/.playbook-aliases.sh` and adds a single guarded source line to `~/.zshrc` / `~/.bashrc`. Installs `pbi` (init), `pbd` (doctor), and `PROCESS_KIT` env var. Non-interactive; safe for agents. |
-| `sync-rules.sh` | Multi-format rule sync. `--format cursor\|claude\|all` (also accepts `both` as an alias for `all`). Supports `--check` (drift), `--local` (in-repo generation), `--dry-run` (preview). Safe-by-default: locally modified files are backed up to `*.<ts>.bak` before being overwritten; `--unsafe` disables to silently overwrite. Validates targets, cleans stale files, survives per-target errors. |
-| `setup-worktree.sh` | Creates `.beads/redirect` so worktrees share the main repo's beads database. Runs automatically via IDE hooks or manually. |
-| `tdd-ledger` | Durable red-then-green TDD evidence recorder (Python 3 stdlib, single file). `record-failing` / `record-passing` append to a committed `.tdd-ledger.jsonl`; `verify` checks red-before-green invariants with stable exit codes (`0`=ok, `1`=violation, `2`=usage, `3`=I/O) for CI gating. Distributed to target repos by `playbook-init.sh`; workflow template in `templates/`. |
-| `defer-lint` | Mechanical check for the defer-convention rule (Python 3 stdlib, single file). Scans source files for `defer:` comments and flags entries missing their `upgrade when:` trigger (multi-line continuations honored; missing `ceiling:` is a warning). `--root`, `--json`; same exit-code contract as tdd-ledger (`0`=clean, `1`=violations, `2`=usage, `3`=I/O). Worked good/bad examples and the defer/TODO/FIXME comparison live in `defer-lint --help`. Distributed to target repos by `playbook-init.sh`. |
-| `close-reason-lint` | Mechanical shape check for bead close reasons (Python 3 stdlib, single file). Pipe `bd list --status=closed --json` in; flags closed beads whose reasons lack a commit-ref (hash, PR/MR URL, or branch) or AC-mapping shape (pattern presence only — semantic quality stays with the review lenses). Exemptions per bead-completion.mdc's evidence table (docs/decision/milestone/epic exempt; chore/config/spike get commit-ref warnings). Same exit-code contract as tdd-ledger; worked examples in `close-reason-lint --help`. Distributed to target repos by `playbook-init.sh`. |
-| `banned-token-scan` | Candidate reporter for agent-identity's four banned-token classes (Python 3 stdlib, single file). Scans files or stdin and reports each hit with class, token, and location; deliberately does NOT judge the rule's "not regressions" exceptions (historical facts, API behavior, quotes) — that stays with the reader. Every token in its own source is assembled from parts so no copy ever self-flags. Same exit-code contract as tdd-ledger; class catalog and judgment boundary in `banned-token-scan --help`. Distributed to target repos by `playbook-init.sh`. |
-| `distributed-clis.list` | Manifest of the kit CLIs above that ship to target repos — the single registration point. `playbook-init.sh` distributes every entry; `playbook-doctor.sh` drift-checks the same list (line order = SUMMARY precedence when several drift). Adding a distributed script = one manifest line plus a dispatch-table row in `global-safety-net/agent-protocol.md` (doctor warns if the row is missing). |
-
-## Setup
-
-### Quick start (recommended)
 ```bash
-git clone https://github.com/kevglynn/process-kit ~/process-kit
 cd /path/to/your/project
-bash ~/process-kit/scripts/playbook-init.sh
+bash ~/house-rules/scripts/playbook-init.sh
 ```
+
+Both installers are non-interactive and safe for agents to run on your behalf. From there the kit is agent-operated:
+
+- In any repo, tell your agent **"use the playbook."** It reads the agent-protocol block in your global rules, runs the doctor, and branches on the result, offering bootstrap, sync, or update with your consent.
+- In any un-bootstrapped git repo, the agent prompts at session start: *"This project isn't bootstrapped with the playbook. Run init, skip, or add to ignore?"*
+- Bootstrapped repos carry an `AGENTS.md` pointing any agent (Cursor, Claude Code, Codex, Copilot, future) at the setup, the rules, and the doctor. Discovery is automatic.
 
 See **[QUICKSTART.md](QUICKSTART.md)** for all setup options and **[docs/concepts.md](docs/concepts.md)** for how the pieces fit together.
 
-### Manual setup
-1. Clone this repo
-2. Add your project repo roots to `~/.playbook-sync-targets` (one path per line)
-3. Run `./scripts/sync-rules.sh` to distribute Cursor rules
-4. Run `./scripts/sync-rules.sh --format claude` to distribute Claude Code rules
+## What's inside
 
-### Adding a new project repo
-Add its root path to `~/.playbook-sync-targets`. The file is local and untracked — no merge conflicts.
+### Rules (`cursor/rules/`, canonical)
 
-### Checking for drift
-```bash
-./scripts/sync-rules.sh --check                  # Check cursor rules
-./scripts/sync-rules.sh --format claude --check   # Check claude rules
-```
-Reports which targets have stale or missing rules without modifying anything.
+Canonical `.mdc` rule files, the single source of truth. The Claude Code format (`claude/rules/`) is generated from these, and CI fails on drift between the two.
 
-### Regenerating Claude rules in this repo
-```bash
-./scripts/sync-rules.sh --format claude --local
-```
+| Rule | What it does |
+|------|-------------|
+| `operating-model.mdc` | Planner/Executor roles, scratchpad conventions, beads task tracking, workflow |
+| `session-lifecycle.mdc` | Mandatory session start/close protocol: `bd prime`, in-progress check, knowledge capture |
+| `beads-quality.mdc` | Bead creation standards: self-contained descriptions, acceptance criteria, non-goals |
+| `bead-completion.mdc` | JIT verification, self-review against ACs, evidence-based closes, knowledge capture |
+| `pragmatic-tdd.mdc` | Signal-first TDD by bead type, zero-signal test taxonomy |
+| `multi-agent-review.mdc` | Two-tier review protocol: same-model multi-lens plus cross-model handoff |
+| `design-docs.mdc` | When to create committed specs (3+ beads or high-risk areas) |
+| `defer-convention.mdc` | Deliberate simplifications carry a ceiling and an upgrade trigger |
+| `agent-identity.mdc` | No human-baseline estimation: describe complexity, scope, and risk instead of timelines |
+| `prose-voice.mdc` | Human-facing prose follows the prose-voice skill: pattern budgets, punctuation fingerprint |
+| `parallel-subagent-safety.mdc` | Blast-radius rules that prevent file conflicts between parent agents and subagents |
+| `worktree-awareness.mdc` | Git worktree isolation: shared beads DB, commit-early discipline |
+| `graybeard-playbook.mdc` | Lazy-senior-dev implementation ladder: minimal, correct code; stdlib before new |
 
-## What syncs automatically vs. what you copy manually
+### Skills (`skills/`)
 
-**Rules** (`cursor/rules/*.mdc`) sync automatically via `sync-rules.sh`. Add a target repo to `~/.playbook-sync-targets` and run the script — rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
+On-demand procedures for recurring tasks: planning breakdowns, bead authoring, TDD playbooks, two-tier reviews, systematic debugging, over-engineering audits (the graybeard family), refinement runs, prose voice discipline. The full catalog with maturity status is in **[skills/README.md](skills/README.md)**. This directory is also the incubation home for new process skills.
 
-The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is silently removed on the next sync. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
+### Checker CLIs (`scripts/`)
 
-**Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
+Single-file, stdlib-only Python. Each documents its full contract in `--help`; all share the exit-code contract `0`=clean, `1`=violation, `2`=usage, `3`=I/O.
 
-**Skills** (`skills/`) are copied on demand: `playbook-init.sh --skills` copies them into the tool-matching project dir (`.cursor/skills/` for Cursor, `.claude/skills/` for Claude Code, both for `--tool both`), or symlink individual skills for Claude Code (see [skills/README.md](skills/README.md)).
+| CLI | Enforces |
+|-----|----------|
+| `conventions` | Commit types, branch grammar, and close-evidence shapes from `profiles/conventions.toml`; also renders the rule fragments CI byte-checks |
+| `tdd-ledger` | Durable red-then-green TDD evidence, CI-verifiable |
+| `defer-lint` | Every `defer:` comment carries its upgrade trigger |
+| `close-reason-lint` | Bead close reasons carry commit refs and AC mapping |
+| `banned-token-scan` | The agent-identity rule's no-human-estimation token classes |
 
-**Templates** (`templates/`) carry two distribution semantics: `tdd-ledger-verify.yml` is distributed by `playbook-init.sh` (as a not-overwriting copy into `.github/workflows/`), while `design-doc.md` is kit-resident — you copy it into `docs/specs/` when authoring a spec; init never ships it.
+The checker CLIs ship to target repos through one manifest (`scripts/distributed-clis.list`); the doctor drift-checks each against the kit copy.
 
-## Workflow
+### Distribution scripts (`scripts/`)
 
-1. Edit rules in `cursor/rules/` (this repo is the canonical source)
-2. Run `./scripts/sync-rules.sh --format claude --local` to regenerate `claude/rules/`
-3. Run `./scripts/sync-rules.sh` to distribute Cursor rules to project repos
-4. Run `./scripts/sync-rules.sh --format claude` to distribute Claude rules to project repos
-5. (Optional) If you use the Settings UI rule for personal conventions, keep `cursor/settings-ui/instructions-rule.md` in sync and paste into Cursor Settings
+| Script | What it does |
+|--------|-------------|
+| `playbook-init.sh` | One-command project setup: rules, beads, scratchpad, `AGENTS.md`, checker CLIs, sync registration |
+| `playbook-doctor.sh` | Validates any setup; `--agent` mode emits a `SUMMARY:` key and structured exit codes agents branch on |
+| `sync-rules.sh` | Multi-format rule sync with drift checking (`--check`), local regeneration (`--local`), and safe-by-default backups |
+| `install-global-safety-net.sh` | Per-machine marker blocks in `~/CLAUDE.md` plus a Cursor user-rules snippet |
+| `install-aliases.sh` | Per-machine `pbi`/`pbd` aliases and the `PROCESS_KIT` env var |
+| `setup-worktree.sh` | Makes git worktrees share the main repo's beads database |
 
-Rules are auto-discovered — adding a new `.mdc` file to `cursor/rules/` automatically includes it in the next sync. No script edits needed.
+Distribution semantics, worktree setup, and drift-checking mechanics live in **[docs/operations.md](docs/operations.md)**.
 
-## Worktree setup for beads
+## Governance and license
 
-When Cursor creates a worktree, it bypasses `bd worktree create`, so beads can't find the database. The setup script fixes this by writing a `.beads/redirect` file that points the worktree to the main repo's database. All worktrees share one beads instance.
+The kit ships **[The Agentic Covenant](CODE_OF_CONDUCT.md)** as its code of conduct: governance written for communities where humans and AI agents collaborate. AI-assisted contributions are explicitly welcome and disclosed with the `Assisted-by` convention. [docs/governance.md](docs/governance.md) covers how governance fits into the kit.
 
-### How it works
+Licensed under **[Apache-2.0](LICENSE)**. Contribution process, CI gates, and release discipline are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
-1. `.cursor/worktrees.json` tells Cursor to run `scripts/setup-worktree.sh` on every new worktree (`postCreate` hook)
-2. The script detects the main repo via `git rev-parse --git-common-dir` and writes an absolute-path redirect
-3. `bd list` (and all other `bd` commands) work from the worktree immediately
+## Status
 
-### Adopting in your repo
-
-1. Copy `scripts/setup-worktree.sh` into your repo (keep it executable: `chmod +x`)
-2. Copy `.cursor/worktrees.json` into your repo's `.cursor/` directory
-3. Commit both files
-4. Optionally pin `dolt.port` in `.beads/config.yaml` to a repo-specific port — this prevents random-port warnings when multiple shells or worktrees connect to Dolt. Choose a port that won't collide with other beads-enabled repos on the same machine.
-
-### For existing worktrees
-
-Run the script manually from the worktree root:
-
-```bash
-bash scripts/setup-worktree.sh
-```
-
-If the worktree already has a local beads database from a previous `bd init`, the script will detect it and warn rather than overwrite.
-
-### Portability
-
-The setup script is pure shell (no `python3` or `bd` binary required). Validated on bd 0.61.0 (Homebrew) and macOS/Linux. On Windows, use WSL or Git Bash.
+v0.2.0 is the first public release. The rules, distribution scripts, and checker CLIs are exercised daily across a multi-repo setup and are the most battle-tested surfaces. Skills vary: each entry in [skills/README.md](skills/README.md) carries its maturity honestly, and several are incubating. Decision records in [docs/decisions/](docs/decisions/) document naming, licensing, and publication posture, amendments and all.
 
 ## Documentation
 
 | Document | Audience |
 |----------|---------|
-| [WELCOME.md](WELCOME.md) | Returning coders / first-time agent-native builders — prompt-driven onboarding |
+| [WELCOME.md](WELCOME.md) | Returning coders / first-time agent-native builders |
 | [QUICKSTART.md](QUICKSTART.md) | First-time setup in under 5 minutes |
 | [docs/concepts.md](docs/concepts.md) | Why the kit exists and how the components work together |
-| [sandbox/](sandbox/) | Hands-on 45-min exercise teaching the full workflow by doing |
+| [sandbox/](sandbox/) | Hands-on 45-minute exercise teaching the full workflow by doing |
+| [docs/operations.md](docs/operations.md) | Distribution semantics, worktrees, drift checking, versioning mechanics |
 | [docs/glossary.md](docs/glossary.md) | Plain-English definitions of all terminology |
 | [docs/README.md](docs/README.md) | Full reading order for guides and reference material |
-| [docs/rule-effectiveness-scorecard.md](docs/rule-effectiveness-scorecard.md) | Measuring whether rules change agent behavior |
+| [docs/releases/](docs/releases/) | Release notes per version |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to propose and contribute changes |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | The Agentic Covenant — governance for human-agent collaboration |
-| [docs/governance.md](docs/governance.md) | How governance fits into the kit |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | The Agentic Covenant |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and when |
 
 ## Versioning
 
-The kit uses semantic versioning. Teams can pin to a stable release:
+Semantic versioning via the `VERSION` file and git tags. Teams pin to releases with `sync-rules.sh --version vX.Y.Z`; mechanics in [docs/operations.md](docs/operations.md), release process in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```bash
-./scripts/sync-rules.sh --version v1.0.0              # Sync from a specific release
-./scripts/sync-rules.sh --show-version                 # Print current version
-```
+## Origin and attribution
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for release process details.
-
-## Origin
-
-Extracted from a private predecessor playbook (with organization-specific content removed) and restarted with fresh history at v0.1.0. Rules originally adapted from [obra/superpowers](https://github.com/obra/superpowers) and [ed3dai/ed3d-plugins](https://github.com/ed3dai/ed3d-plugins), cherry-picked for signal over dogma.
+Extracted from a private predecessor playbook (organization-specific content removed) and restarted with fresh history at v0.1.0; incubated under the working name process-kit. Rules originally adapted from [obra/superpowers](https://github.com/obra/superpowers) and [ed3dai/ed3d-plugins](https://github.com/ed3dai/ed3d-plugins), cherry-picked for signal over dogma. The graybeard skill family adapts the "laziest senior dev" concept from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT), reimplemented and extended for this kit.

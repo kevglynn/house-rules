@@ -14,6 +14,7 @@ Reference material for the kit. If you're new, read in this order:
 | Document | What it is |
 |----------|-----------|
 | [Glossary](glossary.md) | Plain-English definitions of all terminology. |
+| [Operating the Kit](operations.md) | Distribution semantics, drift checking, worktree setup, versioning mechanics. |
 | [Governance](governance.md) | How the Agentic Covenant fits into the kit. |
 | [Agentic Covenant Adoption Guide](adoption-guide.md) | Step-by-step governance adoption for teams. |
 | [Rule Effectiveness Scorecard](rule-effectiveness-scorecard.md) | Measuring whether rule changes improve agent behavior. |
@@ -25,6 +26,7 @@ Reference material for the kit. If you're new, read in this order:
 
 | Directory | Purpose |
 |-----------|---------|
+| [releases/](releases/) | Release notes per version, starting with v0.2.0. |
 | [specs/](specs/) | Design docs for multi-bead initiatives — architecture, trade-offs, non-goals (see the design-docs rule). |
 | [research/](research/) | Research memos and spike findings that inform specs and refinements. |
 | [refinements/](refinements/) | Dated refinement proposals — the output of individual refinement runs. |
