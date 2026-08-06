@@ -233,6 +233,13 @@ if ! $is_playbook_repo; then
   if $has_cursor && git -C "$PROJECT_ROOT" check-ignore -q ".cursor/rules/test.mdc" 2>/dev/null; then
     check_warn ".cursor/rules/ appears to be gitignored — rules won't be committed"
   fi
+  # Text-only advisory (never affects SUMMARY or exit codes): the overlay
+  # is the project-editable surface; its absence just means skills run on
+  # their documented defaults. Ownership boundary: skills/README.md
+  # § Overlay Convention.
+  if { $has_cursor || $has_claude; } && [ ! -f "$PROJECT_ROOT/.agents/overlay.md" ]; then
+    check_warn "No .agents/overlay.md — skills run on documented defaults (optional per-project parameters; project-editable, unlike the kit-owned profiles/conventions.toml)"
+  fi
 fi
 
 echo ""

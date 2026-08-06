@@ -43,6 +43,32 @@ define, and both files are optional. Conflict resolution is replace, not
 merge, unless a skill's key table documents additive behavior for a
 roster-shaped key.
 
+### Overlay vs. profile — the two-surface placement law
+
+A bootstrapped repo can carry two config-like surfaces with opposite
+ownership rules, and a cold agent must be able to tell them apart. The
+**overlay** (`.agents/overlay.md`, plus the machine-global
+`~/.agents/overlay.md`) is project/user-owned, agent-read, markdown:
+judgment-shaped parameters that skills consume, meant to be edited in the
+consuming repo. The **profile** (`profiles/conventions.toml`) is kit-owned,
+tool-read, TOML: data-shaped conventions consumed by deterministic checkers
+and renderers, drift-checked byte-for-byte by `playbook-doctor.sh` — never
+edited in a consuming repo (change it in the kit, then sync).
+
+Promotion trigger: the first deterministic tool that needs an overlay key
+graduates that key to a fenced TOML block inside `.agents/overlay.md` — the
+single-file convention is preserved and the block is parsed with stdlib
+`tomllib`. Until that trigger fires, overlay content stays prose.
+
+Rejected alternative (decision, 2026-08-05): a `[project]` section inside
+the distributed profile. Three reasons: no deterministic overlay consumer
+exists today (the skill-embedded CLIs do not parse overlay content); the
+byte-for-byte drift check collides structurally with target-owned edits
+(either every project edit flags as drift, or the gate learns region
+exclusions and recreates the two-ownership boundary inside one file); and
+judgment-shaped overlay prose (reviewer-lane guidance, voice notes) cannot
+live in TOML, so the file could never actually be single.
+
 ## How to Use
 
 ### Cursor

@@ -435,6 +435,8 @@ This project follows [process-kit](https://github.com/kevglynn/process-kit) — 
 
 **Rules location:** \`.cursor/rules/*.mdc\` (Cursor) and/or \`.claude/rules/*.md\` (Claude Code). Synced from \`\${PROCESS_KIT:-\$HOME/process-kit}\`. Do not edit in place.
 
+**Ownership boundary:** \`.agents/overlay.md\` is project-editable (optional per-skill parameters; create it as needed). \`profiles/conventions.toml\`, when present, is kit-owned and drift-checked byte-for-byte — do not edit it here; change it in the kit and sync.
+
 **Diagnose setup (human-readable):**
 \`\`\`bash
 bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh"
