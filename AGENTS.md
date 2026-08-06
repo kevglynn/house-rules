@@ -4,7 +4,7 @@ Any agent landing in this repo: start here.
 
 ## About this repo
 
-This is **process-kit** (working name) — the canonical source for AI coding agent rules, skills, hooks, and scripts. It distributes governance to project repos via sync scripts.
+This is **house-rules** (incubated under the working name process-kit) — the canonical source for AI coding agent rules, skills, hooks, and scripts. It distributes governance to project repos via sync scripts. The `PROCESS_KIT` env var, the `process-kit-*` bead-ID prefix, and the default clone path `~/process-kit` keep their historical names — the env var and redirected GitHub URL make the directory name immaterial.
 
 **This is the source repo, not a target repo.** Do not run `playbook-init.sh` here. To work on the kit itself:
 
@@ -17,7 +17,7 @@ This is **process-kit** (working name) — the canonical source for AI coding ag
 
 ## Identity conventions
 
-- The kit name is a **working name**; the final name, license, and publication posture are open decisions tracked in [PLAN.md](PLAN.md).
+- The kit name (**house-rules**), license (Apache-2.0), and publication posture (public, history as-is) were decided 2026-08-05 — recorded with rationale in `docs/decisions/0001-naming-license-publication.md`.
 - Skill and rule content must stay **project-neutral**: no project names, people, or project/user-specific parameters in the generic core. Project specifics belong in per-project overlay files in consuming repos; per-user parameters belong in the machine-global overlay (`~/.agents/overlay.md`) — both scopes documented in `skills/README.md`.
 - Marker strings in installers use the `house-rules:` prefix (final name, 0001 A1). The installers still recognize the legacy `ai-dev-playbook:` markers written by the predecessor repo and rewrite those blocks in place under the new prefix on their next run — a one-shot migration, no duplicate blocks. Do not remove the legacy-recognition patterns while any machine or target repo still carries old-marker artifacts.
 

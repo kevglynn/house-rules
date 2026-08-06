@@ -33,7 +33,7 @@ You need three things on your machine:
 Then clone this playbook and run the per-machine setup:
 
 ```bash
-git clone https://github.com/kevglynn/process-kit ~/process-kit
+git clone https://github.com/kevglynn/house-rules ~/process-kit
 bash ~/process-kit/scripts/install-global-safety-net.sh
 bash ~/process-kit/scripts/install-aliases.sh
 ```

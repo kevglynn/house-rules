@@ -27,6 +27,6 @@ If the user invokes the playbook ("use the playbook", "bootstrap this repo",
 
 4. Never run bootstrap, sync, or update silently. Always ask before making changes that modify the project or `~/.playbook-sync-targets`.
 
-5. If `"${PROCESS_KIT:-$HOME/process-kit}"` does not exist on this machine, instruct the user to clone the kit: `git clone https://github.com/kevglynn/process-kit ~/process-kit`. Do not attempt to clone on behalf of the user without explicit consent.
+5. If `"${PROCESS_KIT:-$HOME/process-kit}"` does not exist on this machine, instruct the user to clone the kit: `git clone https://github.com/kevglynn/house-rules ~/process-kit`. Do not attempt to clone on behalf of the user without explicit consent.
 
 The canonical playbook location is `${PROCESS_KIT:-$HOME/process-kit}`.

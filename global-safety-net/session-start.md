@@ -26,6 +26,6 @@ If `"${PROCESS_KIT:-$HOME/process-kit}"` does not exist, tell the
 user to clone the kit first:
 
 > The playbook is not installed at `~/process-kit`. Clone it
-> with: `git clone https://github.com/kevglynn/process-kit ~/process-kit`
+> with: `git clone https://github.com/kevglynn/house-rules ~/process-kit`
 
 Do not re-ask in the same session after the user answers.

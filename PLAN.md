@@ -27,7 +27,7 @@ Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0
 
 | Decision | Resolution |
 |----------|------------|
-| Kit name | Final name decided 2026-08-05: **house-rules** (0001 A1); `process-kit` remains the working name until the release-cut rename (process-kit-r4w) |
+| Kit name | **house-rules** (0001 A1, decided 2026-08-05); repo renamed at the v0.2.0 cut (process-kit-r4w) — old URLs redirect, local paths and the `PROCESS_KIT` env var keep their historical names |
 | License | Apache-2.0 (landed at publication, not before) |
 | Publication posture | Private until a readiness checklist is met (IP clear, skills stable, second-consumer proof, LICENSE + CONTRIBUTING, neutrality audit) |
 | Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |

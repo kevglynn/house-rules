@@ -6,7 +6,7 @@ Setup takes under 5 minutes. Choose your path below.
 
 1. **Clone the kit** (skip if already cloned):
    ```bash
-   git clone https://github.com/kevglynn/process-kit ~/process-kit
+   git clone https://github.com/kevglynn/house-rules ~/process-kit
    ```
 
 2. **Install beads** (skip if `bd` is already on PATH):
