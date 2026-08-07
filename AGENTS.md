@@ -10,6 +10,7 @@ This is **house-rules** (incubated under the working name process-kit) — the c
 
 - Rules are canonical in `cursor/rules/*.mdc` — edit there, then run `./scripts/house-rules sync --format claude --local` to regenerate `claude/rules/*.md`
 - Skills live in `skills/<name>/SKILL.md` — see `skills/README.md` for the format and contribution checklist
+- Core-tier membership is declared in `profiles/core-manifest.list` — a listed rule or skill must stay free of bd/beads references (enforced in kit CI by `scripts/tests/test_core_manifest.py`)
 - The kit ships no hook files of its own — the old `.claude/hooks/` layer was retired (process-kit-amq). `house-rules init` installs **beads** git hooks in target repos via `bd hooks install`
 - Scripts are in `scripts/` — see README.md for the full inventory
 - Global safety-net block sources are in `global-safety-net/*.md` — installed per-machine by `install-global-safety-net.sh`

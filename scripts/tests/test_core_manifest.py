@@ -6,8 +6,9 @@ Asserts the three durable properties the core tier depends on:
   1. the manifest exists and parses (kind|path lines, known kinds),
   2. every listed path exists in the expected shape (rule file, skill dir
      with SKILL.md, executable CLI),
-  3. every listed rule file and skill SKILL.md is free of bd/beads
-     references — the core-tier promise is zero workflow nagging.
+  3. every listed rule file and every .md in a listed skill dir is free
+     of bd/bead/beads references — the core-tier promise is zero
+     workflow nagging.
 
 Checks are factored as helpers so fixture tests can prove they actually
 flag violations (a checker that passes regardless of correctness is zero
@@ -27,16 +28,18 @@ MANIFEST = REPO_ROOT / "profiles" / "core-manifest.list"
 
 KNOWN_KINDS = {"rule", "skill", "cli"}
 
-# The core-tier cleanliness pattern from the acceptance criteria: no `bd`
-# as a word, no `beads`. Case-insensitive.
-BD_PATTERN = re.compile(r"\bbd\b|beads", re.IGNORECASE)
+# The core-tier cleanliness pattern: no `bd` as a word, no `bead`/`beads`
+# as a word (singular included — "claim the bead" is workflow language even
+# though the AC's literal grep only named the plural). Case-insensitive.
+BD_PATTERN = re.compile(r"\bbd\b|\bbeads?\b", re.IGNORECASE)
 
 
 def parse_manifest(text):
     """Parse manifest text into (kind, path) tuples.
 
-    Raises ValueError on a malformed line (missing '|' or unknown kind) so
-    a bad manifest fails loudly rather than being silently skipped.
+    Raises ValueError on a malformed line (missing '|', unknown kind,
+    absolute or ..-traversal path, duplicate entry) so a bad manifest fails
+    loudly rather than resolving against whatever exists on the machine.
     """
     entries = []
     for lineno, raw in enumerate(text.splitlines(), 1):
@@ -50,6 +53,10 @@ def parse_manifest(text):
             raise ValueError(f"line {lineno}: unknown kind {kind!r}")
         if not path:
             raise ValueError(f"line {lineno}: empty path")
+        if Path(path).is_absolute() or ".." in Path(path).parts:
+            raise ValueError(f"line {lineno}: path must be repo-relative: {path!r}")
+        if (kind, path) in entries:
+            raise ValueError(f"line {lineno}: duplicate entry: {line!r}")
         entries.append((kind, path))
     return entries
 
@@ -71,13 +78,17 @@ def find_missing(entries, root):
 
 
 def grep_targets(entries, root):
-    """Files whose text must be bd/beads-clean: rule files and skill SKILL.md."""
+    """Files whose text must be bd/beads-clean.
+
+    A skill entry denotes the whole directory, so every .md in it is
+    checked — SKILL.md plus any companion files a skill grows later.
+    """
     targets = []
     for kind, path in entries:
         if kind == "rule":
             targets.append(root / path)
         elif kind == "skill":
-            targets.append(root / path / "SKILL.md")
+            targets.extend(sorted((root / path).rglob("*.md")))
     return targets
 
 
@@ -103,27 +114,30 @@ class TestRealManifest(unittest.TestCase):
         )
         self.entries = parse_manifest(MANIFEST.read_text(encoding="utf-8"))
 
-    def test_manifest_is_nonempty_and_well_formed(self):
-        self.assertGreater(len(self.entries), 0, "manifest lists nothing")
-
     def test_required_core_members_present(self):
-        # Pinned by the bead's acceptance criteria.
+        # The full shipped set: the AC-named members plus graybeard-playbook
+        # (the family's rule per graybeard-help's own table) and the
+        # prose-voice skill (hard dependency of the prose-voice rule) —
+        # deleting either breaks the manifest's cross-reference-closure
+        # invariant, so the pin covers all 12 entries.
         required = {
             ("rule", "cursor/rules/agent-identity.mdc"),
             ("rule", "cursor/rules/defer-convention.mdc"),
             ("rule", "cursor/rules/prose-voice.mdc"),
             ("rule", "cursor/rules/parallel-subagent-safety.mdc"),
+            ("rule", "cursor/rules/graybeard-playbook.mdc"),
             ("skill", "skills/graybeard-review"),
             ("skill", "skills/graybeard-audit"),
             ("skill", "skills/graybeard-debt"),
             ("skill", "skills/graybeard-help"),
+            ("skill", "skills/prose-voice"),
             ("cli", "scripts/defer-lint"),
             ("cli", "scripts/banned-token-scan"),
         }
         self.assertLessEqual(
             required,
             set(self.entries),
-            "manifest is missing AC-required core members",
+            "manifest is missing required core members",
         )
 
     def test_every_listed_path_exists(self):
@@ -145,6 +159,17 @@ class TestCheckersAreNotVacuous(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_manifest("cursor/rules/agent-identity.mdc\n")
 
+    def test_parse_rejects_absolute_traversal_and_duplicate_paths(self):
+        # Path(root) / "/usr/bin/env" silently discards root — a typo'd
+        # absolute entry would resolve against the test machine's
+        # filesystem and pass. Traversal and duplicates likewise fail loud.
+        with self.assertRaises(ValueError):
+            parse_manifest("cli|/usr/bin/env\n")
+        with self.assertRaises(ValueError):
+            parse_manifest("rule|../outside/rule.mdc\n")
+        with self.assertRaises(ValueError):
+            parse_manifest("cli|scripts/defer-lint\ncli|scripts/defer-lint\n")
+
     def test_missing_path_is_flagged(self):
         entries = [("rule", "cursor/rules/does-not-exist.mdc")]
         self.assertEqual(find_missing(entries, REPO_ROOT), entries)
@@ -163,26 +188,44 @@ class TestCheckersAreNotVacuous(unittest.TestCase):
             rules.mkdir(parents=True)
             (rules / "dirty.mdc").write_text(
                 "Run bd ready to find the next task.\n"
-                "Beads is the source of truth.\n",
+                "Beads is the source of truth.\n"
+                "Claim the bead before starting.\n",
                 encoding="utf-8",
             )
             hits = find_unclean([("rule", "cursor/rules/dirty.mdc")], root)
-            self.assertEqual(len(hits), 2)
+            self.assertEqual(len(hits), 3)
 
     def test_clean_rule_produces_no_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rules = root / "cursor" / "rules"
             rules.mkdir(parents=True)
-            # "bead" singular and "embedded" must NOT trip the word-boundary
-            # pattern; only `bd` as a word or `beads` count.
+            # Word-boundary negatives that would trip a boundary-less
+            # pattern: "subdirectory" and "lambda" contain the bd
+            # substring; "beadwork" starts with bead but is one word.
             (rules / "clean.mdc").write_text(
-                "A bead description is out of scope. Embedded text is fine.\n",
+                "Check the subdirectory for lambda helpers; beadwork"
+                " metaphors are fine.\n",
                 encoding="utf-8",
             )
             self.assertEqual(
                 find_unclean([("rule", "cursor/rules/clean.mdc")], root), []
             )
+
+    def test_dirty_skill_companion_file_is_flagged(self):
+        # A skill entry denotes the directory: a clean SKILL.md must not
+        # shield a companion .md carrying workflow references.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skills" / "some-skill"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("Clean text.\n", encoding="utf-8")
+            (skill / "references.md").write_text(
+                "Track it with bd create.\n", encoding="utf-8"
+            )
+            hits = find_unclean([("skill", "skills/some-skill")], root)
+            self.assertEqual(len(hits), 1)
+            self.assertIn("references.md", hits[0][0])
 
 
 if __name__ == "__main__":

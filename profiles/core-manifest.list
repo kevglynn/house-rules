@@ -2,13 +2,17 @@
 # house-rules-core, the zero-dependency wedge tier (standalone rules +
 # graybeard skill family + checker CLIs; no beads/bd requirement).
 #
+# Kit-internal build input — NOT distributed to targets (unlike
+# conventions.toml in this directory, which is byte-drift-checked in
+# target repos).
+#
 # Consumed by the plugin-manifests work (process-kit-wsi) to build the
 # house-rules-core plugin manifests; verified by
-# scripts/tests/test_core_manifest.py.
+# scripts/tests/test_core_manifest.py (run in kit CI).
 #
 # Inclusion criterion: the file's semantics must stand alone in a repo
-# with none of the full-tier workflow installed — zero bd/beads
-# references (grep-verified: `grep -niE '\bbd\b|beads'`), and every
+# with none of the full-tier workflow installed — zero bd/bead/beads
+# references (pattern enforced by the test suite), and every
 # cross-reference it makes (rules, skills, CLIs) resolves within this
 # list or degrades gracefully when it points at full-tier content.
 #
@@ -17,8 +21,27 @@
 #         SKILL.md ships), or cli (an executable under scripts/)
 #   path  repo-relative path to the file (rule, cli) or directory (skill)
 #
-# Adding an entry: the test suite enforces existence and bd-cleanliness;
-# run it after any change here or to a listed file.
+# Line order is not significant; duplicates are rejected by the parser.
+#
+# Packaging constraints for consumers:
+#   - cli paths are also the required target-relative install paths:
+#     core rule prose cites scripts/defer-lint and
+#     scripts/banned-token-scan literally, so packaging must preserve
+#     scripts/ placement in targets or rewrite those citations.
+#   - each rule also has a generated claude/rules/<name>.md projection
+#     (frontmatter stripped, .mdc -> .md); a Claude-flavored package
+#     derives those paths from the rule entries here.
+#
+# defer: core and full tiers share single rule/skill files, using
+# conditional prose ("where installed") instead of a rendered core
+# variant. ceiling: conditional clauses accumulating, or core wording
+# needing to differ from full-tier wording rather than merely
+# generalize. upgrade when: a core-tier edit would change full-tier
+# semantics — switch to a scripts/conventions rendered variant.
+#
+# Adding an entry: the test suite enforces existence and cleanliness;
+# kit CI runs it, but run it locally after any change here or to a
+# listed file.
 rule|cursor/rules/agent-identity.mdc
 rule|cursor/rules/defer-convention.mdc
 rule|cursor/rules/prose-voice.mdc

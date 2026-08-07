@@ -21,7 +21,7 @@ multi-file diffs.
 Tags: `delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:` — the examples
 below demonstrate usage. (Canonical definitions live in the simplify
 template in `skills/tier1-review/lenses.md`, where the full kit is
-installed; the examples are self-sufficient without it.)
+installed.)
 
 ## Examples
 

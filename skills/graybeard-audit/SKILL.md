@@ -15,9 +15,7 @@ findings biggest cut first.
 ## Tags
 
 `delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:` — same tags as
-graybeard-review; its examples demonstrate usage. (Canonical definitions
-live in the simplify template in `skills/tier1-review/lenses.md`, where
-the full kit is installed.)
+graybeard-review; its examples demonstrate usage.
 
 ## Hunt
 
