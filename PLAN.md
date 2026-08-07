@@ -1,12 +1,12 @@
-# PLAN — process-kit
+# PLAN — house-rules
 
-**Status:** Incubating (extracted 2026-07-15, fresh history, v0.1.0)
+**Status:** Public, v0.3.0 (extracted 2026-07-15 with fresh history; first public release v0.2.0 on 2026-08-06)
 
 ## What this repo is
 
-The standalone home for a portable AI-native development kit: versioned agent rules, a curated skills library, per-machine safety nets, and the init/sync/doctor scripts that distribute them to project repos. Extracted from a private predecessor playbook with all organization-specific content removed, so the kit can be shared — and potentially open-sourced — without entanglement.
+The standalone home for a portable AI-native development kit: versioned agent rules, a curated skills library, per-machine safety nets, and the init/sync/doctor scripts that distribute them to project repos. Extracted from a private predecessor playbook with all organization-specific content removed, so the kit could be shared without entanglement — and it now is: public on GitHub under Apache-2.0 since v0.2.0.
 
-## Current initiative: the skill layer
+## The skill layer
 
 The rules state the law; skills encode the procedures. Four process skills are being incubated here and battle-tested against a private consumer project before being considered stable:
 
@@ -19,7 +19,7 @@ The rules state the law; skills encode the procedures. Four process skills are b
 
 Design rule for all skills: **generic core / project overlay**. Skill cores never name a project, a person, or a project-specific parameter. Reader rosters, model assignments, tone rules, and repo paths live in a single per-project overlay file (`.agents/overlay.md`, one section per skill — convention documented in `skills/README.md`); each skill documents the overlay keys it reads and behaves sensibly when no overlay exists.
 
-Work is tracked in the consuming project's issue tracker during incubation, not in this repo.
+Work on the kit is tracked in this repo's own beads (`process-kit-*` IDs); during early incubation it was tracked in the consuming project's tracker.
 
 ## Decisions
 
@@ -29,8 +29,8 @@ Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0
 |----------|------------|
 | Kit name | **house-rules** (0001 A1, decided 2026-08-05); repo renamed at the v0.2.0 cut (process-kit-r4w) — old URLs redirect, local paths and the `PROCESS_KIT` env var keep their historical names |
 | License | Apache-2.0 (landed at publication, not before) |
-| Publication posture | Private until a readiness checklist is met (IP clear, skills stable, second-consumer proof, LICENSE + CONTRIBUTING, neutrality audit) |
-| Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |
+| Publication posture | Public since v0.2.0 (2026-08-06, history as-is), after the readiness checklist was met (IP clear, skills stable, second-consumer proof, LICENSE + CONTRIBUTING, neutrality audit) |
+| Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; this repo (now `house-rules`) is the sole canonical home |
 | Packaging | Plain repo for v1; Claude Code plugin bundle deferred |
 
 Marker strings in the installers now use the `house-rules:` prefix; recognition of the legacy `ai-dev-playbook:` markers was sunset 2026-08-06 (bead process-kit-26b) after a field sweep showed zero old-marker artifacts remaining — the in-place migration machinery (bead process-kit-0em) served its purpose and was removed. The one in-rule predecessor mention was removed 2026-08-05 when the minimalism family renamed to `graybeard-*` with linked upstream attribution (bead process-kit-8nx.1). At v0.3.0 (2026-08-07, epic process-kit-jy9, decision 0002) the tooling brand followed: `scripts/house-rules` dispatcher (`hr` alias) replaced the `playbook-*` script names, the `~/.playbook-*` dotfiles renamed with a clean break, and the active docs swept — "playbook" survives only in dated records and the generic `graybeard-playbook` name.

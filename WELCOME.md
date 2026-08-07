@@ -29,14 +29,17 @@ You need three things on your machine:
    ```bash
    brew install beads
    ```
+   No Homebrew? The [beads repository](https://github.com/steveyegge/beads) documents alternative install methods.
 
 Then clone this kit and run the per-machine setup:
 
 ```bash
-git clone https://github.com/kevglynn/house-rules ~/process-kit
-bash ~/process-kit/scripts/install-global-safety-net.sh
-bash ~/process-kit/scripts/install-aliases.sh
+git clone https://github.com/kevglynn/house-rules ~/house-rules
+bash ~/house-rules/scripts/install-global-safety-net.sh
+bash ~/house-rules/scripts/install-aliases.sh
 ```
+
+(`~/house-rules` is the canonical clone path. If you clone somewhere else, `install-aliases.sh` pins the `PROCESS_KIT` env var to your actual clone root and everything still works.)
 
 Both installers are safe for agents to run on your behalf. **If anything fails, that's your first agent-as-sensei exercise.** Paste the error into a chat with your agent and ask: *"Walk me through fixing this. Explain as you go — I'm rusty."* Don't debug it yourself. The whole point is to feel what it's like to have the agent do the work while you learn.
 
@@ -44,7 +47,7 @@ Both installers are safe for agents to run on your behalf. **If anything fails, 
 
 ## Step 2 — Open the kit in your IDE and ask the agent to acclimate you
 
-Open the `~/process-kit` folder in Cursor (or `cd ~/process-kit && claude` for Claude Code), start a new chat, and paste this prompt:
+Open the `~/house-rules` folder in Cursor (or `cd ~/house-rules && claude` for Claude Code), start a new chat, and paste this prompt:
 
 > I'm new to this kit and to agent-native development. I used to be a proficient coder but I've been away for years.
 >
@@ -67,8 +70,8 @@ You're not trying to memorize anything. You're building intuition for the loop.
 The repo ships with a throwaway practice project for exactly this purpose. `sandbox/README.md` describes it as a ~45-60 minute exercise:
 
 ```bash
-cd ~/process-kit/sandbox/project
-bash ~/process-kit/scripts/house-rules init --tool cursor --stealth
+cd ~/house-rules/sandbox/project
+bash ~/house-rules/scripts/house-rules init --tool cursor --stealth
 ```
 
 Then open that folder in your IDE and follow [`sandbox/WALKTHROUGH.md`](sandbox/WALKTHROUGH.md). The code is trivial on purpose — the point is the *workflow*. You'll watch the agent plan, claim tasks, write tests first, implement, and close with evidence.

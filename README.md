@@ -27,6 +27,8 @@ bash ~/house-rules/scripts/install-global-safety-net.sh    # per-machine agent r
 bash ~/house-rules/scripts/install-aliases.sh              # hr / house-rules aliases + PROCESS_KIT env var
 ```
 
+`~/house-rules` is the canonical clone path, but any path works: `install-aliases.sh` pins the `PROCESS_KIT` env var to wherever you actually cloned, and agent-facing commands fall back to `~/process-kit` (the historical default) when it is unset.
+
 Then point it at a project:
 
 ```bash

@@ -6,8 +6,10 @@ Setup takes under 5 minutes. Choose your path below.
 
 1. **Clone the kit** (skip if already cloned):
    ```bash
-   git clone https://github.com/kevglynn/house-rules ~/process-kit
+   git clone https://github.com/kevglynn/house-rules ~/house-rules
    ```
+
+   `~/house-rules` is the canonical path these docs use throughout. Cloned somewhere else? That works too: the scripts resolve their own location, and `install-aliases.sh` (below) pins the `PROCESS_KIT` env var to your actual clone root so the `hr` alias and the machine-global agent blocks find the kit. When `PROCESS_KIT` is unset, agent-facing commands fall back to `~/process-kit` — the kit's historical default path.
 
 2. **Install beads** (skip if `bd` is already on PATH):
    ```bash
@@ -27,26 +29,26 @@ Two installers, run once per machine. Both are non-interactive and safe for agen
 ```bash
 # Per-machine agent rule blocks (agent-identity, session-start, agent-protocol)
 # Writes marker-delimited blocks to ~/CLAUDE.md and generates a Cursor paste snippet.
-bash ~/process-kit/scripts/install-global-safety-net.sh
+bash ~/house-rules/scripts/install-global-safety-net.sh
 
 # hr / house-rules shell aliases + PROCESS_KIT env var
 # Writes ~/.house-rules-aliases.sh and adds one guarded source line to your rc file.
-bash ~/process-kit/scripts/install-aliases.sh
+bash ~/house-rules/scripts/install-aliases.sh
 ```
 
 After `install-global-safety-net.sh`, paste the generated snippet into **Cursor → Settings → Rules for AI → User Rules**. Recall the snippet any time with:
 
 ```bash
-cat ~/process-kit/global-safety-net/cursor-snippet.generated.md
+cat ~/house-rules/global-safety-net/cursor-snippet.generated.md
 # or
-bash ~/process-kit/scripts/install-global-safety-net.sh --print-cursor-snippet
+bash ~/house-rules/scripts/install-global-safety-net.sh --print-cursor-snippet
 ```
 
 Verify either installer anytime:
 
 ```bash
-bash ~/process-kit/scripts/install-global-safety-net.sh --check
-bash ~/process-kit/scripts/install-aliases.sh --check
+bash ~/house-rules/scripts/install-global-safety-net.sh --check
+bash ~/house-rules/scripts/install-aliases.sh --check
 ```
 
 Once both are installed, you can say **"use house-rules"** to any agent in any repo — it will read the agent-protocol block, run the doctor, and offer bootstrap/sync/update with your consent.
@@ -60,7 +62,7 @@ hr init                                        # interactive tool choice
 # or
 hr init --tool cursor                          # skip interactive prompt
 # or without aliases:
-bash ~/process-kit/scripts/house-rules init
+bash ~/house-rules/scripts/house-rules init
 ```
 
 The script will:
@@ -77,13 +79,13 @@ Verify everything is configured:
 
 ```bash
 hr doctor                                          # human-readable
-bash ~/process-kit/scripts/house-rules doctor      # same thing without aliases
+bash ~/house-rules/scripts/house-rules doctor      # same thing without aliases
 ```
 
 For agent-consumable status (structured exit codes + `SUMMARY:` footer):
 
 ```bash
-bash ~/process-kit/scripts/house-rules doctor --agent
+bash ~/house-rules/scripts/house-rules doctor --agent
 # Exit: 0=ok, 2=bootstrap_needed, 3=rules_drift, 1=error
 # On rules_drift, SUMMARY carries the format: rules_drift_cursor|rules_drift_claude|rules_drift_both
 ```
@@ -91,15 +93,15 @@ bash ~/process-kit/scripts/house-rules doctor --agent
 Options:
 ```bash
 # Explicit tool choice (required if stdin is not a terminal)
-bash ~/process-kit/scripts/house-rules init --tool cursor
-bash ~/process-kit/scripts/house-rules init --tool claude
-bash ~/process-kit/scripts/house-rules init --tool both
+bash ~/house-rules/scripts/house-rules init --tool cursor
+bash ~/house-rules/scripts/house-rules init --tool claude
+bash ~/house-rules/scripts/house-rules init --tool both
 
 # Personal repos (hides .beads from git)
-bash ~/process-kit/scripts/house-rules init --stealth
+bash ~/house-rules/scripts/house-rules init --stealth
 
 # Skip beads git hooks (default is to install them)
-bash ~/process-kit/scripts/house-rules init --tool cursor --no-hooks
+bash ~/house-rules/scripts/house-rules init --tool cursor --no-hooks
 ```
 
 `house-rules init` refuses non-interactive invocation without `--tool` — this is a security gate against prompt-injected agents silently bootstrapping a repo.
@@ -114,7 +116,7 @@ cd /path/to/your/project
 
 # Copy rules
 mkdir -p .cursor/rules
-cp ~/process-kit/cursor/rules/*.mdc .cursor/rules/
+cp ~/house-rules/cursor/rules/*.mdc .cursor/rules/
 
 # Initialize beads
 bd init
@@ -151,7 +153,7 @@ cd /path/to/your/project
 
 # Copy rules
 mkdir -p .claude/rules
-cp ~/process-kit/claude/rules/*.md .claude/rules/
+cp ~/house-rules/claude/rules/*.md .claude/rules/
 
 # Initialize beads
 bd init
@@ -199,7 +201,7 @@ New to these concepts? Read **[Core Concepts](docs/concepts.md)** for the full p
 The kit repo is the source of truth. To sync updates to all registered projects:
 
 ```bash
-cd ~/process-kit && git pull
+cd ~/house-rules && git pull
 
 # Sync to all projects in ~/.house-rules-sync-targets
 ./scripts/house-rules sync --format cursor   # Cursor users
@@ -221,7 +223,7 @@ Block sources are individual files at `global-safety-net/*.md`. Add a file + reg
 ## Verify your setup anytime
 
 ```bash
-bash ~/process-kit/scripts/house-rules doctor
+bash ~/house-rules/scripts/house-rules doctor
 ```
 
 Reports pass/fail/warn for every check and prints fix commands for anything that's off.

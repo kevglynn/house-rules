@@ -135,8 +135,10 @@ echo "Prerequisites:"
 
 if command -v bd &>/dev/null; then
   check_pass "bd on PATH ($(bd --version 2>/dev/null || echo 'version unknown'))"
-else
+elif command -v brew &>/dev/null; then
   check_fail "bd not on PATH" "brew install beads"
+else
+  check_fail "bd not on PATH" "See https://github.com/steveyegge/beads for install instructions"
 fi
 
 if command -v git &>/dev/null; then
