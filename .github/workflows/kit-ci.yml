@@ -1,5 +1,5 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Five gates: (1) the claude/rules projection must match the cursor/rules
+# Seven gates: (1) the claude/rules projection must match the cursor/rules
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
@@ -8,7 +8,9 @@
 # (5) the standalone checker suites hold their drift guards (fallback
 # parity pins, verbatim plumbing pins, exclusion contract, posture tests),
 # (6) profile distribution and the profile_drift SUMMARY contract hold
-# (byte-identical copy, exact key string, precedence, optional branch).
+# (byte-identical copy, exact key string, precedence, optional branch),
+# (7) shell commands fenced in the user-facing docs reference script
+# paths that exist in the tree (docs-path-lint).
 
 name: kit ci
 
@@ -58,14 +60,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Checker test suites (defer-lint, close-reason-lint, banned-token-scan)
+      - name: Checker test suites (defer-lint, close-reason-lint, banned-token-scan, docs-path-lint)
         # The profile-driven checkers' drift guards — fallback parity pins,
         # verbatim plumbing pins, exclusion-contract fixtures, resolution-
         # posture tests — must die in kit CI, not in a target repo (8dx
         # Tier 1 architect I2). test_conventions runs in fragment-regen;
         # test_tdd_ledger runs in tdd-ledger-verify.yml.
         working-directory: scripts/tests
-        run: python3 -m unittest test_defer_lint test_close_reason_lint test_banned_token_scan
+        run: python3 -m unittest test_defer_lint test_close_reason_lint test_banned_token_scan test_docs_path_lint
+
+  docs-path-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fenced doc commands reference real script paths
+        # The playbook-init.sh 404: during a rename wave, active docs
+        # taught a script name that no longer existed in the tree. This
+        # gate makes doc/script drift mechanical instead of a manual
+        # sweep. Existence check only — nothing is executed; the suite in
+        # checker-suites guards the checker itself.
+        run: python3 scripts/docs-path-lint --root .
 
   shellcheck:
     runs-on: ubuntu-latest

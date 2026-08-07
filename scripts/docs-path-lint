@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""docs-path-lint — fenced doc commands must reference real script paths.
+
+Extracts fenced shell blocks from the kit's user-facing docs (README.md,
+QUICKSTART.md, WELCOME.md, docs/*.md, sandbox/*.md) and fails when a
+referenced repo script path does not exist in the tree. Motivation: during
+a rename wave, active docs taught `playbook-init.sh` for a window in which
+the script had been renamed — a stranger's first command 404'd. Manual
+sweeps fixed it once; this checker makes the drift mechanical.
+
+KIT-REPO-ONLY: deliberately NOT in scripts/distributed-clis.list. It
+checks the kit's own docs against the kit's own tree; a target repo has
+neither this doc set nor these clone-path idioms, so distributing it
+would only add drift surface.
+
+Detection scope (existence checking only — nothing is executed): inside
+fenced blocks tagged bash/sh/shell/zsh/console (and untagged fences whose
+first line looks like a shell command), two token classes are resolved
+against the repo root:
+  - any token containing `scripts/` (bare, ./-prefixed, or behind a
+    known clone prefix: ~/process-kit/, ~/house-rules/, $HOME/<either>,
+    $PROCESS_KIT/, ${PROCESS_KIT:-$HOME/process-kit}/)
+  - any `bash`/`sh`/`source`-invoked path ending in .sh
+Tokens that are URLs, absolute/home paths outside a known clone prefix,
+or illustrative placeholders (<...>, YYYY/NNN/XXX, unresolved $VAR, ...)
+are skipped, and skips are counted so they are never silent. A token
+containing `*` is checked as a glob (missing when it matches nothing).
+
+Allow marker (deliberate exceptions, content-side like banned-token-scan's
+declared-token regions): a line outside any fence carrying the whole-token
+marker `docs-path-lint:allow` — typically an HTML comment — arms an
+exception for the NEXT fenced block. Bare marker: every missing path in
+that block is allowed; with space-separated repo-relative paths after the
+marker, only those paths are allowed. Allowed refs are counted in the
+output, never silently dropped.
+
+Exit codes: 0 clean · 1 missing paths · 2 usage error · 3 I/O error.
+Human-readable output by default; --json for agents. I/O and usage errors
+are JSON on stderr in both output modes. Non-interactive.
+"""
+
+import argparse
+import glob
+import json
+import re
+import sys
+from pathlib import Path
+
+DOC_GLOBS = ("README.md", "QUICKSTART.md", "WELCOME.md",
+             "docs/*.md", "sandbox/*.md")
+
+SHELL_TAGS = {"bash", "sh", "shell", "zsh", "console"}
+
+ALLOW_MARKER = "docs-path-lint:allow"
+
+# Longest first: the ${PROCESS_KIT:-...} idiom embeds $HOME/process-kit/.
+CLONE_PREFIXES = (
+    "${PROCESS_KIT:-$HOME/process-kit}/",
+    "${PROCESS_KIT}/",
+    "$PROCESS_KIT/",
+    "$HOME/process-kit/",
+    "$HOME/house-rules/",
+    "~/process-kit/",
+    "~/house-rules/",
+)
+
+# Illustrative-placeholder fragments; a token carrying any of these is a
+# doc's teaching device, not a checkable path.
+PLACEHOLDER_FRAGMENTS = ("<", ">", "YYYY", "NNN", "XXX", "...", "\u2026")
+
+# Class (a): any token containing scripts/ — prefix chars cover the clone
+# idioms above (~, $, {, }, :); suffix chars keep <placeholders> and *globs
+# attached so they can be classified instead of truncated.
+SCRIPTS_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9_.${}:~*+/-]*scripts/[A-Za-z0-9_.${}<>*/-]+")
+
+# Class (b): an invoked path ending in .sh, wherever it lives.
+INVOKED_SH_RE = re.compile(
+    r"\b(?:bash|sh|source)\s+([A-Za-z0-9_.${}:~*<>+/-]+\.sh)\b")
+
+# Untagged-fence heuristic: does the first nonblank line look like a shell
+# command? Deliberately narrow — a miss means an unscanned block, and a
+# tagged ```bash fence never needs this.
+SHELLISH_FIRST_RE = re.compile(
+    r"^(?:\$\s|#!|\./|~/"
+    r"|(?:bash|sh|zsh|source|cd|git|sudo|brew|npm|npx|pip3?|python3?"
+    r"|make|curl|wget|cat|cp|mv|rm|mkdir|chmod|echo|ls|export|bd|hr)\b)")
+
+EPILOG = f"""\
+the incident this checker prevents:
+  docs taught `bash ~/process-kit/scripts/playbook-init.sh` after the
+  script had been renamed to init.sh — a reader's first command 404'd.
+
+good — fenced command references a script that exists (exit 0):
+  ```bash
+  bash ~/process-kit/scripts/house-rules init --tool cursor
+  ```
+
+bad — fenced command references a missing script (exit 1):
+  ```bash
+  bash ~/process-kit/scripts/playbook-init.sh
+  ```
+  README.md:6: missing scripts/playbook-init.sh — bash ~/process-kit/...
+
+skipped, never flagged:
+  bash scripts/<your-script>.sh        placeholder (<...>)
+  bash scripts/$SCRIPT_NAME.sh         unresolved variable
+  source ~/.house-rules-aliases.sh     home path outside a clone prefix
+  curl https://example.com/x.sh        URL
+
+allow marker (deliberate exceptions):
+  <!-- {ALLOW_MARKER} -->                       allow the whole next fence
+  <!-- {ALLOW_MARKER} scripts/demo.sh -->       allow only that path in it
+  Allowed refs are counted in the output — suppression is never silent.
+
+known limitations:
+  - existence checking only: a command can reference a real path and
+    still be wrong (bad flags, wrong order); nothing is executed
+  - fence parsing is a simple open/close toggle: nested fences inside a
+    ```markdown example block are treated as fence boundaries, not
+    content (the current doc corpus has none)
+  - prose outside fences is not scanned — inline `code spans` teaching a
+    stale path escape this checker
+  - the clone-prefix list is kit-specific by design (see KIT-REPO-ONLY
+    in the description)
+"""
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+def nonempty(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must be a non-empty string")
+    return value
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "exit_code": 2},
+                  sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(2)
+
+
+def marker_at(line, marker):
+    """Index where `marker` stands as a whole token in `line` (not embedded
+    in a longer word), else -1. Same word-ish boundary contract as
+    banned-token-scan's declared-token markers."""
+    idx = line.find(marker)
+    while idx != -1:
+        end = idx + len(marker)
+        before_ok = idx == 0 or not (line[idx - 1].isalnum()
+                                     or line[idx - 1] in "_-")
+        after_ok = end >= len(line) or not (line[end].isalnum()
+                                            or line[end] in "_-")
+        if before_ok and after_ok:
+            return idx
+        idx = line.find(marker, idx + 1)
+    return -1
+
+
+def resolve_token(token):
+    """Classify a candidate token. Returns ("check", repo-relative path)
+    or ("skip", reason)."""
+    if "://" in token:
+        return ("skip", "url")
+    if any(frag in token for frag in PLACEHOLDER_FRAGMENTS):
+        return ("skip", "placeholder")
+    for prefix in CLONE_PREFIXES:
+        if token.startswith(prefix):
+            token = token[len(prefix):]
+            break
+    else:
+        if token.startswith("./"):
+            token = token[2:]
+        elif token.startswith(("~", "/")):
+            return ("skip", "outside-repo")
+    # A $ surviving prefix-stripping is an unresolved variable, not a path.
+    if "$" in token:
+        return ("skip", "placeholder")
+    token = token.strip("/")
+    if not token:
+        return ("skip", "placeholder")
+    return ("check", token)
+
+
+def path_exists(root, relpath):
+    if "*" in relpath:
+        return bool(glob.glob(str(root / relpath)))
+    return (root / relpath).exists()
+
+
+def extract_tokens(line):
+    """Candidate path tokens on one line, deduped, order-preserved.
+    Quotes are scrubbed first so quoted clone idioms parse as one token."""
+    scrubbed = line.replace('"', "").replace("'", "").replace("`", "")
+    tokens = SCRIPTS_TOKEN_RE.findall(scrubbed)
+    tokens += INVOKED_SH_RE.findall(scrubbed)
+    return list(dict.fromkeys(tokens))
+
+
+def iter_fences(lines):
+    """Yields (opener_lineno, info_tag, [(lineno, text), ...]) per fenced
+    block. Simple toggle state machine: any ``` line opens or closes; an
+    unclosed fence at EOF still yields its content."""
+    block = None
+    tag = None
+    opener = None
+    for lineno, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if block is None:
+                block = []
+                tag = stripped.lstrip("`").strip().lower()
+                opener = lineno
+            else:
+                yield opener, tag, block
+                block = None
+        elif block is not None:
+            block.append((lineno, line))
+    if block is not None:
+        yield opener, tag, block
+
+
+def block_is_scannable(tag, block):
+    if tag in SHELL_TAGS:
+        return True
+    if tag:
+        return False
+    for _, text in block:
+        first = text.strip()
+        if first:
+            return bool(SHELLISH_FIRST_RE.match(first))
+    return False
+
+
+def scan_file(rel, lines, root):
+    """Returns (findings, fences_scanned, refs_checked, refs_allowed,
+    refs_skipped) for one doc."""
+    # Arm allow exceptions: marker lines outside fences apply to the next
+    # fence opener after them. allow_at[opener_lineno] = set of paths
+    # (empty set = allow everything in that block).
+    fences = list(iter_fences(lines))
+    openers = [op for op, _, _ in fences]
+    in_fence_lines = set()
+    for op, _, block in fences:
+        in_fence_lines.add(op)
+        in_fence_lines.update(n for n, _ in block)
+    allow_at = {}
+    for lineno, line in enumerate(lines, start=1):
+        if lineno in in_fence_lines:
+            continue
+        idx = marker_at(line, ALLOW_MARKER)
+        if idx == -1:
+            continue
+        args = line[idx + len(ALLOW_MARKER):].replace("-->", " ").split()
+        target = next((op for op in openers if op > lineno), None)
+        if target is not None:
+            allow_at.setdefault(target, set()).update(args)
+
+    findings = []
+    fences_scanned = 0
+    refs_checked = refs_allowed = refs_skipped = 0
+    for opener, tag, block in fences:
+        if not block_is_scannable(tag, block):
+            continue
+        fences_scanned += 1
+        allowed_paths = allow_at.get(opener)
+        seen = set()
+        for lineno, text in block:
+            for token in extract_tokens(text):
+                verdict, value = resolve_token(token)
+                if verdict == "skip":
+                    refs_skipped += 1
+                    continue
+                if (lineno, value) in seen:
+                    continue
+                seen.add((lineno, value))
+                refs_checked += 1
+                if path_exists(root, value):
+                    continue
+                if allowed_paths is not None and (
+                        not allowed_paths or value in allowed_paths):
+                    refs_allowed += 1
+                    continue
+                findings.append({
+                    "file": rel,
+                    "line": lineno,
+                    "path": value,
+                    "token": token,
+                    "text": text.strip()[:200],
+                })
+    return findings, fences_scanned, refs_checked, refs_allowed, refs_skipped
+
+
+def collect_docs(root):
+    docs = []
+    for pattern in DOC_GLOBS:
+        docs.extend(sorted(root.glob(pattern)))
+    return [d for d in docs if d.is_file()]
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="docs-path-lint",
+        description=(
+            "Check that shell commands fenced in the kit's user-facing "
+            "docs (README.md, QUICKSTART.md, WELCOME.md, docs/*.md, "
+            "sandbox/*.md) reference repo script paths that exist. "
+            "Existence checking only — nothing is executed. Kit-repo-only: "
+            "not distributed to target repos. Exit codes: 0 clean, "
+            "1 missing paths, 2 usage error, 3 I/O error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--root", default=".", type=nonempty,
+                        help="Repo root to check (default: current directory)")
+    parser.add_argument("--json", action="store_true",
+                        help="Structured JSON output on stdout")
+    args = parser.parse_args(argv)
+
+    root = Path(args.root)
+    if not root.is_dir():
+        emit_error(f"root is not a directory: {root}", "io", 3)
+    root = root.resolve()
+
+    docs = collect_docs(root)
+    if not docs:
+        emit_error(
+            f"no doc files found under {root} (looked for "
+            f"{', '.join(DOC_GLOBS)}) — wrong --root?", "io", 3)
+
+    findings = []
+    fences_scanned = refs_checked = refs_allowed = refs_skipped = 0
+    for doc in docs:
+        rel = doc.relative_to(root).as_posix()
+        try:
+            lines = doc.read_text(encoding="utf-8",
+                                  errors="replace").splitlines()
+        except OSError as e:
+            emit_error(f"cannot read {rel}: {e}", "io", 3)
+        f, fences, checked, allowed, skipped = scan_file(rel, lines, root)
+        findings.extend(f)
+        fences_scanned += fences
+        refs_checked += checked
+        refs_allowed += allowed
+        refs_skipped += skipped
+    exit_code = 1 if findings else 0
+
+    if args.json:
+        json.dump({
+            "ok": not findings,
+            "root": str(root),
+            "files_scanned": len(docs),
+            "fences_scanned": fences_scanned,
+            "refs_checked": refs_checked,
+            "refs_allowed": refs_allowed,
+            "refs_skipped": refs_skipped,
+            "findings": findings,
+        }, sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return exit_code
+
+    for f in findings:
+        print(f"{f['file']}:{f['line']}: missing {f['path']} — {f['text']}")
+    status = ("clean" if not findings
+              else f"{len(findings)} missing path(s)")
+    extra = ""
+    if refs_allowed or refs_skipped:
+        extra = (f" [{refs_allowed} allowlisted, "
+                 f"{refs_skipped} skipped]")
+    print(f"Scanned {len(docs)} doc file(s), {fences_scanned} shell "
+          f"fence(s), {refs_checked} path ref(s): {status}.{extra}")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
