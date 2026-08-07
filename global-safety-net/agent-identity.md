@@ -19,6 +19,6 @@ Instead describe: **complexity** (dependencies, unknowns), **scope**
 If you catch drift mid-response, correct inline and continue. See
 `.cursor/rules/agent-identity.mdc` (Cursor) or
 `.claude/rules/agent-identity.md` (Claude Code) in any
-playbook-bootstrapped project for the full rule (banned-token
+house-rules-bootstrapped project for the full rule (banned-token
 scan, review protocol, and edge cases). The canonical source is
-`cursor/rules/agent-identity.mdc` in the playbook repo itself.
+`cursor/rules/agent-identity.mdc` in the kit repo itself.
