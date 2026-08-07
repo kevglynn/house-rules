@@ -526,7 +526,10 @@ TARGETS_FILE="$HOME/.playbook-sync-targets"
 has_beads=false
 [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
 
-if [ -f "$TARGETS_FILE" ]; then
+if $is_playbook_repo; then
+  # The kit is the sync SOURCE — registration as a target is inapplicable.
+  echo "  – kit repo itself: sync source, not a target (registration check skipped)"
+elif [ -f "$TARGETS_FILE" ]; then
   if grep -qF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
     check_pass "Project is in ~/.playbook-sync-targets"
   elif $has_beads; then
