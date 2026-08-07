@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Installs the playbook's "global safety net" — condensed, per-machine rule
-# blocks that apply even in repos never bootstrapped with playbook-init.sh.
+# Installs the kit's "global safety net" — condensed, per-machine rule
+# blocks that apply even in repos never bootstrapped with init.sh.
 #
 # Writes marker-delimited blocks into ~/CLAUDE.md (idempotent) and emits a
 # combined paste snippet for Cursor's Global Preferences user rule
@@ -19,8 +19,8 @@ set -uo pipefail
 #   ./scripts/install-global-safety-net.sh --print-cursor-snippet  # Re-print paste artifact
 #   ./scripts/install-global-safety-net.sh --help
 
-PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SAFETY_NET_DIR="$PLAYBOOK_ROOT/global-safety-net"
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SAFETY_NET_DIR="$KIT_ROOT/global-safety-net"
 CLAUDE_MD="$HOME/CLAUDE.md"
 CURSOR_SNIPPET_FILE="$SAFETY_NET_DIR/cursor-snippet.generated.md"
 MODE="install"
@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     --print-cursor-snippet) MODE="print-snippet"; shift ;;
     -h|--help)
       cat <<'EOF'
-Installs the playbook's global safety net (per-machine agent rule blocks).
+Installs the kit's global safety net (per-machine agent rule blocks).
 
 Usage: install-global-safety-net.sh [options]
 
@@ -60,7 +60,7 @@ What this is for:
   Per-repo .cursor/rules/ only apply in bootstrapped projects. A fresh repo
   without the rules sees the agent revert to its base-model defaults —
   including human-baseline estimation and no discoverability of the
-  playbook itself. This script installs the condensed blocks at the
+  kit itself. This script installs the condensed blocks at the
   per-machine level so they apply everywhere.
 
   Re-run any time to pick up content updates. Run --check in CI or the
@@ -274,7 +274,7 @@ The full snippet is also saved at:
 You can recall it any time with:
   cat "$CURSOR_SNIPPET_FILE"
   # or
-  bash "$PLAYBOOK_ROOT/scripts/install-global-safety-net.sh" --print-cursor-snippet
+  bash "$KIT_ROOT/scripts/install-global-safety-net.sh" --print-cursor-snippet
 
 ────────────────── PASTE BELOW THIS LINE ───────────────────────
 EOF
@@ -294,9 +294,9 @@ EOF
 # --- Dispatch ---
 
 # Verify all source files exist before any mode runs.
-# Use exit 1 (generic error). Exit 2 is reserved for playbook-doctor.sh's
+# Use exit 1 (generic error). Exit 2 is reserved for doctor.sh's
 # "bootstrap_needed" contract — agents dispatching on exit codes from
-# this script must not be misled into running playbook-init.sh.
+# this script must not be misled into running init.sh.
 for id in "${BLOCKS[@]}"; do
   src="$(block_source_path "$id")"
   if [ ! -f "$src" ]; then

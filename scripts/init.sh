@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-command project setup for the playbook (house-rules).
+# One-command project setup for house-rules.
 # Replaces the 7+ manual steps in QUICKSTART.md with a single invocation.
 #
 # Usage:
-#   ./scripts/playbook-init.sh                    # Interactive — asks for tool choice
-#   ./scripts/playbook-init.sh --tool cursor      # Set up for Cursor
-#   ./scripts/playbook-init.sh --tool claude       # Set up for Claude Code
-#   ./scripts/playbook-init.sh --tool both         # Set up for both tools
-#   ./scripts/playbook-init.sh --stealth           # Use bd init --stealth (personal repos)
-#   ./scripts/playbook-init.sh --no-hooks          # Skip bd hooks install (default: install)
-#   ./scripts/playbook-init.sh --skills            # Copy skills into .cursor/skills/
-#   ./scripts/playbook-init.sh --help
+#   ./scripts/init.sh                    # Interactive — asks for tool choice
+#   ./scripts/init.sh --tool cursor      # Set up for Cursor
+#   ./scripts/init.sh --tool claude       # Set up for Claude Code
+#   ./scripts/init.sh --tool both         # Set up for both tools
+#   ./scripts/init.sh --stealth           # Use bd init --stealth (personal repos)
+#   ./scripts/init.sh --no-hooks          # Skip bd hooks install (default: install)
+#   ./scripts/init.sh --skills            # Copy skills into .cursor/skills/
+#   ./scripts/init.sh --help
 
-PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL=""
 STEALTH=false
 NO_HOOKS=false
@@ -29,15 +29,15 @@ while [[ $# -gt 0 ]]; do
     --skills) SKILLS=true; shift ;;
     --help|-h)
       cat <<'EOF'
-One-command project setup for the playbook (house-rules).
+One-command project setup for house-rules.
 
-Usage: playbook-init.sh [options]
+Usage: init.sh [options]
 
 Options:
   --tool cursor|claude|both   Which tool to set up for (default: ask)
   --stealth                   Use bd init --stealth (for personal repos)
   --no-hooks                  Skip bd hooks install (default: install beads git hooks)
-  --skills                    Copy skill directories from playbook into .cursor/skills/
+  --skills                    Copy skill directories from the kit into .cursor/skills/
   --help                      Show this help
 
 Run from the root of the project you want to set up.
@@ -50,7 +50,7 @@ done
 
 # ---------- Concurrency lock (mkdir is atomic on all filesystems) ----------
 
-LOCKDIR="$PROJECT_ROOT/.playbook-init.lock"
+LOCKDIR="$PROJECT_ROOT/.house-rules-init.lock"
 # Clean stale locks older than 10 minutes
 if [ -d "$LOCKDIR" ]; then
   lock_age=$(( $(date +%s) - $(stat -f %m "$LOCKDIR" 2>/dev/null || stat -c %Y "$LOCKDIR" 2>/dev/null || echo 0) ))
@@ -60,12 +60,12 @@ if [ -d "$LOCKDIR" ]; then
   fi
 fi
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
-  echo "Another playbook-init is running for this project. Exiting."
+  echo "Another house-rules init is running for this project. Exiting."
   exit 1
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
-echo "=== Playbook Init: $(basename "$PROJECT_ROOT") ==="
+echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
 echo ""
 
 # ---------- Prerequisites ----------
@@ -99,12 +99,12 @@ else
   echo "✓ Git repository detected"
 fi
 
-if [ ! -d "$PLAYBOOK_ROOT/cursor/rules" ]; then
-  echo "✗ Playbook repo not found at $PLAYBOOK_ROOT"
+if [ ! -d "$KIT_ROOT/cursor/rules" ]; then
+  echo "✗ Kit repo not found at $KIT_ROOT"
   echo "  Fix: git clone https://github.com/kevglynn/house-rules ~/process-kit"
   errors=$((errors + 1))
 else
-  echo "✓ Playbook repo at $PLAYBOOK_ROOT"
+  echo "✓ Kit repo at $KIT_ROOT"
 fi
 
 if [ $errors -gt 0 ]; then
@@ -158,13 +158,13 @@ if [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]]; then
   # Guard cp explicitly: set -e + an empty source glob or read-only
   # destination would otherwise abort the script mid-bootstrap with no
   # diagnostic and a misleading "0 rules" summary.
-  if ! cp "$PLAYBOOK_ROOT/cursor/rules/"*.mdc "$dest/" 2>/tmp/playbook-init.cp.err; then
+  if ! cp "$KIT_ROOT/cursor/rules/"*.mdc "$dest/" 2>/tmp/house-rules-init.cp.err; then
     echo "✗ Failed to copy Cursor rules → $dest"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
     exit 1
   fi
-  rm -f /tmp/playbook-init.cp.err
+  rm -f /tmp/house-rules-init.cp.err
   count=$(ls -1 "$dest/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Cursor rules → .cursor/rules/"
 fi
@@ -172,13 +172,13 @@ fi
 if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.claude/rules"
   mkdir -p "$dest"
-  if ! cp "$PLAYBOOK_ROOT/claude/rules/"*.md "$dest/" 2>/tmp/playbook-init.cp.err; then
+  if ! cp "$KIT_ROOT/claude/rules/"*.md "$dest/" 2>/tmp/house-rules-init.cp.err; then
     echo "✗ Failed to copy Claude rules → $dest"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
     exit 1
   fi
-  rm -f /tmp/playbook-init.cp.err
+  rm -f /tmp/house-rules-init.cp.err
   count=$(ls -1 "$dest/"*.md 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Claude Code rules → .claude/rules/"
 fi
@@ -186,7 +186,7 @@ fi
 # ---------- Copy skills (opt-in) ----------
 
 if $SKILLS; then
-  skills_src="$PLAYBOOK_ROOT/skills"
+  skills_src="$KIT_ROOT/skills"
   # Tool-aware destinations: Claude Code reads .claude/skills/, Cursor reads
   # .cursor/skills/. A single hardcoded .cursor/skills/ dest previously left
   # --tool claude bootstraps with zero Claude-readable skills.
@@ -212,7 +212,7 @@ if $SKILLS; then
       fi
     done
   else
-    echo "  (no skills/ directory in playbook — skipping)"
+    echo "  (no skills/ directory in the kit — skipping)"
   fi
 fi
 
@@ -220,25 +220,25 @@ fi
 #
 # Every kit CLI that must live in the target repo is registered once in
 # scripts/distributed-clis.list; this loop distributes each entry and
-# playbook-doctor.sh drift-checks the same manifest. Per-script rationale
+# doctor.sh drift-checks the same manifest. Per-script rationale
 # and the field layout live in the manifest's header comments.
 
-clis_manifest="$PLAYBOOK_ROOT/scripts/distributed-clis.list"
+clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
 
 if [ -f "$clis_manifest" ]; then
   while IFS='|' read -r cli_name _cli_rest; do
     case "$cli_name" in ""|\#*) continue ;; esac
-    cli_src="$PLAYBOOK_ROOT/scripts/$cli_name"
+    cli_src="$KIT_ROOT/scripts/$cli_name"
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
     [ -f "$cli_src" ] || continue
     mkdir -p "$PROJECT_ROOT/scripts"
-    if ! cp -f "$cli_src" "$cli_dest" 2>/tmp/playbook-init.cp.err; then
+    if ! cp -f "$cli_src" "$cli_dest" 2>/tmp/house-rules-init.cp.err; then
       echo "✗ Failed to copy $cli_name → scripts/"
-      sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-      rm -f /tmp/playbook-init.cp.err
+      sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+      rm -f /tmp/house-rules-init.cp.err
       exit 1
     fi
-    rm -f /tmp/playbook-init.cp.err
+    rm -f /tmp/house-rules-init.cp.err
     chmod +x "$cli_dest"
     echo "✓ Copied $cli_name CLI → scripts/$cli_name"
   done < "$clis_manifest"
@@ -249,21 +249,21 @@ fi
 # ---------- Conventions profile (data-shaped convention source) ----------
 #
 # The data file the distributed checkers read; ships verbatim (byte-drift-
-# checked by playbook-doctor, SUMMARY key profile_drift). Ownership, skew,
+# checked by house-rules doctor, SUMMARY key profile_drift). Ownership, skew,
 # and inert-key rules: docs/operations.md.
 # defer: hand-written parallel block instead of generalizing the manifest to
 # data files. ceiling: duplicates the CLI-loop copy idiom per file. upgrade
 # when: a second data-shaped file distributes.
-profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
+profile_src="$KIT_ROOT/profiles/conventions.toml"
 if [ -f "$profile_src" ]; then
   mkdir -p "$PROJECT_ROOT/profiles"
-  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>/tmp/playbook-init.cp.err; then
+  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>/tmp/house-rules-init.cp.err; then
     echo "✗ Failed to copy profiles/conventions.toml"
-    sed 's/^/    /' /tmp/playbook-init.cp.err 2>/dev/null
-    rm -f /tmp/playbook-init.cp.err
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
     exit 1
   fi
-  rm -f /tmp/playbook-init.cp.err
+  rm -f /tmp/house-rules-init.cp.err
   echo "✓ Copied conventions profile → profiles/conventions.toml"
 else
   echo "⚠ Conventions profile missing at $profile_src — distributed checkers will fall back to built-in grammars"
@@ -271,7 +271,7 @@ fi
 
 # The CI gate that makes the ledger non-bypassable (not-overwriting, like
 # the PR template — target repos may have customized it).
-ledger_wf_src="$PLAYBOOK_ROOT/templates/tdd-ledger-verify.yml"
+ledger_wf_src="$KIT_ROOT/templates/tdd-ledger-verify.yml"
 ledger_wf_dest="$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml"
 
 if [ -f "$ledger_wf_src" ] && [ -f "$PROJECT_ROOT/scripts/tdd-ledger" ]; then
@@ -309,7 +309,7 @@ fi
 
 # ---------- Beads setup ----------
 
-# Note: we skip 'bd setup cursor/claude' here because the playbook's 8 rules
+# Note: we skip 'bd setup cursor/claude' here because the kit's rules
 # already provide beads workflow guidance with more depth than bd's built-in
 # integration rule. Running bd setup would add a redundant beads.mdc.
 
@@ -381,7 +381,7 @@ fi
 
 # ---------- Governance ----------
 
-coc_src="$PLAYBOOK_ROOT/CODE_OF_CONDUCT.md"
+coc_src="$KIT_ROOT/CODE_OF_CONDUCT.md"
 coc_dest="$PROJECT_ROOT/CODE_OF_CONDUCT.md"
 
 if [ -f "$coc_src" ]; then
@@ -395,7 +395,7 @@ fi
 
 # Canonical source is the kit's own .github/ copy (single source: GitHub
 # reads it live on the kit repo, and init distributes the same file).
-pr_template_src="$PLAYBOOK_ROOT/.github/pull_request_template.md"
+pr_template_src="$KIT_ROOT/.github/pull_request_template.md"
 pr_template_dest="$PROJECT_ROOT/.github/pull_request_template.md"
 
 if [ -f "$pr_template_src" ]; then
@@ -413,7 +413,7 @@ fi
 # AGENTS.md is a de-facto 2026 convention read by Cursor, Claude Code,
 # Codex, Copilot, and future agents. `bd init` also writes an AGENTS.md
 # about beads, so we cannot assume the file is ours — we append a
-# marker-delimited playbook section, idempotent, respecting whatever
+# marker-delimited house-rules section, idempotent, respecting whatever
 # content is already there.
 
 agents_md="$PROJECT_ROOT/AGENTS.md"
@@ -426,11 +426,11 @@ agents_end="<!-- END house-rules:agents-md -->"
 
 # Version stamp: sourced from the kit's VERSION file (single source of truth).
 # Rendered as a machine-parseable marker line inside the section so
-# playbook-doctor.sh can compare the target's stamp against the kit version.
+# doctor.sh can compare the target's stamp against the kit version.
 playbook_version="unknown"
 playbook_version_label="unknown"
-if [ -f "$PLAYBOOK_ROOT/VERSION" ]; then
-  playbook_version="$(tr -d '[:space:]' < "$PLAYBOOK_ROOT/VERSION")"
+if [ -f "$KIT_ROOT/VERSION" ]; then
+  playbook_version="$(tr -d '[:space:]' < "$KIT_ROOT/VERSION")"
   playbook_version_label="v$playbook_version"
 fi
 generated_on="$(date -u +%Y-%m-%d)"
@@ -460,12 +460,12 @@ This project follows [house-rules](https://github.com/kevglynn/house-rules) — 
 
 **Diagnose setup (human-readable):**
 \`\`\`bash
-bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh"
+bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/doctor.sh"
 \`\`\`
 
 **Diagnose (agent-consumable; structured exit codes + \`SUMMARY:\` line):**
 \`\`\`bash
-bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/playbook-doctor.sh" --agent
+bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/doctor.sh" --agent
 \`\`\`
 
 Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=drift, \`1\`=error. On exit 3 the SUMMARY key names what drifted: \`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\` for stale rules, \`profile_drift\` for a stale \`profiles/conventions.toml\`, or ${cli_drift_keys_md:-a per-CLI drift key} for a stale distributed CLI (fix: re-copy the named file from the kit). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full dispatch table.
@@ -481,7 +481,7 @@ git clone https://github.com/kevglynn/house-rules ~/process-kit
 bash ~/process-kit/scripts/install-global-safety-net.sh   # per-machine, once
 \`\`\`
 
-Generated by \`playbook-init.sh\` on ${generated_on} from house-rules ${playbook_version_label}.
+Generated by \`init.sh\` on ${generated_on} from house-rules ${playbook_version_label}.
 <!-- house-rules:version ${playbook_version} -->
 $agents_end
 AGENTS_SECTION
@@ -490,7 +490,7 @@ AGENTS_SECTION
 # Replace the existing marker-delimited block in place (atomic tmp+mv), used
 # when the section is present but its version stamp is stale or missing.
 # Emits exactly one fresh section even if the file somehow carries several.
-refresh_playbook_agents_section() {
+refresh_agents_section() {
   local tmp in_block=0 emitted=0
   tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
   while IFS= read -r line || [ -n "$line" ]; do
@@ -518,7 +518,7 @@ refresh_playbook_agents_section() {
   # would claim success while rewriting nothing.
   if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
     rm -f "$tmp"
-    echo "⚠ $agents_md: playbook section markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    echo "⚠ $agents_md: house-rules section markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
     return 1
   fi
   mv "$tmp" "$agents_md"
@@ -526,9 +526,9 @@ refresh_playbook_agents_section() {
 
 if [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
   if grep -qF "<!-- house-rules:version ${playbook_version} -->" "$agents_md"; then
-    echo "✓ AGENTS.md playbook section current (${playbook_version_label})"
-  elif refresh_playbook_agents_section; then
-    echo "✓ Refreshed AGENTS.md playbook section → ${playbook_version_label} (stamp was stale or missing)"
+    echo "✓ AGENTS.md house-rules section current (${playbook_version_label})"
+  elif refresh_agents_section; then
+    echo "✓ Refreshed AGENTS.md house-rules section → ${playbook_version_label} (stamp was stale or missing)"
   fi
 elif [ -f "$agents_md" ]; then
   # Atomic write: stage to mktemp, then mv. A partial multi-line append
@@ -544,7 +544,7 @@ elif [ -f "$agents_md" ]; then
     render_playbook_agents_section
   } > "$agents_tmp"
   mv "$agents_tmp" "$agents_md"
-  echo "✓ Appended playbook section to existing AGENTS.md"
+  echo "✓ Appended house-rules section to existing AGENTS.md"
 else
   agents_tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
   {
@@ -553,7 +553,7 @@ else
     render_playbook_agents_section
   } > "$agents_tmp"
   mv "$agents_tmp" "$agents_md"
-  echo "✓ Created AGENTS.md with playbook section"
+  echo "✓ Created AGENTS.md with house-rules section"
 fi
 
 # ---------- Sync targets ----------
@@ -618,4 +618,4 @@ echo '  3. Say "Executor mode" to start implementing'
 echo "  4. Run: bd prime (agent does this automatically at session start)"
 echo "  5. ⚠ Rules take effect on next session start — restart your editor/CLI"
 echo ""
-echo "Verify setup: bash $PLAYBOOK_ROOT/scripts/playbook-doctor.sh"
+echo "Verify setup: bash $KIT_ROOT/scripts/doctor.sh"

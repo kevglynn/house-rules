@@ -17,7 +17,7 @@ set -uo pipefail
 #   ./scripts/install-aliases.sh --uninstall    # Remove aliases file + rc source line
 #   ./scripts/install-aliases.sh --help
 
-PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ALIASES_FILE="$HOME/.playbook-aliases.sh"
 # Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
 # Recognition of the predecessor playbook's legacy marker prefix was
@@ -47,8 +47,8 @@ Modes:
   --help        Show this help.
 
 Installed aliases:
-  pbi                  Bootstrap the current project (playbook-init.sh)
-  pbd                  Diagnose the current project (playbook-doctor.sh)
+  pbi                  Bootstrap the current project (init.sh)
+  pbd                  Diagnose the current project (doctor.sh)
   PROCESS_KIT          Exported env var pointing at the kit clone
 
 The aliases source ~/.playbook-aliases.sh, which is overwritten on each
@@ -107,13 +107,13 @@ render_aliases_file() {
 # Re-run installer:
 #   bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/install-aliases.sh"
 
-export PROCESS_KIT="\${PROCESS_KIT:-$PLAYBOOK_ROOT}"
+export PROCESS_KIT="\${PROCESS_KIT:-$KIT_ROOT}"
 
 # pbi: bootstrap the current project (interactive or pass --tool)
-alias pbi='bash "\$PROCESS_KIT/scripts/playbook-init.sh"'
+alias pbi='bash "\$PROCESS_KIT/scripts/init.sh"'
 
 # pbd: diagnose the current project (human-readable)
-alias pbd='bash "\$PROCESS_KIT/scripts/playbook-doctor.sh"'
+alias pbd='bash "\$PROCESS_KIT/scripts/doctor.sh"'
 ALIASES
 }
 
@@ -229,8 +229,8 @@ Fish shell isn't supported yet by install-aliases.sh.
 Workaround — paste the following into your ~/.config/fish/config.fish:
 
   set -x PROCESS_KIT "$HOME/process-kit"
-  alias pbi="bash \"$PROCESS_KIT/scripts/playbook-init.sh\""
-  alias pbd="bash \"$PROCESS_KIT/scripts/playbook-doctor.sh\""
+  alias pbi="bash \"$PROCESS_KIT/scripts/init.sh\""
+  alias pbd="bash \"$PROCESS_KIT/scripts/doctor.sh\""
 
 Or use the scripts directly. File an issue if proper fish support would help.
 FISH
@@ -335,7 +335,7 @@ case "$MODE" in
     echo "Installed aliases:"
     echo "  pbi            Bootstrap the current project"
     echo "  pbd            Diagnose the current project"
-    echo "  PROCESS_KIT → $PLAYBOOK_ROOT"
+    echo "  PROCESS_KIT → $KIT_ROOT"
     echo ""
     echo "Verify: bash $(cd "$(dirname "$0")" && pwd)/install-aliases.sh --check"
     if [ $failed -gt 0 ]; then

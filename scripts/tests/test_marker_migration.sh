@@ -13,7 +13,7 @@ set -u
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SAFETY_NET="$KIT_ROOT/scripts/install-global-safety-net.sh"
 ALIASES="$KIT_ROOT/scripts/install-aliases.sh"
-INIT="$KIT_ROOT/scripts/playbook-init.sh"
+INIT="$KIT_ROOT/scripts/init.sh"
 
 PASS=0
 FAIL=0
@@ -34,7 +34,7 @@ new_home() {
 }
 
 # bd shim: this suite exercises marker-rewrite logic, not beads.
-# playbook-init's preflight hard-fails when bd is absent (CI runners don't
+# the init preflight hard-fails when bd is absent (CI runners don't
 # have it), so a no-op stub keeps the preflight green and makes local and
 # CI runs behaviorally identical (process-kit-4ma).
 BD_SHIM_DIR="$(mktemp -d)"
@@ -96,7 +96,7 @@ HOME="$h" bash "$ALIASES" --shell bash > /dev/null 2>&1
 sha2="$(sha256sum "$h/.bashrc")"
 check "rc second run: byte-identical" test "$sha1" = "$sha2"
 
-# --- 3. Fresh AGENTS.md section via playbook-init; idempotent second run ---
+# --- 3. Fresh AGENTS.md section via init.sh; idempotent second run ---
 h="$(new_home)"
 repo="$(mktemp -d)"
 CLEANUP+=("$repo")
@@ -116,7 +116,7 @@ out2="$(cd "$repo" && HOME="$h" bash "$INIT" --tool cursor --no-hooks 2>&1)"
 sha2="$(sha256sum "$repo/AGENTS.md")"
 check "agents-md second run: byte-identical" test "$sha1" = "$sha2"
 check "agents-md second run: says current" \
-  out_has "$out2" "AGENTS.md playbook section current"
+  out_has "$out2" "AGENTS.md house-rules section current"
 
 # --- 4. Orphan BEGIN (no END) in CLAUDE.md: user content below the orphan
 #        marker must survive; the rewrite must refuse, not truncate ---
@@ -153,7 +153,7 @@ check "rc orphan BEGIN at install: user content survives" \
 check "rc orphan BEGIN at install: rc left byte-identical" \
   test "$sha1" = "$sha2"
 
-# --- 6. Orphan BEGIN in AGENTS.md: same guard via playbook-init ---
+# --- 6. Orphan BEGIN in AGENTS.md: same guard via init.sh ---
 h="$(new_home)"
 repo="$(mktemp -d)"
 CLEANUP+=("$repo")

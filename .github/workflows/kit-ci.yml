@@ -71,9 +71,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: shellcheck scripts/*.sh
+      - name: shellcheck scripts/*.sh + the house-rules dispatcher
         # -S warning: fail on warnings and errors; info/style stay advisory.
-        run: shellcheck -S warning scripts/*.sh
+        run: shellcheck -S warning scripts/*.sh scripts/house-rules
 
   marker-migration:
     runs-on: ubuntu-latest

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# house-rules — single entry point for the kit's tooling (decision 0002 A1).
+#
+#   house-rules init [args]     project bootstrap        (scripts/init.sh)
+#   house-rules doctor [args]   setup diagnosis          (scripts/doctor.sh)
+#   house-rules sync [args]     rule sync to targets     (scripts/sync-rules.sh)
+#
+# The subcommand scripts remain independently runnable; this dispatcher is
+# the documented form. Typical invocations:
+#   bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" doctor --agent
+#   hr doctor          # with the installed alias
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+usage() {
+  cat <<'USAGE'
+Usage: house-rules <subcommand> [args...]
+
+Subcommands:
+  init      Bootstrap the current project (rules, checkers, profile, AGENTS.md)
+  doctor    Diagnose project setup (--agent for machine-consumable output)
+  sync      Sync rules from the kit to registered target repos
+
+Each subcommand forwards its args unchanged; run one with --help for details.
+USAGE
+}
+
+case "${1:-}" in
+  init)   shift; exec bash "$SCRIPT_DIR/init.sh" "$@" ;;
+  doctor) shift; exec bash "$SCRIPT_DIR/doctor.sh" "$@" ;;
+  sync)   shift; exec bash "$SCRIPT_DIR/sync-rules.sh" "$@" ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    echo "house-rules: unknown subcommand '$1'" >&2
+    usage >&2
+    exit 64
+    ;;
+esac

@@ -1,6 +1,6 @@
 # Distributed-CLI manifest — the single registration point for kit CLIs
-# that must live in target repos (playbook-init.sh distributes every entry;
-# playbook-doctor.sh drift-checks the same list, in this order — line order
+# that must live in target repos (init.sh distributes every entry;
+# doctor.sh drift-checks the same list, in this order — line order
 # IS the SUMMARY precedence when several CLIs drift at once).
 #
 # Fields (|-delimited, one line per script):

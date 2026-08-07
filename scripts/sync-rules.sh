@@ -2,7 +2,7 @@
 # shellcheck disable=SC2059
 set -uo pipefail
 
-# Multi-format rule sync from the playbook repo (canonical source) to target
+# Multi-format rule sync from the kit repo (canonical source) to target
 # repos AND their git worktrees.
 #
 # Usage:
@@ -13,15 +13,15 @@ set -uo pipefail
 #   ./scripts/sync-rules.sh --format claude --local       # Generate claude/ in this repo only
 #   ./scripts/sync-rules.sh --dry-run                     # Preview without writing
 #   ./scripts/sync-rules.sh --version v1.0.0              # Sync rules from a specific release
-#   ./scripts/sync-rules.sh --show-version                # Print current playbook version
+#   ./scripts/sync-rules.sh --show-version                # Print current kit version
 #   ./scripts/sync-rules.sh --help
 #
 # Config: ~/.playbook-sync-targets (one repo root per line).
 # Falls back to ~/.cursor-sync-targets (deprecated) and derives repo roots.
 # Rules are auto-discovered from cursor/rules/*.mdc (no hardcoded file list).
 
-PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$PLAYBOOK_ROOT/cursor/rules"
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="$KIT_ROOT/cursor/rules"
 FORMAT="cursor"
 CHECK_MODE=false
 LOCAL_ONLY=false
@@ -41,8 +41,8 @@ while [[ $# -gt 0 ]]; do
     --unsafe)  SAFE_MODE=false; shift ;;
     --version) PIN_VERSION="$2"; shift 2 ;;
     --show-version)
-      if [ -f "$PLAYBOOK_ROOT/VERSION" ]; then
-        echo "process-kit v$(cat "$PLAYBOOK_ROOT/VERSION" | tr -d '[:space:]')"
+      if [ -f "$KIT_ROOT/VERSION" ]; then
+        echo "process-kit v$(cat "$KIT_ROOT/VERSION" | tr -d '[:space:]')"
       else
         echo "process-kit (no VERSION file)"
       fi
@@ -50,13 +50,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-Multi-format rule sync from the playbook repo to target repos.
+Multi-format rule sync from the kit repo to target repos.
 
 Usage: sync-rules.sh [options]
 
 Options:
   --format cursor|claude|all   Output format (default: cursor; "both" is
-                               accepted as an alias for "all" — playbook-init.sh
+                               accepted as an alias for "all" — init.sh
                                uses --tool both for the same concept)
   --check                      Report drift without syncing
   --local                      Generate in this repo only (claude/all)
@@ -66,7 +66,7 @@ Options:
                                backed up to .<ts>.bak before being
                                overwritten.
   --version TAG                Sync rules from a specific git tag (e.g. v1.0.0)
-  --show-version               Print current playbook version and exit
+  --show-version               Print current kit version and exit
   --help                       Show this help
 
 Config: ~/.playbook-sync-targets (one repo root per line)
@@ -82,7 +82,7 @@ EOF
   esac
 done
 
-# Accept "both" as an alias for "all" — playbook-init.sh uses --tool both
+# Accept "both" as an alias for "all" — init.sh uses --tool both
 # for the same concept and cross-script muscle memory shouldn't silently
 # fail. See agent-protocol.md for the contract.
 if [[ "$FORMAT" == "both" ]]; then
@@ -103,9 +103,9 @@ cleanup_versioned_tmp() {
 trap cleanup_versioned_tmp EXIT
 
 if [ -n "$PIN_VERSION" ]; then
-  if ! git -C "$PLAYBOOK_ROOT" rev-parse "$PIN_VERSION" &>/dev/null; then
-    echo "Tag '$PIN_VERSION' not found in playbook repo."
-    echo "Available tags: $(git -C "$PLAYBOOK_ROOT" tag --list 'v*' | tr '\n' ' ')"
+  if ! git -C "$KIT_ROOT" rev-parse "$PIN_VERSION" &>/dev/null; then
+    echo "Tag '$PIN_VERSION' not found in the kit repo."
+    echo "Available tags: $(git -C "$KIT_ROOT" tag --list 'v*' | tr '\n' ' ')"
     echo ""
     echo "To create a release: git tag v1.0.0 && git push origin v1.0.0"
     exit 1
@@ -116,8 +116,8 @@ if [ -n "$PIN_VERSION" ]; then
 
   while IFS= read -r filepath; do
     fname="$(basename "$filepath")"
-    git -C "$PLAYBOOK_ROOT" show "${PIN_VERSION}:${filepath}" > "$VERSIONED_TMPDIR/$fname" 2>/dev/null || true
-  done < <(git -C "$PLAYBOOK_ROOT" ls-tree --name-only "${PIN_VERSION}" cursor/rules/ 2>/dev/null | grep '\.mdc$')
+    git -C "$KIT_ROOT" show "${PIN_VERSION}:${filepath}" > "$VERSIONED_TMPDIR/$fname" 2>/dev/null || true
+  done < <(git -C "$KIT_ROOT" ls-tree --name-only "${PIN_VERSION}" cursor/rules/ 2>/dev/null | grep '\.mdc$')
 
   file_count=$(ls -1 "$VERSIONED_TMPDIR"/*.mdc 2>/dev/null | wc -l | tr -d ' ')
   if [ "$file_count" -eq 0 ]; then
@@ -358,9 +358,9 @@ if $LOCAL_ONLY; then
   fi
 
   if [[ "$FORMAT" == "claude" || "$FORMAT" == "all" ]]; then
-    dest="$PLAYBOOK_ROOT/claude/rules"
+    dest="$KIT_ROOT/claude/rules"
     if $CHECK_MODE; then
-      echo "Checking: $PLAYBOOK_ROOT/claude/rules"
+      echo "Checking: $KIT_ROOT/claude/rules"
       check_claude_in "$dest" || { echo "Run without --check to regenerate."; exit 1; }
     else
       sync_claude_to "$dest"
@@ -390,7 +390,7 @@ else
   echo "No config file found."
   echo "Create ~/.playbook-sync-targets with one repo root per line:"
   cat <<TMPL
-# Repo roots to sync playbook rules to (one per line).
+# Repo roots to sync kit rules to (one per line).
 # Lines starting with # are ignored. ~ is expanded to \$HOME.
 #
 # Example:
@@ -448,7 +448,7 @@ sync_repo() {
 
       # Migration: remove legacy claude/rules/ (no dot) in target repos only
       local legacy_dir="$repo_root/claude/rules"
-      if [ -d "$legacy_dir" ] && [[ "$repo_root" != "$PLAYBOOK_ROOT" ]]; then
+      if [ -d "$legacy_dir" ] && [[ "$repo_root" != "$KIT_ROOT" ]]; then
         if $SAFE_MODE; then
           echo "  ⚠ Legacy claude/rules/ found — backed up and removed (rules now at .claude/rules/)"
           local bak_dir="$repo_root/claude/rules.v1.0.bak"
@@ -531,8 +531,8 @@ fmt_label="$FORMAT"
 ver_label=""
 if [ -n "$PIN_VERSION" ]; then
   ver_label=" @ $PIN_VERSION"
-elif [ -f "$PLAYBOOK_ROOT/VERSION" ]; then
-  ver_label=" @ v$(cat "$PLAYBOOK_ROOT/VERSION" | tr -d '[:space:]')"
+elif [ -f "$KIT_ROOT/VERSION" ]; then
+  ver_label=" @ v$(cat "$KIT_ROOT/VERSION" | tr -d '[:space:]')"
 fi
 
 if $DRY_RUN; then

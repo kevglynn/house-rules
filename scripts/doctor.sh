@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Validates the playbook setup for the current project.
+# Validates the kit setup for the current project.
 # Reports issues with fix commands. CI-friendly exit code.
 #
 # Usage:
-#   ./scripts/playbook-doctor.sh                    # Check current directory
-#   ./scripts/playbook-doctor.sh /path/to/project   # Check specific project
-#   ./scripts/playbook-doctor.sh --agent            # Agent-consumable output
-#   ./scripts/playbook-doctor.sh --help
+#   ./scripts/doctor.sh                    # Check current directory
+#   ./scripts/doctor.sh /path/to/project   # Check specific project
+#   ./scripts/doctor.sh --agent            # Agent-consumable output
+#   ./scripts/doctor.sh --help
 #
 # --agent mode emits a final "SUMMARY: <key>" line and uses structured exit
 # codes for agent branching. See the agent-protocol global safety-net block
@@ -17,7 +17,7 @@ set -uo pipefail
 # Exit codes:
 #   0 = ok (no action needed)
 #   2 = bootstrap_needed (no rules in this repo)
-#   3 = drift (kit-managed files present but stale vs playbook source:
+#   3 = drift (kit-managed files present but stale vs kit source:
 #       rules_drift_*, profile_drift, or a per-CLI key from
 #       scripts/distributed-clis.list — dispatch on the SUMMARY key)
 #   1 = generic error / other failure
@@ -32,7 +32,7 @@ set -uo pipefail
 # copy. Agents must dispatch on the specific key, not the generic exit
 # code, to avoid running sync-rules.sh with the wrong --format.
 
-PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_MODE=false
 PROJECT_ROOT=""
 
@@ -41,9 +41,9 @@ while [[ $# -gt 0 ]]; do
     --agent)  AGENT_MODE=true; shift ;;
     -h|--help)
       cat <<'EOF'
-Validates playbook setup for a project. Reports issues with fix commands.
+Validates kit setup for a project. Reports issues with fix commands.
 
-Usage: playbook-doctor.sh [project-path] [--agent]
+Usage: doctor.sh [project-path] [--agent]
 
 Checks:
   • bd (beads) is on PATH
@@ -54,7 +54,7 @@ Checks:
     target) matches the kit copy byte-for-byte
   • Kit-resident references (skills/…, templates/…) cited by distributed
     rules resolve somewhere on this machine (warn-only)
-  • AGENTS.md playbook section version stamp matches the kit VERSION (warn-only)
+  • AGENTS.md house-rules section version stamp matches the kit VERSION (warn-only)
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
   • Scratchpad exists with correct sections
@@ -101,7 +101,7 @@ fi
 # Resolve to absolute path (no symlink resolution assumptions)
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd)"
 
-echo "=== Playbook Doctor: $(basename "$PROJECT_ROOT") ==="
+echo "=== house-rules doctor: $(basename "$PROJECT_ROOT") ==="
 echo ""
 
 pass=0
@@ -159,12 +159,12 @@ has_claude=false
 if [ -d "$cursor_rules" ]; then
   has_cursor=true
   mdc_count=$(ls -1 "$cursor_rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
-  src_count=$(ls -1 "$PLAYBOOK_ROOT/cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+  src_count=$(ls -1 "$KIT_ROOT/cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
   # Check that every canonical rule is present and current.
   # Extra rules from other tools (e.g. Jawnt) are fine — only flag missing or stale.
   stale=0
   missing=0
-  for f in "$PLAYBOOK_ROOT/cursor/rules/"*.mdc; do
+  for f in "$KIT_ROOT/cursor/rules/"*.mdc; do
     base="$(basename "$f")"
     if [ ! -f "$cursor_rules/$base" ]; then
       missing=$((missing + 1))
@@ -175,7 +175,7 @@ if [ -d "$cursor_rules" ]; then
   if [ $missing -eq 0 ] && [ $stale -eq 0 ]; then
     extra=$((mdc_count - src_count))
     if [ "$extra" -gt 0 ]; then
-      check_pass "Cursor rules: $src_count playbook files up to date (+$extra from other tools)"
+      check_pass "Cursor rules: $src_count kit files up to date (+$extra from other tools)"
     else
       check_pass "Cursor rules: $mdc_count files, all up to date"
     fi
@@ -183,7 +183,7 @@ if [ -d "$cursor_rules" ]; then
     issues=""
     [ $missing -gt 0 ] && issues="$missing missing"
     [ $stale -gt 0 ] && { [ -n "$issues" ] && issues="$issues, "; issues="${issues}$stale stale"; }
-    check_fail "Cursor rules: $issues (of $src_count expected)" "$PLAYBOOK_ROOT/scripts/sync-rules.sh --format cursor"
+    check_fail "Cursor rules: $issues (of $src_count expected)" "$KIT_ROOT/scripts/sync-rules.sh --format cursor"
     cursor_stale=1
   fi
 else
@@ -194,10 +194,10 @@ if [ -d "$claude_rules" ]; then
   has_claude=true
   md_count=$(ls -1 "$claude_rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
   if [ "$md_count" -eq 0 ]; then
-    check_fail "Claude rules directory exists but is empty" "$PLAYBOOK_ROOT/scripts/sync-rules.sh --format claude"
+    check_fail "Claude rules directory exists but is empty" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
     claude_stale=1
   else
-    claude_src="$PLAYBOOK_ROOT/claude/rules"
+    claude_src="$KIT_ROOT/claude/rules"
     claude_src_count=$(ls -1 "$claude_src/"*.md 2>/dev/null | wc -l | tr -d ' ')
     if [ "$md_count" -eq "$claude_src_count" ]; then
       claude_stale=0
@@ -214,26 +214,26 @@ if [ -d "$claude_rules" ]; then
       if [ $claude_stale -eq 0 ]; then
         check_pass "Claude rules: $md_count files, all up to date"
       else
-        check_fail "Claude rules: $claude_stale of $md_count are stale" "$PLAYBOOK_ROOT/scripts/sync-rules.sh --format claude"
+        check_fail "Claude rules: $claude_stale of $md_count are stale" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
       fi
     else
-      check_fail "Claude rules: $md_count files (expected $claude_src_count)" "$PLAYBOOK_ROOT/scripts/sync-rules.sh --format claude"
+      check_fail "Claude rules: $md_count files (expected $claude_src_count)" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
       claude_stale=1
     fi
   fi
 fi
 
 if ! $has_cursor && ! $has_claude; then
-  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash $PLAYBOOK_ROOT/scripts/playbook-init.sh --tool cursor|claude|both"
+  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash $KIT_ROOT/scripts/init.sh --tool cursor|claude|both"
   bootstrap_missing=1
 fi
 
-# Warn if rules directories are gitignored (skip for the playbook repo itself,
+# Warn if rules directories are gitignored (skip for the kit repo itself,
 # where .cursor/* is intentionally gitignored since cursor/rules/ is the source)
-is_playbook_repo=false
-[[ "$(cd "$PROJECT_ROOT" && pwd)" == "$(cd "$PLAYBOOK_ROOT" && pwd)" ]] && is_playbook_repo=true
+is_kit_repo=false
+[[ "$(cd "$PROJECT_ROOT" && pwd)" == "$(cd "$KIT_ROOT" && pwd)" ]] && is_kit_repo=true
 
-if ! $is_playbook_repo; then
+if ! $is_kit_repo; then
   if $has_claude && git -C "$PROJECT_ROOT" check-ignore -q ".claude/rules/test.md" 2>/dev/null; then
     check_warn ".claude/rules/ appears to be gitignored — rules won't be committed"
   fi
@@ -254,13 +254,13 @@ echo ""
 # ---------- Distributed CLIs (manifest-driven) ----------
 #
 # Every kit CLI registered in scripts/distributed-clis.list is kit-managed:
-# playbook-init.sh copies it with cp -f (same semantics as rules), so each
+# init.sh copies it with cp -f (same semantics as rules), so each
 # drift-checks against the kit copy the same way rules do. The tdd-ledger
 # CI workflow (.github/workflows/tdd-ledger-verify.yml) is NOT drift-checked
 # — init treats it as not-overwriting, so target repos may legitimately
 # customize it; we only note its absence when that CLI is present.
 
-clis_manifest="$PLAYBOOK_ROOT/scripts/distributed-clis.list"
+clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
 
 if [ ! -f "$clis_manifest" ]; then
   echo "Distributed CLIs:"
@@ -270,13 +270,13 @@ else
   while IFS='|' read -r cli_name cli_key cli_header cli_note _label _detail; do
     case "$cli_name" in ""|\#*) continue ;; esac
     echo "$cli_header:"
-    cli_src="$PLAYBOOK_ROOT/scripts/$cli_name"
+    cli_src="$KIT_ROOT/scripts/$cli_name"
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
     if [ ! -f "$cli_src" ]; then
       check_warn "Kit copy missing at $cli_src — cannot drift-check $cli_name"
     elif [ ! -f "$cli_dest" ]; then
       # Informational, not a failure: the repo may predate the CLI or not use it.
-      echo "  – $cli_name not distributed here (optional — re-run playbook-init.sh to add it)"
+      echo "  – $cli_name not distributed here (optional — re-run init.sh to add it)"
     else
       if diff -q "$cli_src" "$cli_dest" > /dev/null 2>&1; then
         check_pass "$cli_name CLI matches the kit copy"
@@ -286,7 +286,7 @@ else
         cli_stale_keys="$cli_stale_keys $cli_key"
       fi
       if [ "$cli_name" = "tdd-ledger" ]; then
-        if ! $is_playbook_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+        if ! $is_kit_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
           check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
         fi
         # Last-mile reminder: the workflow only actually gates merges if branch
@@ -301,8 +301,8 @@ else
     # global-safety-net/agent-protocol.md is the one site the manifest
     # cannot generate — this warn is how a missing row gets caught
     # (the gap that shipped twice before the manifest existed).
-    if [ -f "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md" ] && \
-       ! grep -qF "\`$cli_key\`" "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md"; then
+    if [ -f "$KIT_ROOT/global-safety-net/agent-protocol.md" ] && \
+       ! grep -qF "\`$cli_key\`" "$KIT_ROOT/global-safety-net/agent-protocol.md"; then
       check_warn "SUMMARY key $cli_key is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
     fi
     echo ""
@@ -312,7 +312,7 @@ fi
 # ---------- Conventions profile (data-shaped convention source) ----------
 #
 # The data file the distributed checkers read; ships verbatim via
-# playbook-init and byte-drift-checks here. Ownership and skew rules:
+# house-rules init and byte-drift-checks here. Ownership and skew rules:
 # docs/operations.md. Must run AFTER the CLI loop — the skew warn below
 # reads cli_stale_keys.
 # defer: hand-written parallel block instead of generalizing the manifest to
@@ -320,14 +320,14 @@ fi
 # registration self-check per file. upgrade when: a second data-shaped file
 # distributes.
 echo "Conventions profile:"
-profile_src="$PLAYBOOK_ROOT/profiles/conventions.toml"
+profile_src="$KIT_ROOT/profiles/conventions.toml"
 profile_dest="$PROJECT_ROOT/profiles/conventions.toml"
 profile_present=false
 if [ ! -f "$profile_src" ]; then
   check_warn "Kit copy missing at $profile_src — cannot drift-check the profile"
 elif [ ! -f "$profile_dest" ]; then
   # Informational, not a failure: the repo may predate the profile or not use it.
-  echo "  – profiles/conventions.toml not distributed here (optional — re-run playbook-init.sh to add it)"
+  echo "  – profiles/conventions.toml not distributed here (optional — re-run init.sh to add it)"
 else
   profile_present=true
   if diff -q "$profile_src" "$profile_dest" > /dev/null 2>&1; then
@@ -346,7 +346,7 @@ fi
 case "$cli_stale_keys" in
   *defer_lint_drift*|*close_reason_lint_drift*|*banned_token_scan_drift*)
     if $profile_present; then
-      check_warn "Conventions profile present but a profile-reading checker is stale — re-copy the stale checker(s) and the profile together (or re-run playbook-init.sh); a stale checker may mis-scan the current profile"
+      check_warn "Conventions profile present but a profile-reading checker is stale — re-copy the stale checker(s) and the profile together (or re-run init.sh); a stale checker may mis-scan the current profile"
     fi ;;
 esac
 # Registration self-check: profile_drift is a manifest-external SUMMARY key,
@@ -354,8 +354,8 @@ esac
 # global-safety-net/agent-protocol.md (guarded here, same as the CLIs) and
 # the hand-extended enumerations in this script's header/--help and init's
 # rendered AGENTS.md section (not guarded; update by hand with any new key).
-if [ -f "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md" ] && \
-   ! grep -qF "\`profile_drift\`" "$PLAYBOOK_ROOT/global-safety-net/agent-protocol.md"; then
+if [ -f "$KIT_ROOT/global-safety-net/agent-protocol.md" ] && \
+   ! grep -qF "\`profile_drift\`" "$KIT_ROOT/global-safety-net/agent-protocol.md"; then
   check_warn "SUMMARY key profile_drift is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
 fi
 echo ""
@@ -389,12 +389,12 @@ else
                   "$PROJECT_ROOT/skills/$ref_name" \
                   "$HOME/.cursor/skills/$ref_name" \
                   "$HOME/.claude/skills/$ref_name" \
-                  "$PLAYBOOK_ROOT/skills/$ref_name"; do
+                  "$KIT_ROOT/skills/$ref_name"; do
         [ -e "$cand" ] && resolved=true && break
       done
     else
       for cand in "$PROJECT_ROOT/templates/$ref_name" \
-                  "$PLAYBOOK_ROOT/templates/$ref_name"; do
+                  "$KIT_ROOT/templates/$ref_name"; do
         [ -e "$cand" ] && resolved=true && break
       done
     fi
@@ -410,9 +410,9 @@ fi
 
 echo ""
 
-# ---------- AGENTS.md playbook section ----------
+# ---------- AGENTS.md house-rules section ----------
 #
-# playbook-init.sh stamps the AGENTS.md playbook section with a
+# init.sh stamps the AGENTS.md house-rules section with a
 # machine-parseable version marker (<!-- house-rules:version X.Y.Z -->)
 # sourced from the kit's VERSION file. A stale stamp means the section's
 # doctor/sync instructions and exit-code contract may describe an older kit.
@@ -430,21 +430,21 @@ echo "AGENTS.md:"
 agents_md="$PROJECT_ROOT/AGENTS.md"
 agents_marker="<!-- BEGIN house-rules:agents-md -->"
 kit_version=""
-[ -f "$PLAYBOOK_ROOT/VERSION" ] && kit_version="$(tr -d '[:space:]' < "$PLAYBOOK_ROOT/VERSION")"
+[ -f "$KIT_ROOT/VERSION" ] && kit_version="$(tr -d '[:space:]' < "$KIT_ROOT/VERSION")"
 
-if $is_playbook_repo; then
+if $is_kit_repo; then
   echo "  – kit repo itself: AGENTS.md is authored, not generated (stamp check skipped)"
 elif [ ! -f "$agents_md" ] || ! grep -qF "$agents_marker" "$agents_md" 2>/dev/null; then
   # Informational, not a failure: pre-AGENTS.md bootstraps are legitimate.
-  echo "  – No playbook section in AGENTS.md (re-run playbook-init.sh to add it)"
+  echo "  – No house-rules section in AGENTS.md (re-run init.sh to add it)"
 elif [ -z "$kit_version" ]; then
-  check_warn "Kit VERSION file missing at $PLAYBOOK_ROOT/VERSION — cannot check the AGENTS.md section stamp"
+  check_warn "Kit VERSION file missing at $KIT_ROOT/VERSION — cannot check the AGENTS.md section stamp"
 else
   target_version="$(sed -nE 's/.*<!-- house-rules:version ([^ ]*) -->.*/\1/p' "$agents_md" | head -n1)"
   if [ "$target_version" = "$kit_version" ]; then
-    check_pass "AGENTS.md playbook section current (v$kit_version)"
+    check_pass "AGENTS.md house-rules section current (v$kit_version)"
   else
-    check_warn "AGENTS.md playbook section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both (refreshes the section in place)"
+    check_warn "AGENTS.md house-rules section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both (refreshes the section in place)"
   fi
 fi
 
@@ -507,7 +507,7 @@ if [ -n "$scratchpad" ]; then
     check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
   fi
 else
-  check_fail "No scratchpad found" "bash $PLAYBOOK_ROOT/scripts/playbook-init.sh --tool cursor|claude|both (creates it automatically)"
+  check_fail "No scratchpad found" "bash $KIT_ROOT/scripts/init.sh --tool cursor|claude|both (creates it automatically)"
 fi
 
 echo ""
@@ -520,7 +520,7 @@ TARGETS_FILE="$HOME/.playbook-sync-targets"
 has_beads=false
 [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
 
-if $is_playbook_repo; then
+if $is_kit_repo; then
   # The kit is the sync SOURCE — registration as a target is inapplicable.
   echo "  – kit repo itself: sync source, not a target (registration check skipped)"
 elif [ -f "$TARGETS_FILE" ]; then
@@ -528,7 +528,7 @@ elif [ -f "$TARGETS_FILE" ]; then
     check_pass "Project is in ~/.playbook-sync-targets"
   elif $has_beads; then
     check_fail "Beads project not in ~/.playbook-sync-targets — rules will drift silently" \
-      "bash \"$PLAYBOOK_ROOT/scripts/playbook-init.sh\" --tool cursor|claude|both"
+      "bash \"$KIT_ROOT/scripts/init.sh\" --tool cursor|claude|both"
   else
     check_fail "Project not in ~/.playbook-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.playbook-sync-targets"
   fi
@@ -558,7 +558,7 @@ echo ""
 
 echo "Global safety net:"
 
-installer="$PLAYBOOK_ROOT/scripts/install-global-safety-net.sh"
+installer="$KIT_ROOT/scripts/install-global-safety-net.sh"
 if [ -x "$installer" ]; then
   status_output="$(bash "$installer" --check 2>&1)"
   status_code=$?
@@ -669,7 +669,7 @@ fi
 
 if [ $fail -gt 0 ]; then
   echo ""
-  echo "Run 'bash $PLAYBOOK_ROOT/scripts/playbook-init.sh' to fix most issues automatically."
+  echo "Run 'bash $KIT_ROOT/scripts/init.sh' to fix most issues automatically."
   exit 1
 else
   if [ $warn -gt 0 ]; then

@@ -13,8 +13,8 @@
 set -u
 
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-INIT="$KIT_ROOT/scripts/playbook-init.sh"
-DOCTOR="$KIT_ROOT/scripts/playbook-doctor.sh"
+INIT="$KIT_ROOT/scripts/init.sh"
+DOCTOR="$KIT_ROOT/scripts/doctor.sh"
 
 PASS=0
 FAIL=0
@@ -35,7 +35,7 @@ new_home() {
 }
 
 # bd shim: this suite exercises profile-distribution and doctor-SUMMARY
-# logic, not beads. playbook-init's preflight hard-fails when bd is absent
+# logic, not beads. the init preflight hard-fails when bd is absent
 # (CI runners don't have it), so a no-op stub keeps the preflight green and
 # makes local and CI runs behaviorally identical (process-kit-4ma).
 BD_SHIM_DIR="$(mktemp -d)"
