@@ -33,7 +33,7 @@ Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0
 | Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |
 | Packaging | Plain repo for v1; Claude Code plugin bundle deferred |
 
-Marker strings in the installers now use the `house-rules:` prefix; the installers recognize legacy `ai-dev-playbook:` markers and migrate those blocks in place on their next run against a legacy artifact (bead process-kit-0em — the `defer:` comments that pinned the old prefix are removed, their upgrade-when trigger satisfied by the house-rules decision). The one in-rule predecessor mention was removed 2026-08-05 when the minimalism family renamed to `graybeard-*` with linked upstream attribution (bead process-kit-8nx.1).
+Marker strings in the installers now use the `house-rules:` prefix; recognition of the legacy `ai-dev-playbook:` markers was sunset 2026-08-06 (bead process-kit-26b) after a field sweep showed zero old-marker artifacts remaining — the in-place migration machinery (bead process-kit-0em) served its purpose and was removed. The one in-rule predecessor mention was removed 2026-08-05 when the minimalism family renamed to `graybeard-*` with linked upstream attribution (bead process-kit-8nx.1).
 
 ## Backlog (after the first four skills prove out)
 

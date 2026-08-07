@@ -1,6 +1,6 @@
 # Core Concepts
 
-This page explains the ideas behind the playbook. Read this before diving into setup — understanding *why* makes *how* stick.
+This page explains the ideas behind the kit. Read this before diving into setup — understanding *why* makes *how* stick.
 
 ## The problem
 
@@ -11,7 +11,7 @@ AI coding assistants are powerful but unpredictable. Without structure, you get:
 - **Lost context**: every new session starts from zero — the agent doesn't remember what happened yesterday
 - **No accountability**: there's no record of what was planned, what was built, or whether it was done right
 
-The playbook solves these problems with five interlocking components.
+The kit solves these problems with five interlocking components.
 
 ## The five components
 
@@ -68,7 +68,7 @@ The scratchpad has six standard sections (Background, Challenges, Task Breakdown
 
 The first four components above define **how agents work**. Governance defines **how the community of people building and using those rules should operate** — especially when AI agents are involved.
 
-The playbook adopts the **[Agentic Covenant](https://github.com/gastownhall/beads/blob/main/CODE_OF_CONDUCT.md)**, an open source Code of Conduct created by the beads project. Its core principles:
+The kit adopts the **[Agentic Covenant](https://github.com/gastownhall/beads/blob/main/CODE_OF_CONDUCT.md)**, an open source Code of Conduct created by the beads project. Its core principles:
 
 - **Operator accountability**: the person directing an agent is responsible for everything that agent does
 - **Understanding over authorship**: the quality bar is comprehension and defensibility, not line-by-line writing
@@ -83,11 +83,11 @@ See [docs/governance.md](governance.md) for the full governance guide.
 
 ### Global safety net — bootstrap prompts for un-bootstrapped repos
 
-Per-repo rules only apply in bootstrapped projects. The global safety net solves the cold-start problem by installing per-machine rule blocks into `~/CLAUDE.md` (and Cursor user rules) that provide a minimal bootstrap prompt in any repo. When an agent opens a fresh repo with no playbook rules, the safety net asks: "would you like to bootstrap?" One-time install via `install-global-safety-net.sh`.
+Per-repo rules only apply in bootstrapped projects. The global safety net solves the cold-start problem by installing per-machine rule blocks into `~/CLAUDE.md` (and Cursor user rules) that provide a minimal bootstrap prompt in any repo. When an agent opens a fresh repo with no kit rules, the safety net asks: "would you like to bootstrap?" One-time install via `install-global-safety-net.sh`.
 
 ### Claude Code hooks — automated session lifecycle
 
-Three hooks automate the session lifecycle described in the operating-model rule: **auto-recall** (`bd prime` at session start), **memory capture** (`bd remember` at session end), and **subagent wrapup** (ensures subagent findings flow back). Installed by `playbook-init.sh` for `--tool claude` or `--tool both`.
+Three hooks automate the session lifecycle described in the operating-model rule: **auto-recall** (`bd prime` at session start), **memory capture** (`bd remember` at session end), and **subagent wrapup** (ensures subagent findings flow back). Installed by `house-rules init` for `--tool claude` or `--tool both`.
 
 ## How they work together
 
@@ -104,7 +104,7 @@ The agent doesn't need to remember anything — the beads hold the plan, the scr
 
 ## The maturity model
 
-Teams adopt the playbook in stages:
+Teams adopt the kit in stages:
 
 **Crawl**: Agent decomposes and executes within guardrails. Human reviews everything. The rules and beads are doing most of the work.
 
@@ -117,7 +117,7 @@ Phases are earned by evidence, not by calendar. Each phase has measurable criter
 ## What to read next
 
 - **[FAQ](faq.md)** — Common questions from real adopters (Cursor vs Claude, multiple agents, migration)
-- **[Quick Start](../QUICKSTART.md)** — Set up the playbook in your project (< 5 minutes)
+- **[Quick Start](../QUICKSTART.md)** — Set up the kit in your project (< 5 minutes)
 - **[Onboarding Sandbox](../sandbox/)** — Learn the full workflow hands-on in 45 minutes
 - **[Glossary](glossary.md)** — Definitions for all terminology
 - **[Reading order](README.md)** — The full docs in recommended sequence

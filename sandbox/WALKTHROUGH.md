@@ -1,8 +1,8 @@
-# Playbook Walkthrough
+# house-rules Walkthrough
 
 A hands-on experience that shows you what AI-assisted development looks like with structure. You prompt. Your agent plans, decomposes, implements, tests, and provides evidence — autonomously. ~45-60 minutes.
 
-**You are the driver, not the mechanic.** You'll give your agent natural language instructions and watch how the playbook rules transform its behavior from "chatbot" to "engineering partner."
+**You are the driver, not the mechanic.** You'll give your agent natural language instructions and watch how the kit rules transform its behavior from "chatbot" to "engineering partner."
 
 > **Cursor tip — terminal AI:** Throughout this walkthrough, you'll see **Check-in** boxes where you might want to verify what the agent did. You don't need to memorize any commands. In Cursor's terminal, press **Cmd+K** and type what you want in plain English — Cursor generates the command for you. For example, type *"show me all my beads"* and hit enter. AI-native all the way down.
 
@@ -12,7 +12,7 @@ Run these two commands to prepare the sandbox (this is the only time you touch t
 
 ```bash
 cd ~/process-kit/sandbox/project
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --stealth
+bash ~/process-kit/scripts/house-rules init --tool cursor --stealth
 ```
 
 (Use `--tool claude` if you're using Claude Code.)
@@ -45,7 +45,7 @@ Now sit back and watch. Your agent should:
 > - *"show me the acceptance criteria for the first bead"*
 > - *"what's in the scratchpad"*
 
-**The aha moment:** Without the playbook, you'd get a single dump of code. With the playbook, you get a structured plan you can review, adjust, and approve before a single line is written.
+**The aha moment:** Without the kit, you'd get a single dump of code. With the kit, you get a structured plan you can review, adjust, and approve before a single line is written.
 
 ---
 
@@ -143,7 +143,7 @@ This is what AI-native development looks like with structure. AI all the way dow
 
 ```bash
 cd /path/to/your/real/project
-bash ~/process-kit/scripts/playbook-init.sh
+bash ~/process-kit/scripts/house-rules init
 ```
 
 Then open your editor and say "Planner mode" with your first real feature. Everything you just saw works the same way on real code.

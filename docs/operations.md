@@ -4,20 +4,20 @@ Day-to-day mechanics for maintainers and adopters: distribution semantics, drift
 
 ## Manual setup
 
-The one-command path is `playbook-init.sh` (see the README quickstart). The manual equivalent:
+The one-command path is `house-rules init` (see the README quickstart). The manual equivalent:
 
 1. Clone the kit repo
-2. Add your project repo roots to `~/.playbook-sync-targets` (one path per line)
-3. Run `./scripts/sync-rules.sh` to distribute Cursor rules
-4. Run `./scripts/sync-rules.sh --format claude` to distribute Claude Code rules
+2. Add your project repo roots to `~/.house-rules-sync-targets` (one path per line)
+3. Run `./scripts/house-rules sync` to distribute Cursor rules
+4. Run `./scripts/house-rules sync --format claude` to distribute Claude Code rules
 
-To add a new project repo later, append its root path to `~/.playbook-sync-targets`. The file is local and untracked, so there are no merge conflicts.
+To add a new project repo later, append its root path to `~/.house-rules-sync-targets`. The file is local and untracked, so there are no merge conflicts.
 
 ## Checking for drift
 
 ```bash
-./scripts/sync-rules.sh --check                    # Check cursor rules
-./scripts/sync-rules.sh --format claude --check    # Check claude rules
+./scripts/house-rules sync --check                    # Check cursor rules
+./scripts/house-rules sync --format claude --check    # Check claude rules
 ```
 
 Reports which targets have stale or missing rules without modifying anything.
@@ -25,34 +25,34 @@ Reports which targets have stale or missing rules without modifying anything.
 ## Regenerating Claude rules in the kit repo
 
 ```bash
-./scripts/sync-rules.sh --format claude --local
+./scripts/house-rules sync --format claude --local
 ```
 
 ## What syncs automatically vs. what you copy manually
 
-**Rules** (`cursor/rules/*.mdc`) sync automatically via `sync-rules.sh`. Add a target repo to `~/.playbook-sync-targets` and run the script: rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
+**Rules** (`cursor/rules/*.mdc`) sync automatically via `house-rules sync`. Add a target repo to `~/.house-rules-sync-targets` and run the script: rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
 
 The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is silently removed on the next sync. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 
-**Skills** (`skills/`) are copied on demand: `playbook-init.sh --skills` copies them into the tool-matching project dir (`.cursor/skills/` for Cursor, `.claude/skills/` for Claude Code, both for `--tool both`), or symlink individual skills for Claude Code (see [skills/README.md](../skills/README.md)).
+**Skills** (`skills/`) are copied on demand: `house-rules init --skills` copies them into the tool-matching project dir (`.cursor/skills/` for Cursor, `.claude/skills/` for Claude Code, both for `--tool both`), or symlink individual skills for Claude Code (see [skills/README.md](../skills/README.md)).
 
-**Templates** (`templates/`) carry two distribution semantics: `tdd-ledger-verify.yml` is distributed by `playbook-init.sh` (as a not-overwriting copy into `.github/workflows/`), while `design-doc.md` is kit-resident: you copy it into `docs/specs/` when authoring a spec; init never ships it.
+**Templates** (`templates/`) carry two distribution semantics: `tdd-ledger-verify.yml` is distributed by `house-rules init` (as a not-overwriting copy into `.github/workflows/`), while `design-doc.md` is kit-resident: you copy it into `docs/specs/` when authoring a spec; init never ships it.
 
-**The conventions profile** (`profiles/conventions.toml`) is the data-shaped source the checkers read — commit/branch grammar, close-evidence shape, defer grammar, the banned-token catalog, TDD obligations. `playbook-init.sh` distributes it in the same run as the four checkers, and `playbook-doctor.sh` drift-checks it byte-for-byte against the kit copy (SUMMARY key `profile_drift`, fix: `cp -f` the kit copy, same as the CLI rows).
+**The conventions profile** (`profiles/conventions.toml`) is the data-shaped source the checkers read — commit/branch grammar, close-evidence shape, defer grammar, the banned-token catalog, TDD obligations. `house-rules init` distributes it in the same run as the four checkers, and `house-rules doctor` drift-checks it byte-for-byte against the kit copy (SUMMARY key `profile_drift`, fix: `cp -f` the kit copy, same as the CLI rows).
 
 - **Kit-owned, not project-editable.** The profile drift-checks byte-for-byte, so it must stay identical to the kit copy. Change conventions in the kit and re-sync; do not edit the distributed copy. (Contrast `.agents/overlay.md`, which *is* project-editable — the ownership boundary is stated in [skills/README.md](../skills/README.md#overlay-convention).)
 - **Ships verbatim, including inert keys.** The `[fragments]` paths and `rule_*` keys are render-only — their only consumer is the kit-only `conventions` CLI (not distributed), so they are harmless dead data in a target. They ship unchanged because byte-drift-checking rules out per-target rewrites.
-- **One sync unit.** The profile and the profile-reading checkers (`defer-lint`, `close-reason-lint`, `banned-token-scan`; `tdd-ledger` does not read it) version together. A target holding a stale checker against a fresh profile is a skew hazard (an old scanner can mis-read a profile that gained a section), so the doctor warns when the profile is present but a profile-reading checker is stale — re-copy both, or re-run `playbook-init.sh`.
+- **One sync unit.** The profile and the profile-reading checkers (`defer-lint`, `close-reason-lint`, `banned-token-scan`; `tdd-ledger` does not read it) version together. A target holding a stale checker against a fresh profile is a skew hazard (an old scanner can mis-read a profile that gained a section), so the doctor warns when the profile is present but a profile-reading checker is stale — re-copy both, or re-run `house-rules init`.
 - **Advisory in targets, blocking in the kit.** The distributed checkers resolve the profile at the target repo root and run advisory: they exit non-zero on findings like any linter, but nothing gates on that exit unless the target wires them into its own CI. The kit's own CI is where profile↔fragment drift and the checker suites block. One consequence worth stating plainly: a target has no fragment-regen gate, so any target-side edit to the profile's rule/catalog sections silently moves the rule↔checker contract onto that repo's own responsibility — another reason to treat the file as kit-owned.
 
 ## The maintainer workflow
 
 1. Edit rules in `cursor/rules/` (the kit repo is the canonical source)
-2. Run `./scripts/sync-rules.sh --format claude --local` to regenerate `claude/rules/`
-3. Run `./scripts/sync-rules.sh` to distribute Cursor rules to project repos
-4. Run `./scripts/sync-rules.sh --format claude` to distribute Claude rules to project repos
+2. Run `./scripts/house-rules sync --format claude --local` to regenerate `claude/rules/`
+3. Run `./scripts/house-rules sync` to distribute Cursor rules to project repos
+4. Run `./scripts/house-rules sync --format claude` to distribute Claude rules to project repos
 5. (Optional) If you use the Settings UI rule for personal conventions, keep `cursor/settings-ui/instructions-rule.md` in sync and paste into Cursor Settings
 
 Rules are auto-discovered: adding a new `.mdc` file to `cursor/rules/` automatically includes it in the next sync. No script edits needed.
@@ -93,8 +93,8 @@ The setup script is pure shell (no `python3` or `bd` binary required). Validated
 The kit uses semantic versioning via the `VERSION` file and git tags. Teams can pin to a stable release:
 
 ```bash
-./scripts/sync-rules.sh --version v1.0.0    # Sync from a specific release
-./scripts/sync-rules.sh --show-version      # Print current version
+./scripts/house-rules sync --version v1.0.0    # Sync from a specific release
+./scripts/house-rules sync --show-version      # Print current version
 ```
 
 Release process details live in [CONTRIBUTING.md](../CONTRIBUTING.md); release notes live in [releases/](releases/).

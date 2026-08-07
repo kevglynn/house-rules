@@ -49,5 +49,5 @@ or environment variable involved:
 - **Rule:** `graybeard-playbook.mdc` is agent-requestable — say "use
   graybeard-playbook" and the agent loads it for the session.
 
-Updates arrive through the kit's normal distribution: `sync-rules.sh` for
-rules, `playbook-init.sh` for skills.
+Updates arrive through the kit's normal distribution: `house-rules sync` for
+rules, `house-rules init` for skills.

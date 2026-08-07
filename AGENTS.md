@@ -6,14 +6,14 @@ Any agent landing in this repo: start here.
 
 This is **house-rules** (incubated under the working name process-kit) — the canonical source for AI coding agent rules, skills, hooks, and scripts. It distributes governance to project repos via sync scripts. The `PROCESS_KIT` env var, the `process-kit-*` bead-ID prefix, and the default clone path `~/process-kit` keep their historical names — the env var and redirected GitHub URL make the directory name immaterial.
 
-**This is the source repo, not a target repo.** Do not run `playbook-init.sh` here. To work on the kit itself:
+**This is the source repo, not a target repo.** Do not run `house-rules init` here. To work on the kit itself:
 
-- Rules are canonical in `cursor/rules/*.mdc` — edit there, then run `./scripts/sync-rules.sh --format claude --local` to regenerate `claude/rules/*.md`
+- Rules are canonical in `cursor/rules/*.mdc` — edit there, then run `./scripts/house-rules sync --format claude --local` to regenerate `claude/rules/*.md`
 - Skills live in `skills/<name>/SKILL.md` — see `skills/README.md` for the format and contribution checklist
-- Hooks are in `.claude/hooks/` — these distribute to target repos via `playbook-init.sh`
+- Hooks are in `.claude/hooks/` — these distribute to target repos via `house-rules init`
 - Scripts are in `scripts/` — see README.md for the full inventory
 - Global safety-net block sources are in `global-safety-net/*.md` — installed per-machine by `install-global-safety-net.sh`
-- This repo wires an IDE `postCreate` hook in `.cursor/worktrees.json` that runs its local `scripts/setup-worktree.sh` on worktree creation. That script is **not** distributed by `playbook-init.sh` — do not expect it in target repos (source-repo convention; relocated here from `worktree-awareness.mdc` to keep the distributed rule project-neutral)
+- This repo wires an IDE `postCreate` hook in `.cursor/worktrees.json` that runs its local `scripts/setup-worktree.sh` on worktree creation. That script is **not** distributed by `house-rules init` — do not expect it in target repos (source-repo convention; relocated here from `worktree-awareness.mdc` to keep the distributed rule project-neutral)
 
 ## Identity conventions
 
@@ -25,11 +25,11 @@ This is **house-rules** (incubated under the working name process-kit) — the c
 
 ```bash
 # One-command setup for a target project
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor|claude|both
+bash ~/process-kit/scripts/house-rules init --tool cursor|claude|both
 
 # Verify setup
-bash ~/process-kit/scripts/playbook-doctor.sh
+bash ~/process-kit/scripts/house-rules doctor
 
 # Sync rules after kit updates
-bash ~/process-kit/scripts/sync-rules.sh --format all
+bash ~/process-kit/scripts/house-rules sync --format all
 ```

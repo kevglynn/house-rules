@@ -20,17 +20,17 @@ Setup takes under 5 minutes. Choose your path below.
 
 ## One-time machine setup (recommended first step)
 
-**Why this matters:** Per-repo rules only apply in bootstrapped projects. Without the safety net, an agent opening a fresh repo has zero knowledge the playbook exists — it can't bootstrap what it doesn't know about. The safety net solves this by injecting a minimal bootstrap prompt into your machine-wide `~/CLAUDE.md` (and Cursor user rules). It's a one-time install that ensures every repo gets at least a "would you like to bootstrap?" prompt.
+**Why this matters:** Per-repo rules only apply in bootstrapped projects. Without the safety net, an agent opening a fresh repo has zero knowledge the kit exists — it can't bootstrap what it doesn't know about. The safety net solves this by injecting a minimal bootstrap prompt into your machine-wide `~/CLAUDE.md` (and Cursor user rules). It's a one-time install that ensures every repo gets at least a "would you like to bootstrap?" prompt.
 
-Two installers, run once per machine. Both are non-interactive and safe for agents to run on your behalf after asking — so you can literally tell Cursor or Claude Code to "install the playbook" and it will invoke these for you.
+Two installers, run once per machine. Both are non-interactive and safe for agents to run on your behalf after asking — so you can literally tell Cursor or Claude Code to "install the kit" and it will invoke these for you.
 
 ```bash
 # Per-machine agent rule blocks (agent-identity, session-start, agent-protocol)
 # Writes marker-delimited blocks to ~/CLAUDE.md and generates a Cursor paste snippet.
 bash ~/process-kit/scripts/install-global-safety-net.sh
 
-# pbi, pbd shell aliases + PROCESS_KIT env var
-# Writes ~/.playbook-aliases.sh and adds one guarded source line to your rc file.
+# hr / house-rules shell aliases + PROCESS_KIT env var
+# Writes ~/.house-rules-aliases.sh and adds one guarded source line to your rc file.
 bash ~/process-kit/scripts/install-aliases.sh
 ```
 
@@ -49,18 +49,18 @@ bash ~/process-kit/scripts/install-global-safety-net.sh --check
 bash ~/process-kit/scripts/install-aliases.sh --check
 ```
 
-Once both are installed, you can say **"use the playbook"** to any agent in any repo — it will read the agent-protocol block, run the doctor, and offer bootstrap/sync/update with your consent.
+Once both are installed, you can say **"use house-rules"** to any agent in any repo — it will read the agent-protocol block, run the doctor, and offer bootstrap/sync/update with your consent.
 
 ## One-command project setup (recommended)
 
 From your project root, after shell aliases are installed:
 
 ```bash
-pbi                                            # interactive tool choice
+hr init                                        # interactive tool choice
 # or
-pbi --tool cursor                              # skip interactive prompt
+hr init --tool cursor                          # skip interactive prompt
 # or without aliases:
-bash ~/process-kit/scripts/playbook-init.sh
+bash ~/process-kit/scripts/house-rules init
 ```
 
 The script will:
@@ -76,14 +76,14 @@ The script will:
 Verify everything is configured:
 
 ```bash
-pbd                                                    # human-readable
-bash ~/process-kit/scripts/playbook-doctor.sh      # same thing without aliases
+hr doctor                                          # human-readable
+bash ~/process-kit/scripts/house-rules doctor      # same thing without aliases
 ```
 
 For agent-consumable status (structured exit codes + `SUMMARY:` footer):
 
 ```bash
-bash ~/process-kit/scripts/playbook-doctor.sh --agent
+bash ~/process-kit/scripts/house-rules doctor --agent
 # Exit: 0=ok, 2=bootstrap_needed, 3=rules_drift, 1=error
 # On rules_drift, SUMMARY carries the format: rules_drift_cursor|rules_drift_claude|rules_drift_both
 ```
@@ -91,18 +91,18 @@ bash ~/process-kit/scripts/playbook-doctor.sh --agent
 Options:
 ```bash
 # Explicit tool choice (required if stdin is not a terminal)
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor
-bash ~/process-kit/scripts/playbook-init.sh --tool claude
-bash ~/process-kit/scripts/playbook-init.sh --tool both
+bash ~/process-kit/scripts/house-rules init --tool cursor
+bash ~/process-kit/scripts/house-rules init --tool claude
+bash ~/process-kit/scripts/house-rules init --tool both
 
 # Personal repos (hides .beads from git)
-bash ~/process-kit/scripts/playbook-init.sh --stealth
+bash ~/process-kit/scripts/house-rules init --stealth
 
 # Skip beads git hooks (default is to install them)
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --no-hooks
+bash ~/process-kit/scripts/house-rules init --tool cursor --no-hooks
 ```
 
-`playbook-init.sh` refuses non-interactive invocation without `--tool` — this is a security gate against prompt-injected agents silently bootstrapping a repo.
+`house-rules init` refuses non-interactive invocation without `--tool` — this is a security gate against prompt-injected agents silently bootstrapping a repo.
 
 ## Manual setup
 
@@ -138,7 +138,7 @@ cat > .cursor/scratchpad.md <<'EOF'
 EOF
 
 # Register for sync updates
-echo "$(pwd)" >> ~/.playbook-sync-targets
+echo "$(pwd)" >> ~/.house-rules-sync-targets
 ```
 
 </details>
@@ -158,7 +158,7 @@ bd init
 bd setup claude
 
 # Register for sync updates
-echo "$(pwd)" >> ~/.playbook-sync-targets
+echo "$(pwd)" >> ~/.house-rules-sync-targets
 ```
 
 Then reference the rules in your project's `CLAUDE.md`:
@@ -196,14 +196,14 @@ New to these concepts? Read **[Core Concepts](docs/concepts.md)** for the full p
 
 ## Keeping rules updated
 
-The playbook repo is the source of truth. To sync updates to all registered projects:
+The kit repo is the source of truth. To sync updates to all registered projects:
 
 ```bash
 cd ~/process-kit && git pull
 
-# Sync to all projects in ~/.playbook-sync-targets
-./scripts/sync-rules.sh --format cursor   # Cursor users
-./scripts/sync-rules.sh --format claude    # Claude Code users
+# Sync to all projects in ~/.house-rules-sync-targets
+./scripts/house-rules sync --format cursor   # Cursor users
+./scripts/house-rules sync --format claude    # Claude Code users
 ```
 
 ## What the global safety net covers
@@ -211,17 +211,17 @@ cd ~/process-kit && git pull
 The machine setup at the top of this doc installs three marker-delimited blocks into `~/CLAUDE.md` (and a matching Cursor user-rules paste snippet). Each block addresses a different un-bootstrapped-repo failure mode:
 
 - **`agent-identity`** — condensed version of the rule that keeps agents from reverting to human-baseline estimation ("this will take 2-3 weeks with one developer") in repos where the full rule isn't loaded.
-- **`session-start`** — the bootstrap-check prompt. When the agent opens a repo with no `.cursor/rules/` and no `.claude/rules/`, it asks once: *run init, skip, or add to `~/.playbook-ignore`?*
-- **`agent-protocol`** — the contract for how agents respond to "use the playbook." Tells them to run `playbook-doctor.sh --agent`, branch on the exit code, and propose the right remediation with your consent.
+- **`session-start`** — the bootstrap-check prompt. When the agent opens a repo with no `.cursor/rules/` and no `.claude/rules/`, it asks once: *run init, skip, or add to `~/.house-rules-ignore`?*
+- **`agent-protocol`** — the contract for how agents respond to "use house-rules." Tells them to run `house-rules doctor --agent`, branch on the exit code, and propose the right remediation with your consent.
 
 Block sources are individual files at `global-safety-net/*.md`. Add a file + registry entry in `install-global-safety-net.sh` to add a new concern.
 
-`playbook-doctor.sh` also reports the status of each block as part of its normal output, so you'll see a warning if anything goes missing or stale.
+`house-rules doctor` also reports the status of each block as part of its normal output, so you'll see a warning if anything goes missing or stale.
 
 ## Verify your setup anytime
 
 ```bash
-bash ~/process-kit/scripts/playbook-doctor.sh
+bash ~/process-kit/scripts/house-rules doctor
 ```
 
 Reports pass/fail/warn for every check and prints fix commands for anything that's off.
@@ -230,7 +230,7 @@ Reports pass/fail/warn for every check and prints fix commands for anything that
 
 - **[FAQ](docs/faq.md)** — Common questions from real adopters (Cursor vs Claude, multiple agents, migration)
 - **[Onboarding Sandbox](sandbox/)** — 45-minute hands-on exercise teaching the full workflow by doing
-- **[Core Concepts](docs/concepts.md)** — Why the playbook exists and how the pieces fit together
+- **[Core Concepts](docs/concepts.md)** — Why the kit exists and how the pieces fit together
 - **[Glossary](docs/glossary.md)** — Definitions for all terminology
 - **[Full docs](docs/README.md)** — Reading order for decks, guides, and reference material
 - **[Contributing](CONTRIBUTING.md)** — How to propose and contribute changes

@@ -1,4 +1,4 @@
-# TDD evidence-ledger CI gate — distributed by playbook-init.sh.
+# TDD evidence-ledger CI gate — distributed by house-rules init.
 # Verifies red-before-green ordering in .tdd-ledger.jsonl on every push/PR.
 # The CLI lives at scripts/tdd-ledger in this repo (also distributed by init).
 #

@@ -24,13 +24,13 @@ Contributions are accepted under the same [Apache-2.0 license](LICENSE) that cov
 
 ## Rule change intake — field lessons
 
-Real incidents — bugs shipped, beads closed on IOUs, tests that missed the callsite — are the highest-signal input to rule changes. Lessons come from any repo the operator works in. The playbook consumes them on these terms:
+Real incidents — bugs shipped, beads closed on IOUs, tests that missed the callsite — are the highest-signal input to rule changes. Lessons come from any repo the operator works in. The kit consumes them on these terms:
 
-1. **Universal form only.** The proposed rule edit must be project-agnostic. Strip language, framework, library, and project names from the rule text. If the rule only makes sense with that context, it is not rule-worthy — it belongs as a project memory (`bd remember`), not a playbook rule.
-2. **Project-specific patterns stay in the originating repo's `bd memories`.** The playbook rule captures the universal policy; the originating project's memory captures the specific pattern to grep for, the library quirk, the stack trace. The two complement each other and should not be merged.
-3. **Proposal-first, apply-second.** The requesting party (operator, subagent, or colleague) drafts the diff as a proposal — no edits to `.mdc` files until the playbook operator approves. This protects the rule surface from hasty or inconsistent changes.
+1. **Universal form only.** The proposed rule edit must be project-agnostic. Strip language, framework, library, and project names from the rule text. If the rule only makes sense with that context, it is not rule-worthy — it belongs as a project memory (`bd remember`), not a kit rule.
+2. **Project-specific patterns stay in the originating repo's `bd memories`.** The kit rule captures the universal policy; the originating project's memory captures the specific pattern to grep for, the library quirk, the stack trace. The two complement each other and should not be merged.
+3. **Proposal-first, apply-second.** The requesting party (operator, subagent, or colleague) drafts the diff as a proposal — no edits to `.mdc` files until the kit operator approves. This protects the rule surface from hasty or inconsistent changes.
 4. **CHANGELOG attribution is technical, not nominal.** Describe the shape of the incident — what class of failure, what the rule prevents — without naming specific projects unless the project is part of this repo's ecosystem. Colleagues reading the CHANGELOG should learn what the rule does, not need context about unrelated repos.
-5. **Tooling enforcement is a separate concern.** If the lesson suggests that a tool (e.g., `bd`, lint-style checks) should enforce the policy at runtime, that is a feature request against the tool's repo, not a playbook rule change. The playbook says *what* should be true; tools can enforce *at the boundary*. Keep the two tracks separate and file them independently.
+5. **Tooling enforcement is a separate concern.** If the lesson suggests that a tool (e.g., `bd`, lint-style checks) should enforce the policy at runtime, that is a feature request against the tool's repo, not a kit rule change. The kit says *what* should be true; tools can enforce *at the boundary*. Keep the two tracks separate and file them independently.
 
 ### When intake is rule-worthy vs memory-worthy
 
@@ -60,21 +60,21 @@ vim cursor/rules/my-rule.mdc
 ### 2. Regenerate Claude rules
 
 ```bash
-./scripts/sync-rules.sh --format claude --local
+./scripts/house-rules sync --format claude --local
 ```
 
 ### 3. Test before pushing
 
 ```bash
 # Preview what would be synced (no writes)
-./scripts/sync-rules.sh --dry-run
+./scripts/house-rules sync --dry-run
 
 # Check if any targets are out of date
-./scripts/sync-rules.sh --check
-./scripts/sync-rules.sh --format claude --check
+./scripts/house-rules sync --check
+./scripts/house-rules sync --format claude --check
 
 # Validate your own setup
-bash scripts/playbook-doctor.sh
+bash scripts/house-rules doctor
 ```
 
 ### 3b. Pass the CI gates locally
@@ -83,7 +83,7 @@ CI runs the gates in `.github/workflows/kit-ci.yml` on every push and PR. Run th
 
 ```bash
 # Projection drift — generated claude/rules must match the cursor canon
-./scripts/sync-rules.sh --format claude --check --local
+./scripts/house-rules sync --format claude --check --local
 
 # Shell hygiene — warnings fail the build
 shellcheck -S warning scripts/*.sh
@@ -157,7 +157,7 @@ Content...
 
 ## Versioning
 
-The playbook uses semantic versioning via `VERSION` file and git tags.
+The kit uses semantic versioning via `VERSION` file and git tags.
 
 - **Patch** (1.0.x): Typo fixes, clarifications, documentation updates
 - **Minor** (1.x.0): New rules, new script features, behavior changes
@@ -177,7 +177,7 @@ git tag v1.1.0
 git push origin main --tags
 ```
 
-Teams pin to versions via `sync-rules.sh --version v1.0.0`. Breaking changes should be communicated before tagging.
+Teams pin to versions via `house-rules sync --version v1.0.0`. Breaking changes should be communicated before tagging.
 
 ## Decision records
 
@@ -218,4 +218,4 @@ Key points for contributors:
 - AI-assisted contributions are explicitly welcome
 - Disclose substantial AI assistance using the `Assisted-by` convention
 - You are accountable for everything submitted under your account, including agent-generated content
-- See [docs/governance.md](docs/governance.md) for how governance fits into the playbook
+- See [docs/governance.md](docs/governance.md) for how governance fits into the kit

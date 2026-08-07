@@ -24,20 +24,20 @@ One-time machine setup:
 ```bash
 git clone https://github.com/kevglynn/house-rules ~/house-rules
 bash ~/house-rules/scripts/install-global-safety-net.sh    # per-machine agent rule blocks
-bash ~/house-rules/scripts/install-aliases.sh              # pbi, pbd aliases + PROCESS_KIT env var
+bash ~/house-rules/scripts/install-aliases.sh              # hr / house-rules aliases + PROCESS_KIT env var
 ```
 
 Then point it at a project:
 
 ```bash
 cd /path/to/your/project
-bash ~/house-rules/scripts/playbook-init.sh
+bash ~/house-rules/scripts/house-rules init
 ```
 
 Both installers are non-interactive and safe for agents to run on your behalf. From there the kit is agent-operated:
 
-- In any repo, tell your agent **"use the playbook."** It reads the agent-protocol block in your global rules, runs the doctor, and branches on the result, offering bootstrap, sync, or update with your consent.
-- In any un-bootstrapped git repo, the agent prompts at session start: *"This project isn't bootstrapped with the playbook. Run init, skip, or add to ignore?"*
+- In any repo, tell your agent **"use house-rules."** It reads the agent-protocol block in your global rules, runs the doctor, and branches on the result, offering bootstrap, sync, or update with your consent.
+- In any un-bootstrapped git repo, the agent prompts at session start: *"This project isn't bootstrapped with house-rules. Run init, skip, or add to ignore?"*
 - Bootstrapped repos carry an `AGENTS.md` pointing any agent (Cursor, Claude Code, Codex, Copilot, future) at the setup, the rules, and the doctor. Discovery is automatic.
 
 See **[QUICKSTART.md](QUICKSTART.md)** for all setup options and **[docs/concepts.md](docs/concepts.md)** for how the pieces fit together.
@@ -86,11 +86,11 @@ The checker CLIs ship to target repos through one manifest (`scripts/distributed
 
 | Script | What it does |
 |--------|-------------|
-| `playbook-init.sh` | One-command project setup: rules, beads, scratchpad, `AGENTS.md`, checker CLIs, sync registration |
-| `playbook-doctor.sh` | Validates any setup; `--agent` mode emits a `SUMMARY:` key and structured exit codes agents branch on |
-| `sync-rules.sh` | Multi-format rule sync with drift checking (`--check`), local regeneration (`--local`), and safe-by-default backups |
+| `house-rules init` | One-command project setup: rules, beads, scratchpad, `AGENTS.md`, checker CLIs, sync registration |
+| `house-rules doctor` | Validates any setup; `--agent` mode emits a `SUMMARY:` key and structured exit codes agents branch on |
+| `house-rules sync` | Multi-format rule sync with drift checking (`--check`), local regeneration (`--local`), and safe-by-default backups |
 | `install-global-safety-net.sh` | Per-machine marker blocks in `~/CLAUDE.md` plus a Cursor user-rules snippet |
-| `install-aliases.sh` | Per-machine `pbi`/`pbd` aliases and the `PROCESS_KIT` env var |
+| `install-aliases.sh` | Per-machine `hr` / `house-rules` aliases and the `PROCESS_KIT` env var |
 | `setup-worktree.sh` | Makes git worktrees share the main repo's beads database |
 
 Distribution semantics, worktree setup, and drift-checking mechanics live in **[docs/operations.md](docs/operations.md)**.
@@ -123,7 +123,7 @@ v0.2.0 is the first public release. The rules, distribution scripts, and checker
 
 ## Versioning
 
-Semantic versioning via the `VERSION` file and git tags. Teams pin to releases with `sync-rules.sh --version vX.Y.Z`; mechanics in [docs/operations.md](docs/operations.md), release process in [CONTRIBUTING.md](CONTRIBUTING.md).
+Semantic versioning via the `VERSION` file and git tags. Teams pin to releases with `house-rules sync --version vX.Y.Z`; mechanics in [docs/operations.md](docs/operations.md), release process in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Origin and attribution
 

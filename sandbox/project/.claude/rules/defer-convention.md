@@ -1,63 +1,17 @@
 # Defer Convention
 
-Mark deliberate simplifications with a `defer:` comment that names the ceiling and the upgrade trigger.
-
-## Format
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
+Mark deliberate simplifications with a `defer:` comment:
 
 ```
 // defer: <what was simplified>. ceiling: <known limitation>. upgrade when: <trigger condition>.
 ```
 
-Language-appropriate comment prefix (`//`, `#`, `/* */`, `--`).
+Language-appropriate comment prefix (`//`, `#`, `/* */`, `--`); the ceiling and trigger may continue on the following comment line(s).
 
-## Examples
+**The no-trigger law:** every `defer:` comment MUST include an "upgrade when:" condition. A deferral without a trigger is just a TODO with a fancier name. If you can't name when to revisit, either the simplification is permanent (no comment needed) or you don't understand the ceiling yet (investigate before deferring).
 
-Good — names ceiling and trigger:
-```python
-# defer: global lock on config reload. ceiling: blocks all requests during reload (~50ms).
-# upgrade when: reload frequency exceeds 1/minute or p99 latency matters.
-```
+Marker choice: `defer:` = deliberate simplification with known limits (structured — ceiling + trigger required); `TODO` = unstructured reminder; `FIXME` = actually broken.
+<!-- END GENERATED from profiles/conventions.toml -->
 
-```javascript
-// defer: O(n²) duplicate check. ceiling: scans full list on every insert.
-// upgrade when: list exceeds ~1000 items (profile first).
-```
-
-```python
-# defer: naive retry with fixed delay. ceiling: no backoff, no jitter, max 3 retries.
-# upgrade when: upstream starts throttling or retry storms appear in logs.
-```
-
-Bad — no trigger (will rot silently):
-```python
-# defer: simplified validation.  # What's the ceiling? When should we revisit?
-```
-
-Bad — ceiling but no upgrade condition:
-```python
-# defer: in-memory cache. ceiling: lost on restart.  # When does this matter enough to fix?
-```
-
-## When to use defer: vs TODO vs FIXME
-
-| Marker | Meaning | Structure | Rot risk |
-|--------|---------|-----------|----------|
-| `defer:` | Deliberate simplification with known ceiling | ceiling + trigger required | Low — trigger names when to revisit |
-| `TODO` | Something to do later | Unstructured | High — no trigger, no ceiling, "later" = never |
-| `FIXME` | Known bug or broken behavior | Unstructured | Medium — urgency implied but not quantified |
-
-Use `defer:` when you chose the simpler path and know its limits. Use `TODO` for unstructured reminders. Use `FIXME` for things that are actually broken.
-
-## Harvesting
-
-Run a periodic scan to find `defer:` comments and check for rot:
-
-```bash
-grep -rnE '(#|//) ?defer:' . --include='*.py' --include='*.js' --include='*.ts' --include='*.rs'
-```
-
-Flag any `defer:` comment that lacks an "upgrade when:" clause — those are the entries most likely to rot into permanent shortcuts.
-
-## The no-trigger rule
-
-Every `defer:` comment MUST include an "upgrade when:" condition. A deferral without a trigger is just a TODO with a fancier name. If you can't name when to revisit, either the simplification is permanent (no comment needed) or you don't understand the ceiling yet (investigate before deferring).
+**Checker:** `scripts/defer-lint` (kit-distributed) verifies the law — exit 1 on any defer lacking its upgrade-when clause; `--json` for agents; worked good/bad examples in `defer-lint --help`. Harvesting deferrals into a debt ledger: the `graybeard-debt` skill.

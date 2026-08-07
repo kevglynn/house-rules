@@ -21,7 +21,7 @@ You need three things on your machine:
 1. **A coding agent IDE.** Pick one to start:
    - **[Cursor](https://cursor.com)** — desktop app for Mac/Windows/Linux. Easiest if you want to see the agent edit files in real time. **Start here if you're unsure.**
    - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — terminal-based agent. Great if you live in the CLI.
-   - You can have both later. They share this playbook's rules.
+   - You can have both later. They share this kit's rules.
 
 2. **`git`, `node`/`npm` (optional), and `brew`.** If you have an old developer Mac, you probably already have these. If `brew` is missing, install it from [brew.sh](https://brew.sh). Your agent can debug install errors — just paste them in chat.
 
@@ -30,7 +30,7 @@ You need three things on your machine:
    brew install beads
    ```
 
-Then clone this playbook and run the per-machine setup:
+Then clone this kit and run the per-machine setup:
 
 ```bash
 git clone https://github.com/kevglynn/house-rules ~/process-kit
@@ -42,11 +42,11 @@ Both installers are safe for agents to run on your behalf. **If anything fails, 
 
 ---
 
-## Step 2 — Open the playbook in your IDE and ask the agent to acclimate you
+## Step 2 — Open the kit in your IDE and ask the agent to acclimate you
 
 Open the `~/process-kit` folder in Cursor (or `cd ~/process-kit && claude` for Claude Code), start a new chat, and paste this prompt:
 
-> I'm new to this playbook and to agent-native development. I used to be a proficient coder but I've been away for years.
+> I'm new to this kit and to agent-native development. I used to be a proficient coder but I've been away for years.
 >
 > Please:
 > 1. Read `README.md`, `QUICKSTART.md`, `docs/concepts.md`, and the rule files in `cursor/rules/` (or `claude/rules/`).
@@ -68,7 +68,7 @@ The repo ships with a throwaway practice project for exactly this purpose. `sand
 
 ```bash
 cd ~/process-kit/sandbox/project
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --stealth
+bash ~/process-kit/scripts/house-rules init --tool cursor --stealth
 ```
 
 Then open that folder in your IDE and follow [`sandbox/WALKTHROUGH.md`](sandbox/WALKTHROUGH.md). The code is trivial on purpose — the point is the *workflow*. You'll watch the agent plan, claim tasks, write tests first, implement, and close with evidence.
@@ -85,9 +85,9 @@ Now that the sandbox has put the loop in your hands, apply it to something you a
 >
 > Walk me through:
 > 1. Where to create the project folder (which directory) and what to name it.
-> 2. How to bootstrap it with this playbook — which `playbook-init.sh` flags should I use and why?
+> 2. How to bootstrap it with this kit — which `house-rules init` flags should I use and why?
 > 3. Which tool you recommend (Cursor or Claude Code) for this kind of project.
-> 4. Whether we should start with a design doc, jump straight to beads, or do a quick spike first. Justify the choice using the rules in this playbook.
+> 4. Whether we should start with a design doc, jump straight to beads, or do a quick spike first. Justify the choice using the rules in this kit.
 > 5. The next 3 prompts I should send you, in order.
 >
 > Don't implement anything yet — just plan and explain. I'll say "go" when I want execution to start.
@@ -124,10 +124,10 @@ Bookmark these. They unstick you fast:
 |---|---|
 | Don't know what to do next | *"What's ready in `bd ready`? Show me everything blocked too, and tell me what I should pick up next."* |
 | Don't understand the agent's plan | *"Walk me through this plan as if I were a senior engineer hearing it for the first time. What's the risk?"* |
-| Want to make sure you're following the playbook | *"Audit my workflow on this bead. Is there anything I'm missing per the rules in `.cursor/rules/` (or `.claude/rules/`)?"* |
+| Want to make sure you're following the kit | *"Audit my workflow on this bead. Is there anything I'm missing per the rules in `.cursor/rules/` (or `.claude/rules/`)?"* |
 | Are nervous about a change | *"Before I let you do this, summarize the blast radius and the rollback plan in plain English."* |
 | Want a deeper review | *"Run a Tier 1 multi-agent review on these changes. Use `code-reviewer`, `architect-reviewer`, and `simplify` lenses. Then triage findings as Critical / Important / Minor."* |
-| Forgot a command | *"Remind me how to <do X> using `bd` and the playbook. One example, no theory."* |
+| Forgot a command | *"Remind me how to <do X> using `bd` and the kit. One example, no theory."* |
 | Are stuck and don't know why | *"I'm stuck on <X>. Run `bd doctor --agent`, `git status`, and `bd show --current`, then tell me what you see."* |
 | Hit a confusing error | *"Here's the error: <paste>. Explain what's happening, what you'd try first, and the safest order to try things."* |
 | Want a knowledge check | *"Quiz me on the last bead we closed. 3 questions about why we did it the way we did."* |
@@ -140,8 +140,8 @@ Build these reflexes:
 
 - **End every chat with:** *"What's the best next prompt for me?"* — the agent will hand you the next move.
 - **Before a big change:** *"Plan first. Don't implement until I say go."* — separates thinking from doing.
-- **When you feel out of depth:** *"Which concept from this playbook applies here? Explain it like I'm rusty."* — uses the agent as your refresher tutor.
-- **When the agent does something that seems off:** *"Why did you do that? Cite the rule it came from."* — keeps the agent accountable to the playbook.
+- **When you feel out of depth:** *"Which concept from this kit applies here? Explain it like I'm rusty."* — uses the agent as your refresher tutor.
+- **When the agent does something that seems off:** *"Why did you do that? Cite the rule it came from."* — keeps the agent accountable to the kit.
 - **At the end of a working session:** *"Commit, push, and tell me what changed and what's left."* — no orphaned work.
 
 ---
@@ -154,7 +154,7 @@ You've done the sandbox. You've shipped something with the day-to-day loop. Here
 
 **The pattern:** Before committing to a non-trivial decision or change, fan the work out to multiple agents in parallel — each with a different lens, or even a different underlying model — then have them synthesize their findings for you. **Don't move forward until they've convinced you.**
 
-The playbook formalizes this in the [`multi-agent-review`](cursor/rules/multi-agent-review.mdc) rule. Two flavors:
+The kit formalizes this in the [`multi-agent-review`](cursor/rules/multi-agent-review.mdc) rule. Two flavors:
 
 - **Same-model, multi-lens** (cheaper): one model, multiple independent review passes with different framing — correctness, architecture, simplicity, test signal (the roster lives in `skills/tier1-review`). Catches the blind spots of any single framing.
 - **Cross-model** (more expensive): the same change reviewed by different model families (Claude, GPT, Gemini, etc.). Different architectures have different blind spots — getting them to agree is strong signal.

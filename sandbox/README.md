@@ -17,7 +17,7 @@ Takes 45-60 minutes. Uses a minimal Python project as a vehicle — the code is 
 
 ## Prerequisites
 
-- The playbook repo cloned to `~/process-kit`
+- The kit repo cloned to `~/process-kit`
 - `bd` (beads) installed (`brew install beads`)
 - An AI coding tool (Cursor or Claude Code)
 
@@ -25,7 +25,7 @@ Takes 45-60 minutes. Uses a minimal Python project as a vehicle — the code is 
 
 ```bash
 cd ~/process-kit/sandbox/project
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --stealth
+bash ~/process-kit/scripts/house-rules init --tool cursor --stealth
 ```
 
 Then open `sandbox/project/` in your editor and follow the **[Walkthrough](WALKTHROUGH.md)**.

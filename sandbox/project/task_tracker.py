@@ -1,5 +1,5 @@
 """
-Minimal task tracker — the sandbox project for learning the playbook workflow.
+Minimal task tracker — the sandbox project for learning the house-rules workflow.
 
 This is intentionally simple. The exercise is about the *process* (beads,
 Planner/Executor, scratchpad, evidence), not the code.

@@ -52,7 +52,7 @@ ownership rules, and a cold agent must be able to tell them apart. The
 judgment-shaped parameters that skills consume, meant to be edited in the
 consuming repo. The **profile** (`profiles/conventions.toml`) is kit-owned,
 tool-read, TOML: data-shaped conventions consumed by deterministic checkers
-and renderers, drift-checked byte-for-byte by `playbook-doctor.sh` — never
+and renderers, drift-checked byte-for-byte by `house-rules doctor` — never
 edited in a consuming repo (change it in the kit, then sync).
 
 Promotion trigger: the first deterministic tool that needs an overlay key
@@ -76,7 +76,7 @@ live in TOML, so the file could never actually be single.
 Copy skills into a project during bootstrap:
 
 ```bash
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --skills
+bash ~/process-kit/scripts/house-rules init --tool cursor --skills
 ```
 
 Or reference one directly in a conversation:

@@ -27,12 +27,14 @@ If another agent's output includes human-baseline estimates, do not engage with 
 
 Before finalizing any response that discusses effort, scope, scheduling, or planning of work-to-be-done, scan the draft for the following regression patterns. This is a mechanical check — do not rely on "feeling out" whether the framing is appropriate.
 
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
 **Banned when used to frame work-to-be-done:**
 
 - **Time units**: `hours`, `days`, `weeks`, `months`, `quarters`, `sprints`, `man-hours`, `person-hours`, `engineer-hours`, `dev-hours`, `story points`
 - **Team-size claims**: `one developer`, `a developer`, `two engineers`, `small team`, `team of N`, `with more people`, `engineering team` (as a sizing unit)
 - **Schedule framing**: `timeline`, `schedule`, `ambitious`, `aggressive`, `on track`, `ETA`, `by EOD`, `by end of week`, `takes a while`, `takes long`, `quick win` (as a schedule claim, not a scope claim)
 - **Estimation verbs**: `I estimate`, `I'd estimate`, `rough estimate`, `ballpark`, `roughly N hours/days/weeks`
+<!-- END GENERATED from profiles/conventions.toml -->
 
 **Not regressions (these uses are fine):**
 
@@ -46,3 +48,5 @@ Before finalizing any response that discusses effort, scope, scheduling, or plan
 Rewrite the offending passage using complexity, scope, sequencing, and technical risk. If you catch the drift mid-response, correct inline and continue — a brief "— scratch the weeks framing; the scope here is …" is enough. Do not apologize at length; the self-catch is worth more than the slip.
 
 If you catch this regression in another agent's output during review, strip it silently and respond to the substance.
+
+**Checker:** `scripts/banned-token-scan` (kit-distributed) mechanizes this scan — reports candidate hits by token class for files or stdin (`--json` for agents); the not-regressions judgment stays with the reader. Class catalog and judgment boundary in `banned-token-scan --help`.

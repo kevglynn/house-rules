@@ -21,4 +21,4 @@ This repo's governance rules are in `.claude/rules/*.md` (auto-loaded by Claude 
 
 ## Working on the kit
 
-This is the source repo, not a target repo — do not run `playbook-init.sh` here. Edit `cursor/rules/*.mdc` (canonical), then regenerate the Claude format with `./scripts/sync-rules.sh --format claude --local`. See AGENTS.md for the full source-repo conventions.
+This is the source repo, not a target repo — do not run `house-rules init` here. Edit `cursor/rules/*.mdc` (canonical), then regenerate the Claude format with `./scripts/house-rules sync --format claude --local`. See AGENTS.md for the full source-repo conventions.

@@ -18,7 +18,7 @@ Quick reference for terminology used in the kit's rules and docs. Designed for a
 | **Hotspot** | A file that is both complex and frequently changed. Where bugs are most likely to live and maintenance costs compound. |
 | **Orchestration** | A layer that coordinates multiple agent sessions — assigning work, monitoring progress, detecting stuck agents, recovering from failures. An emerging capability, not a daily-use default. |
 | **Pilot** | A controlled rollout with fixed scope and baseline metrics captured before day 1. Used to validate the operating model before scaling. |
-| **Playbook / Kit** | This repo. Contains shared agent rules, skills, scripts, and operating-model docs. The single source of truth for how agentic development runs. |
+| **Kit / house-rules** | This repo. Contains shared agent rules, skills, scripts, and operating-model docs. The single source of truth for how agentic development runs. (Formerly called "the playbook" — retired at v0.3.0, decision 0002.) |
 | **Contract Testing** | Tests that verify two separately-built components agree on their shared interface. Important when agents build pieces independently. |
 | **Cost Per Unit of Work** | The API cost (tokens, compute) to complete one bead. Measured during a pilot to model org-wide costs before scaling. |
 | **Refinement** | A deliberate, evidence-grounded audit of a project's intent, plan, execution, and operating mechanisms. Most refinements are caused by discovery, not failure. Full model in [Refinement Concepts](refinement/concepts.md). |

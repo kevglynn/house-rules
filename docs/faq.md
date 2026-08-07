@@ -1,6 +1,6 @@
 # FAQ
 
-Real questions from real people adopting the playbook. If you're wondering it, someone else is too.
+Real questions from real people adopting the kit. If you're wondering it, someone else is too.
 
 ## Getting started
 
@@ -20,12 +20,12 @@ They're different form factors for the same capability.
 
 **Claude Code** is a terminal CLI. You describe a task and the agent runs. Best for standalone analysis, one-off questions, or working across multiple repos without opening each one.
 
-Most people start with one and grow into both. The playbook supports either — same rules, same beads, same workflow. If you only pick one to start: **Cursor**, because seeing what the agent does to your files in real time makes the learning curve shorter.
+Most people start with one and grow into both. The kit supports either — same rules, same beads, same workflow. If you only pick one to start: **Cursor**, because seeing what the agent does to your files in real time makes the learning curve shorter.
 
 ```bash
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor  # Cursor only
-bash ~/process-kit/scripts/playbook-init.sh --tool claude  # Claude Code only
-bash ~/process-kit/scripts/playbook-init.sh --tool both    # Both formats
+bash ~/process-kit/scripts/house-rules init --tool cursor  # Cursor only
+bash ~/process-kit/scripts/house-rules init --tool claude  # Claude Code only
+bash ~/process-kit/scripts/house-rules init --tool both    # Both formats
 ```
 
 ### How do I run multiple agents?
@@ -34,7 +34,7 @@ bash ~/process-kit/scripts/playbook-init.sh --tool both    # Both formats
 
 **Claude Code:** Open a second terminal tab and start another `claude` session.
 
-The playbook's multi-agent-review rule takes this further — parallel review passes with different lenses (correctness, security, performance) that synthesize into one report. But that's advanced. Start with one agent, get comfortable, then add a second when you feel the bottleneck.
+The kit's multi-agent-review rule takes this further — parallel review passes with different lenses (correctness, security, performance) that synthesize into one report. But that's advanced. Start with one agent, get comfortable, then add a second when you feel the bottleneck.
 
 ### Can I just try things and see what happens?
 
@@ -44,42 +44,42 @@ Yes. The **[Onboarding Sandbox](../sandbox/)** is built for exactly this — a 4
 
 ### How should I configure my rules — per-project or user-level?
 
-**Per-project, always.** The playbook rules go into each project repo so they travel with the code, not with your machine. Anyone who clones the repo gets the same agent behavior.
+**Per-project, always.** The kit rules go into each project repo so they travel with the code, not with your machine. Anyone who clones the repo gets the same agent behavior.
 
-User-level rules (Cursor Settings > Rules) are for personal preferences that span all projects — things like "always ask before force-pushing" or "I prefer verbose commit messages." Keep those separate from the playbook rules.
+User-level rules (Cursor Settings > Rules) are for personal preferences that span all projects — things like "always ask before force-pushing" or "I prefer verbose commit messages." Keep those separate from the kit rules.
 
 ### I already set up rules in my Cursor user settings. How do I migrate?
 
 Run this from your project root:
 
 ```bash
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor
+bash ~/process-kit/scripts/house-rules init --tool cursor
 ```
 
-Then remove the playbook-sourced rules from your Cursor user settings (Settings > Rules for AI). Keep any personal preferences that aren't covered by the playbook rules. Verify with:
+Then remove the kit-sourced rules from your Cursor user settings (Settings > Rules for AI). Keep any personal preferences that aren't covered by the kit rules. Verify with:
 
 ```bash
-bash ~/process-kit/scripts/playbook-doctor.sh
+bash ~/process-kit/scripts/house-rules doctor
 ```
 
 The doctor script checks rule freshness, beads setup, scratchpad structure, and sync registration. It prints fix commands for anything that's off.
 
-### How do I keep rules updated when the playbook changes?
+### How do I keep rules updated when the kit changes?
 
 ```bash
 cd ~/process-kit && git pull
-./scripts/sync-rules.sh                     # Sync Cursor rules to all projects
-./scripts/sync-rules.sh --format claude      # Sync Claude Code rules too
+./scripts/house-rules sync                     # Sync Cursor rules to all projects
+./scripts/house-rules sync --format claude      # Sync Claude Code rules too
 ```
 
-Your projects are registered in `~/.playbook-sync-targets`. The sync script updates all of them in one command. Use `--check` to see which projects are out of date without changing anything.
+Your projects are registered in `~/.house-rules-sync-targets`. The sync script updates all of them in one command. Use `--check` to see which projects are out of date without changing anything.
 
 ### I'm using this for a personal project. Do I need to track beads in git?
 
 No. Use `--stealth` mode:
 
 ```bash
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor --stealth
+bash ~/process-kit/scripts/house-rules init --tool cursor --stealth
 ```
 
 This hides the `.beads/` directory from git. You still get structured task tracking — it just stays local to your machine.
@@ -114,11 +114,11 @@ You can. And for small throwaway scripts, you should. But the moment a project s
 - **Lost context** — every new session starts from zero
 - **No accountability** — no record of what was planned vs. what was built
 
-The playbook isn't bureaucracy. It's the minimum structure that makes agent work *repeatable*. The agent does all the bookkeeping — you just describe what you want and review what it built.
+The kit isn't bureaucracy. It's the minimum structure that makes agent work *repeatable*. The agent does all the bookkeeping — you just describe what you want and review what it built.
 
 ### What if I'm not a programmer?
 
-The playbook is built for people who work with code, but the workflow pattern — decompose a goal into tasks with clear success criteria, execute one at a time, prove each one is done — works for any domain. If you can describe what "done" looks like, an agent can work toward it.
+The kit is built for people who work with code, but the workflow pattern — decompose a goal into tasks with clear success criteria, execute one at a time, prove each one is done — works for any domain. If you can describe what "done" looks like, an agent can work toward it.
 
 ## Learn more
 

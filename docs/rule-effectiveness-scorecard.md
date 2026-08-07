@@ -1,6 +1,6 @@
 # Rule Effectiveness Scorecard
 
-Lightweight measurement framework for evaluating whether playbook rules improve agent behavior. Use after agent sessions to track adherence and identify which rules are working vs. being ignored.
+Lightweight measurement framework for evaluating whether kit rules improve agent behavior. Use after agent sessions to track adherence and identify which rules are working vs. being ignored.
 
 ## Session Scorecard
 
@@ -167,7 +167,7 @@ Use it after rule edits to establish baselines and measure uplift, or to investi
 
 ## Automated Metrics (future — Tier 4.2)
 
-When the Playbook Scorecard (Tier 4.2) ships, these manual checks can be partially automated. The maturity path is: manual scorecard (today) → analyst subagent (semi-automated) → Tier 4.2 Playbook Scorecard (fully automated).
+When the Kit Scorecard (Tier 4.2) ships, these manual checks can be partially automated. The maturity path is: manual scorecard (today) → analyst subagent (semi-automated) → Tier 4.2 Kit Scorecard (fully automated).
 
 | Manual check | Automated equivalent |
 |--------------|---------------------|

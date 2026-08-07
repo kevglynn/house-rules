@@ -6,9 +6,9 @@ This project adopts **[The Agentic Covenant v1.0](https://github.com/gastownhall
 
 This kit is a methodology for AI-supervised development. The rules, skills, scripts, and documentation in this repo govern how agents behave. It follows that the *community* building those rules should itself operate under governance designed for human-agent collaboration.
 
-The Agentic Covenant's three principles align directly with the playbook's philosophy:
+The Agentic Covenant's three principles align directly with the kit's philosophy:
 
-| Agentic Covenant Principle | Playbook Equivalent |
+| Agentic Covenant Principle | Kit Equivalent |
 |---|---|
 | **Operator accountability** — humans are responsible for their agents | Planner/Executor model — the human decides *what*, the agent decides *how* |
 | **Understanding over authorship** — comprehension matters, not line-by-line writing | Agent-assisted development — we judge contributions on quality, not tooling |
@@ -29,11 +29,11 @@ The Agentic Covenant's three principles align directly with the playbook's philo
 - Rule changes that affect agent behavior should be measured (see the [Rule Effectiveness Scorecard](docs/rule-effectiveness-scorecard.md))
 - When rules conflict with the Agentic Covenant's agent operating standards, the Covenant takes precedence
 
-### For teams adopting the playbook
+### For teams adopting the kit
 
-- The playbook ships behavioral rules. The Agentic Covenant provides the governance layer.
-- Teams adopting the playbook are encouraged to adopt the Agentic Covenant as their project's Code of Conduct
-- The `playbook-init.sh` script can distribute `CODE_OF_CONDUCT.md` alongside rules (see [Governance Guide](docs/governance.md))
+- The kit ships behavioral rules. The Agentic Covenant provides the governance layer.
+- Teams adopting the kit are encouraged to adopt the Agentic Covenant as their project's Code of Conduct
+- The `house-rules init` script can distribute `CODE_OF_CONDUCT.md` alongside rules (see [Governance Guide](docs/governance.md))
 
 ## Reporting
 

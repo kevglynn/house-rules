@@ -16,12 +16,12 @@ The [Agentic Covenant](https://github.com/gastownhall/beads/blob/main/CODE_OF_CO
 
 Most teams adopt all five parts. If you want to adopt incrementally, start with Parts I + II + IV.
 
-## Step 1: Bootstrap with playbook-init.sh
+## Step 1: Bootstrap with house-rules init
 
 If you haven't already:
 
 ```bash
-bash ~/process-kit/scripts/playbook-init.sh --tool cursor|claude|both
+bash ~/process-kit/scripts/house-rules init --tool cursor|claude|both
 ```
 
 This copies `CODE_OF_CONDUCT.md` into your project automatically, along with a `.github/pull_request_template.md` that includes the `Assisted-by` disclosure convention.
@@ -39,7 +39,7 @@ Open `CODE_OF_CONDUCT.md` in your project and customize these sections:
 
 ### Enforcement contact
 
-Replace the playbook maintainer contact with your team's escalation path:
+Replace the kit maintainer contact with your team's escalation path:
 
 ```markdown
 ## Reporting
@@ -66,7 +66,7 @@ Define which spaces the Covenant applies to:
 
 ## Step 3: Set up the PR template
 
-The playbook ships a PR template at `.github/pull_request_template.md` that includes:
+The kit ships a PR template at `.github/pull_request_template.md` that includes:
 
 - Summary and test plan sections
 - `Assisted-by` disclosure (required by the Agentic Covenant)
@@ -107,16 +107,16 @@ Key points to share:
 
 ## Verifying adoption
 
-Run `playbook-doctor.sh` to check governance status:
+Run `house-rules doctor` to check governance status:
 
 ```bash
-bash ~/process-kit/scripts/playbook-doctor.sh
+bash ~/process-kit/scripts/house-rules doctor
 ```
 
 It checks for:
 - `CODE_OF_CONDUCT.md` presence
 - Agentic Covenant content
-- Project in `~/.playbook-sync-targets` for future updates
+- Project in `~/.house-rules-sync-targets` for future updates
 
 ## Rolling out across projects
 
@@ -134,13 +134,13 @@ while IFS= read -r project; do
     cp ~/process-kit/.github/pull_request_template.md "$project/.github/pull_request_template.md"
     echo "Added PR template: $project"
   fi
-done < ~/.playbook-sync-targets
+done < ~/.house-rules-sync-targets
 ```
 
 Then customize each project's enforcement contact and scope.
 
 ## Further reading
 
-- [Governance overview](governance.md) — how governance fits into the playbook
+- [Governance overview](governance.md) — how governance fits into the kit
 - [The Agentic Covenant (full text)](https://github.com/gastownhall/beads/blob/main/CODE_OF_CONDUCT.md)
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — how to contribute to the playbook itself
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — how to contribute to the kit itself

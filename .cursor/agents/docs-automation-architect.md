@@ -26,8 +26,8 @@ This repo is the **standalone distributable package for AI-native development**.
 
 ### Scripts and Automation (current state)
 - **`scripts/sync-rules.sh`** — multi-format rule sync with `--check`, `--local`, `--format`
-- **`scripts/playbook-init.sh`** — one-command project bootstrap
-- **`scripts/playbook-doctor.sh`** — setup health (human + `--agent`)
+- **`scripts/house-rules init`** — one-command project bootstrap
+- **`scripts/house-rules doctor`** — setup health (human + `--agent`)
 - **`scripts/setup-worktree.sh`** — beads redirect for worktrees
 - **`scripts/install-global-safety-net.sh`** / **`scripts/install-aliases.sh`**
 - **`.cursor/worktrees.json`** — postCreate hook for worktree setup
@@ -70,7 +70,7 @@ Propose specific new documentation, scripts, or automation:
 - **Onboarding guide**: What should it contain beyond QUICKSTART.md?
 - **Contribution guide**: How should contributors propose rule changes? (see CONTRIBUTING.md)
 - **Troubleshooting guide**: Common issues and solutions
-- **Health check script**: Automated smoke beyond `playbook-doctor.sh`
+- **Health check script**: Automated smoke beyond `house-rules doctor`
 - **Changelog automation**: Track rule changes across versions
 - **Rule diffing**: Show what changed between syncs
 - **Skill discoverability**: How new skills get found and adopted

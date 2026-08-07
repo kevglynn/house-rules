@@ -1,34 +1,25 @@
 # Bead Completion Standards
 
-## When picking up a bead — JIT verification
+**Procedure lives in the `skills/bead-authoring` skill** — step lists and worked examples (JIT-verification questions, self-review pass, close-reason format, the `bd remember` when/when-not manual, `bd note`/`bd comment` semantics). This rule states the obligations; the skill is how you meet them.
 
-Before writing any code, check what you're working on (`bd show --current`) and verify that the bead's description matches reality:
+## JIT verification
 
-- Do the files and paths mentioned still exist?
-- Do the APIs, interfaces, or patterns described still match the current codebase?
-- Has anything changed since the bead was created that affects the approach?
-
-If reality doesn't match: update the implementation approach. **Never modify the acceptance criteria** — those are owned by the Planner. Note the discrepancy and proceed with the adjusted approach.
+Before writing any code, check what you're working on (`bd show --current`) and verify the bead's description against reality — files, APIs, and assumptions may have changed since it was written (question list: the skill). If reality doesn't match: update the implementation approach, note the discrepancy, and proceed. During work, keep context attached to the bead: `bd note` for decisions, `bd comment` for discussion.
 
 ## AC ownership
 
 - **The Planner writes acceptance criteria** at bead creation time.
 - **The Executor does not modify ACs.** If an AC is wrong, obsolete, or impossible given the current codebase, mark the bead blocked and escalate to the Planner for an AC update. Do not silently reinterpret or skip ACs.
 
-## Before declaring done — self-review
+## Self-review before declaring done
 
-The same agent that did the work performs a focused review pass:
-
-1. Re-read each acceptance criterion from the bead (`bd show <id>`)
-2. For each AC, verify it is satisfied by the code as written
-3. If any AC is not met, fix it or escalate — do not declare done
-
-This is not a separate subagent or reviewer. It's a deliberate pause by the implementing agent to check its own work against the spec.
+The same agent that did the work re-reads each acceptance criterion (`bd show <id>`) and verifies it is satisfied by the code as written; any unmet AC is fixed or escalated — never declared done. Not a separate reviewer — a deliberate pause to check the work against the spec.
 
 ## Evidence policy — what to include in `bd close --reason`
 
-Every close reason must include evidence mapped to acceptance criteria:
+Every close reason must include evidence mapped to acceptance criteria and reference a commit hash, branch name, or PR URL (format and worked examples: the skill). After closing, `--suggest-next` shows newly unblocked issues; `--claim-next` auto-claims the next highest-priority ready one.
 
+<!-- GENERATED from profiles/conventions.toml — DO NOT EDIT -->
 | Bead type | Required evidence |
 |-----------|------------------|
 | Bug | Test output showing bug is reproduced and fixed |
@@ -41,6 +32,9 @@ Every close reason must include evidence mapped to acceptance criteria:
 | Decision | "N/A — decision record, no verification needed" |
 | Milestone | "N/A — milestone marker, verify children are closed" |
 | Epic | Verify all children closed (`bd epic close-eligible`), then confirm each success criterion is met by the closed children's outcomes. If a criterion is unmet, create a follow-up bead before closing. |
+<!-- END GENERATED from profiles/conventions.toml -->
+
+**Checker:** `scripts/close-reason-lint` (kit-distributed) mechanizes the shape half of this policy — `bd list --status=closed --json | close-reason-lint` flags closed beads whose reasons lack a commit-ref or AC-mapping shape (`--json` for agents); whether the mapped evidence is any good stays with self-review and the review lenses. Shapes, exemptions, and worked examples in `close-reason-lint --help`.
 
 ### Do not defer AC verification
 
@@ -55,60 +49,13 @@ When an AC requires a manual step (rebuild, UI click, external system check, int
 
 The invariant: the close reason carries evidence for every AC, **or** the AC has been explicitly moved to a follow-up bead that exists at close time. "Later" is not an acceptable close state.
 
-See `beads-quality.md` for close reason format and examples.
-
-## After closing — workflow continuation
-
-- `bd close <id> --reason "..." --suggest-next` — shows newly unblocked issues after close
-- `bd close <id> --reason "..." --claim-next` — auto-claims the next highest-priority ready issue
-
 ## Knowledge capture — `bd remember`
 
-After closing a bead, pause: did this work surface something a future agent would
-otherwise have to rediscover? If so, capture it before moving on.
-
-Most bead closures produce **no memory** — this step is for the exceptions.
-
-```bash
-bd remember "AccountService.sync silently skips soft-deleted records — \
-  the WHERE clause in account_repo.rb:47 filters them with no error" \
-  --key account-sync-soft-deletes
-```
-
-### When to remember
-
-- A fix that required non-obvious investigation (the root cause wasn't where you first looked)
-- A codebase pattern not apparent from reading the code ("module X is called by a background job, not the controller")
-- A corrected assumption — something you got wrong that cost investigation time
-- A library/config quirk or environment-specific behavior not in docs
-- A misleading error message where the real cause was different from what the error suggested
-
-### When NOT to remember
-
-- Task-specific progress notes (that's the scratchpad)
-- Anything already codified in the project's agent rules
-- Obvious facts derivable from the code or docs
-- Temporary workarounds (create a follow-up bead instead)
-- Performance numbers or benchmarks (too volatile)
-- Speculative improvements ("this could be refactored to use X")
-
-### Litmus test
+After closing a bead, pause: did this work surface something a future agent would otherwise have to rediscover? Most bead closures produce **no memory** — this step is for the exceptions. The litmus test:
 
 > Would a fresh agent, starting a new session with no prior context, waste
 > significant time or make a wrong assumption without this knowledge?
 
-If yes, remember. If no, skip.
+If yes, remember — always with `--key <area>-<topic>`; one memory per bead, max (when/when-not manual and key discipline: the skill). If no, skip.
 
-### Requirements
-
-- **Always use `--key`** with a descriptive kebab-case identifier (`<area>-<topic>`). This enables deduplication and future pruning. Never rely on auto-generated keys from content.
-- **Check before creating.** Run `bd memories <keyword>` to search for existing memories on the same topic. Update with `bd remember --key <existing-key> "corrected info"` rather than creating a parallel entry.
-- **One memory per bead, max.** If you're capturing more than two, the bead was probably too large or you're recording progress notes.
-
-### Staleness
-
-If `bd prime` injects a memory that contradicts what you observe in the codebase, update or remove the stale memory immediately — do not work around it silently. Use `bd remember --key <existing-key> "corrected info"` to overwrite, or `bd forget <key>` to remove entirely.
-
-## Progress tracking during work
-
-Use `bd note <id> "progress update"` to append implementation notes to the bead's notes field (persistent, visible in `bd show`). Use `bd comment <id> "observation"` for timestamped discussion entries. Notes record decisions; comments record conversation. This keeps context attached to the work item rather than only in the scratchpad.
+**Staleness:** if `bd prime` injects a memory that contradicts what you observe in the codebase, update or remove it immediately — do not work around it silently. `bd remember --key <existing-key> "corrected info"` to overwrite, or `bd forget <key>` to remove.
