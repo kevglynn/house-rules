@@ -33,6 +33,16 @@ new_home() {
   printf '%s' "$h"
 }
 
+# bd shim: this suite exercises marker-rewrite logic, not beads.
+# playbook-init's preflight hard-fails when bd is absent (CI runners don't
+# have it), so a no-op stub keeps the preflight green and makes local and
+# CI runs behaviorally identical (process-kit-4ma).
+BD_SHIM_DIR="$(mktemp -d)"
+CLEANUP+=("$BD_SHIM_DIR")
+printf '#!/bin/sh\nexit 0\n' > "$BD_SHIM_DIR/bd"
+chmod +x "$BD_SHIM_DIR/bd"
+export PATH="$BD_SHIM_DIR:$PATH"
+
 check() { # check <name> <condition...>
   local name="$1"; shift
   if "$@"; then
