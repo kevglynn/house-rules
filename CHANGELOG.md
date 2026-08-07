@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0 — 2026-08-07
+
+Brand cohesion: the tooling layer stops speaking the retired "playbook" brand. One dispatcher, renamed machine state, re-rendered field — no artifact generation mixes the two brands. Decisions in [docs/decisions/0002](docs/decisions/0002-brand-cohesion-tooling-rename.md); full narrative: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md).
+
+### Added
+- **`scripts/house-rules` dispatcher** — the sole documented entry point (`init | doctor | sync`), forwarding to the implementation scripts unchanged; `hr` and `house-rules` shell aliases replace `pbi`/`pbd`. A missing or unknown subcommand is a usage error (exit 64).
+- **Content-aware rc-block refresh**: `install-aliases.sh` now detects a present-but-stale source block (the body changed at this cut — the sourced filename moved) and rewrites it in place, with the malformed-marker guards intact.
+- Fixture coverage: the profile-distribution suite is a blocking CI gate (process-kit-b3m); both suites run on bd-less runners via a no-op shim (process-kit-4ma); new cases pin rendered-section content (playbook-free, dispatcher-form), CRLF rc blocks, stale-stamp refresh, and the nested-BEGIN guard below — 55 assertions total.
+
+### Changed
+- **Script renames**: `playbook-init.sh` → `init.sh`, `playbook-doctor.sh` → `doctor.sh` (independently runnable behind the dispatcher); internal `PLAYBOOK_ROOT` → `KIT_ROOT`; init lock → `.house-rules-init.lock`. Doctor exit codes, `SUMMARY:` keys, and the marker grammar are unchanged.
+- **Machine-state renames, clean break**: `~/.playbook-sync-targets` → `~/.house-rules-sync-targets`, `~/.playbook-aliases.sh` → `~/.house-rules-aliases.sh`, the documented ignore file → `~/.house-rules-ignore`. No legacy-name recognition ships in code (decision 0002 A2).
+- **Renderers and docs**: the AGENTS.md section and the global-safety-net blocks emit dispatcher-form commands only; active docs and rules swept of the tooling-brand "playbook" (dated records and the generic `graybeard-playbook` name exempt per 0002 A4). `PROCESS_KIT`, the `~/process-kit` clone path, and the `process-kit-*` bead prefix deliberately keep their names as documented history (A3).
+- Legacy `ai-dev-playbook:` marker recognition sunset (process-kit-26b) after a field sweep showed zero old-marker artifacts; the 0.2.0 in-place migration machinery is removed.
+
+### Fixed
+- **Data-loss guard (Tier 1 review Critical)**: an orphan BEGIN above a well-formed marker block made all three installers' rewrite scanners silently delete the user content between them — newly reachable from install mode via the refresh path. A BEGIN seen while a block is open now refuses the rewrite; fixed test-first at every scanner (commit 3eeacc8, ledger red/green).
+- **Honest refusal exits**: malformed-marker refusals in the installers exited 0 behind success banners ("Installed aliases", "Nothing to remove"); they now exit 1 with explicit warnings across install and uninstall in both installers and in init's section refresh.
+- Doctor fix strings taught the retired direct-script invocation at 8 sites — swept to dispatcher form; `sync-rules.sh` shed dead migration machinery (`derive_repo_root`, the removed `~/.cursor-sync-targets` fallback's scaffolding, the v1.0-era `claude/rules` migration) and `--show-version` now says house-rules.
+
 ## 0.2.0 — 2026-08-06
 
 First public release, under the final name **house-rules** (renamed from the working name `process-kit`; old GitHub URLs redirect). Full narrative: [docs/releases/v0.2.0.md](docs/releases/v0.2.0.md).

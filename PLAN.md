@@ -33,7 +33,7 @@ Resolved in [docs/decisions/0001-naming-license-publication.md](docs/decisions/0
 | Predecessor relationship | Predecessor is defunct (receivership); its copies are dead; `process-kit` is the sole canonical home |
 | Packaging | Plain repo for v1; Claude Code plugin bundle deferred |
 
-Marker strings in the installers now use the `house-rules:` prefix; recognition of the legacy `ai-dev-playbook:` markers was sunset 2026-08-06 (bead process-kit-26b) after a field sweep showed zero old-marker artifacts remaining — the in-place migration machinery (bead process-kit-0em) served its purpose and was removed. The one in-rule predecessor mention was removed 2026-08-05 when the minimalism family renamed to `graybeard-*` with linked upstream attribution (bead process-kit-8nx.1).
+Marker strings in the installers now use the `house-rules:` prefix; recognition of the legacy `ai-dev-playbook:` markers was sunset 2026-08-06 (bead process-kit-26b) after a field sweep showed zero old-marker artifacts remaining — the in-place migration machinery (bead process-kit-0em) served its purpose and was removed. The one in-rule predecessor mention was removed 2026-08-05 when the minimalism family renamed to `graybeard-*` with linked upstream attribution (bead process-kit-8nx.1). At v0.3.0 (2026-08-07, epic process-kit-jy9, decision 0002) the tooling brand followed: `scripts/house-rules` dispatcher (`hr` alias) replaced the `playbook-*` script names, the `~/.playbook-*` dotfiles renamed with a clean break, and the active docs swept — "playbook" survives only in dated records and the generic `graybeard-playbook` name.
 
 ## Backlog (after the first four skills prove out)
 
