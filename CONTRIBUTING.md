@@ -159,11 +159,16 @@ Content...
 
 ## Versioning
 
-The kit uses semantic versioning via `VERSION` file and git tags.
+The kit uses semantic versioning via `VERSION` file and git tags. The consumer-facing contract — what each bump means for synced repos and plugin installs — is [docs/versioning.md](docs/versioning.md); the short form:
 
-- **Patch** (1.0.x): Typo fixes, clarifications, documentation updates
-- **Minor** (1.x.0): New rules, new script features, behavior changes
-- **Major** (x.0.0): Breaking changes to rule structure or script interfaces
+- **Patch** (0.3.x): fixes, clarifications, documentation updates
+- **Minor** (0.x.0): additive — new rules, skills, script flags, doctor checks or SUMMARY keys, profile keys
+- **Major** (x.0.0): removals and renames — a rule removed or renamed, a doctor SUMMARY key or exit-code mapping changed, a profile schema break, a removal from the core-tier manifest
+
+Two release-cutting obligations follow from that contract:
+
+- A release that's breaking for synced repos leads its CHANGELOG entry with a **Breaking for synced repos** section: what disappears or renames on the next sync, and what to do.
+- A renamed rule ships a stub at the old filename for one release before the old name disappears (the sync's stale cleanup deletes unrecognized files from targets, so an unstubbed rename is a deletion from the target's side).
 
 To create a release:
 
@@ -179,7 +184,7 @@ git tag v1.1.0
 git push origin main --tags
 ```
 
-Teams pin to versions via `house-rules sync --version v1.0.0`. Breaking changes should be communicated before tagging.
+Teams pin via `git checkout <tag>` in the kit clone (full pin) or `house-rules sync --version <tag>` (rules only) — coverage difference explained in [docs/versioning.md](docs/versioning.md). Breaking changes should be communicated before tagging.
 
 ## Decision records
 

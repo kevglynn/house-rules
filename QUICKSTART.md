@@ -208,6 +208,29 @@ cd ~/house-rules && git pull
 ./scripts/house-rules sync --format claude    # Claude Code users
 ```
 
+**The sync owns the directories it writes to.** In every synced repo,
+`.cursor/rules/` and `.claude/rules/` are treated as kit-exclusive: kit
+files you edited locally are overwritten (a timestamped `.bak` is kept by
+default), and any file the kit doesn't recognize — your own local rules,
+or rules another tool placed there — is **deleted, with no backup**.
+Preview what a sync would do with `--dry-run`. Repo-local always-on
+guidance belongs in your repo's `AGENTS.md`/`CLAUDE.md` or a skill, never
+in the synced directories — see [docs/operations.md](docs/operations.md).
+
+**Prefer a release over `main`.** The commands above sync whatever your
+clone currently has, including unreleased changes. To pin to a release
+instead:
+
+```bash
+git -C ~/house-rules checkout v0.3.0    # pin the whole kit to a tag
+./scripts/house-rules sync --format all
+```
+
+Upgrade by reading the next tag's [CHANGELOG](CHANGELOG.md) entry, then
+checking it out and re-syncing. Version semantics (what MAJOR/MINOR mean
+for your repo) and the rules-only `sync --version` variant:
+[docs/versioning.md](docs/versioning.md).
+
 ## What the global safety net covers
 
 The machine setup at the top of this doc installs three marker-delimited blocks into `~/CLAUDE.md` (and a matching Cursor user-rules paste snippet). Each block addresses a different un-bootstrapped-repo failure mode:

@@ -1,5 +1,7 @@
 # Changelog
 
+Release semantics live in [docs/versioning.md](docs/versioning.md). From 0.4.0 onward, any release that breaks synced repos — removed or renamed rules, doctor SUMMARY-key changes, profile schema breaks, core-manifest removals — leads its entry with a **Breaking for synced repos** section: what changes in your repo on the next sync, and what to do about it.
+
 ## 0.3.0 — 2026-08-07
 
 Brand cohesion: the tooling layer stops speaking the retired "playbook" brand. One dispatcher, renamed machine state, re-rendered field — no artifact generation mixes the two brands. Decisions in [docs/decisions/0002](docs/decisions/0002-brand-cohesion-tooling-rename.md); full narrative: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md).

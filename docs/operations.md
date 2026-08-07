@@ -32,7 +32,7 @@ Reports which targets have stale or missing rules without modifying anything.
 
 **Rules** (`cursor/rules/*.mdc`) sync automatically via `house-rules sync`. Add a target repo to `~/.house-rules-sync-targets` and run the script: rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
 
-The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is silently removed on the next sync. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
+The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is removed on the next sync — no prompt, no backup. That includes rule files other tools put there: the doctor tolerates extras between syncs, but the sync removes them. Two safety valves exist. `--dry-run` previews every write and deletion, and local edits to *kit-recognized* files are backed up to a timestamped `.bak` before overwrite (safe mode, on by default; `--unsafe` disables it). Unrecognized files get neither. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 
@@ -90,11 +90,16 @@ The setup script is pure shell (no `python3` or `bd` binary required). Validated
 
 ## Versioning mechanics
 
-The kit uses semantic versioning via the `VERSION` file and git tags. Teams can pin to a stable release:
+The kit uses semantic versioning via the `VERSION` file and git tags. The compatibility contract — what MAJOR/MINOR mean for synced repos, rename stubs, the Breaking-for-synced-repos changelog convention — is in [versioning.md](versioning.md).
+
+Two ways to pin, with different coverage:
 
 ```bash
-./scripts/house-rules sync --version v1.0.0    # Sync from a specific release
-./scripts/house-rules sync --show-version      # Print current version
+git -C ~/house-rules checkout v0.3.0           # full pin: rules, doctor, checkers, profile
+./scripts/house-rules sync --version v0.3.0    # rules-only pin; the clone stays where it is
+./scripts/house-rules sync --show-version      # print current version
 ```
+
+`sync --version` reads rules out of the git tag, but the doctor drift-checks targets against the clone's *current checkout* — a clone sitting at `main` will report tag-pinned rules as stale. Pinning the clone itself keeps every tool on one version and is the right default for anyone not developing the kit; syncing from `main` is maintainer / advanced mode.
 
 Release process details live in [CONTRIBUTING.md](../CONTRIBUTING.md); release notes live in [releases/](releases/).
