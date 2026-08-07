@@ -15,6 +15,7 @@ Reference material for the kit. If you're new, read in this order:
 |----------|-----------|
 | [Glossary](glossary.md) | Plain-English definitions of all terminology. |
 | [Operating the Kit](operations.md) | Distribution semantics, drift checking, worktree setup, versioning mechanics. |
+| [Versioning & Deprecation](versioning.md) | What MAJOR/MINOR mean for synced repos, rename stubs, release pinning. |
 | [Governance](governance.md) | How the Agentic Covenant fits into the kit. |
 | [Agentic Covenant Adoption Guide](adoption-guide.md) | Step-by-step governance adoption for teams. |
 | [Rule Effectiveness Scorecard](rule-effectiveness-scorecard.md) | Measuring whether rule changes improve agent behavior. |
