@@ -16,8 +16,7 @@ set -uo pipefail
 #   ./scripts/sync-rules.sh --show-version                # Print current kit version
 #   ./scripts/sync-rules.sh --help
 #
-# Config: ~/.playbook-sync-targets (one repo root per line).
-# Falls back to ~/.cursor-sync-targets (deprecated) and derives repo roots.
+# Config: ~/.house-rules-sync-targets (one repo root per line).
 # Rules are auto-discovered from cursor/rules/*.mdc (no hardcoded file list).
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -69,7 +68,7 @@ Options:
   --show-version               Print current kit version and exit
   --help                       Show this help
 
-Config: ~/.playbook-sync-targets (one repo root per line)
+Config: ~/.house-rules-sync-targets (one repo root per line)
 
 Versioning:
   Without --version, rules sync from the current working tree (latest edits).
@@ -372,23 +371,16 @@ fi
 
 # --- Load targets ---
 
-NEW_CONFIG="$HOME/.playbook-sync-targets"
-OLD_CONFIG="$HOME/.cursor-sync-targets"
+NEW_CONFIG="$HOME/.house-rules-sync-targets"
 
 CONFIG_FILE=""
 TARGETS=()
 
 if [ -f "$NEW_CONFIG" ]; then
   CONFIG_FILE="$NEW_CONFIG"
-elif [ -f "$OLD_CONFIG" ]; then
-  echo "⚠  Using deprecated ~/.cursor-sync-targets."
-  echo "   Migrate: mv ~/.cursor-sync-targets ~/.playbook-sync-targets"
-  echo "   (Use repo roots instead of .cursor/rules paths)"
-  echo ""
-  CONFIG_FILE="$OLD_CONFIG"
 else
   echo "No config file found."
-  echo "Create ~/.playbook-sync-targets with one repo root per line:"
+  echo "Create ~/.house-rules-sync-targets with one repo root per line:"
   cat <<TMPL
 # Repo roots to sync kit rules to (one per line).
 # Lines starting with # are ignored. ~ is expanded to \$HOME.

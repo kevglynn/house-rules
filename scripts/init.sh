@@ -561,18 +561,18 @@ fi
 # Throwaway bootstraps (test/verification runs under /tmp or $TMPDIR) must
 # not register: dead entries surface as 'target does not exist' warnings on
 # every later sync-rules.sh run until removed by hand.
-TARGETS_FILE="$HOME/.playbook-sync-targets"
+TARGETS_FILE="$HOME/.house-rules-sync-targets"
 tmp_root="${TMPDIR:-/tmp}"
 case "$PROJECT_ROOT/" in
   "${tmp_root%/}/"* | /tmp/*)
-    echo "– Skipped ~/.playbook-sync-targets registration (throwaway path under ${tmp_root%/})"
+    echo "– Skipped ~/.house-rules-sync-targets registration (throwaway path under ${tmp_root%/})"
     ;;
   *)
     if [ -f "$TARGETS_FILE" ] && grep -qF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
-      echo "✓ Already in ~/.playbook-sync-targets"
+      echo "✓ Already in ~/.house-rules-sync-targets"
     else
       echo "$PROJECT_ROOT" >> "$TARGETS_FILE"
-      echo "✓ Added to ~/.playbook-sync-targets"
+      echo "✓ Added to ~/.house-rules-sync-targets"
     fi
     ;;
 esac

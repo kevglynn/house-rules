@@ -58,7 +58,7 @@ Checks:
   • Beads is initialized (bd ping + bd list)
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
   • Scratchpad exists with correct sections
-  • Project is in ~/.playbook-sync-targets
+  • Project is in ~/.house-rules-sync-targets
   • Worktree hook present (if repo has worktrees)
   • Global safety net installed (per-machine agent rule blocks)
 
@@ -516,7 +516,7 @@ echo ""
 
 echo "Sync targets:"
 
-TARGETS_FILE="$HOME/.playbook-sync-targets"
+TARGETS_FILE="$HOME/.house-rules-sync-targets"
 has_beads=false
 [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
 
@@ -525,15 +525,15 @@ if $is_kit_repo; then
   echo "  – kit repo itself: sync source, not a target (registration check skipped)"
 elif [ -f "$TARGETS_FILE" ]; then
   if grep -qF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
-    check_pass "Project is in ~/.playbook-sync-targets"
+    check_pass "Project is in ~/.house-rules-sync-targets"
   elif $has_beads; then
-    check_fail "Beads project not in ~/.playbook-sync-targets — rules will drift silently" \
+    check_fail "Beads project not in ~/.house-rules-sync-targets — rules will drift silently" \
       "bash \"$KIT_ROOT/scripts/init.sh\" --tool cursor|claude|both"
   else
-    check_fail "Project not in ~/.playbook-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.playbook-sync-targets"
+    check_fail "Project not in ~/.house-rules-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.house-rules-sync-targets"
   fi
 else
-  check_fail "\$HOME/.playbook-sync-targets doesn't exist" "echo \"$PROJECT_ROOT\" >> \$HOME/.playbook-sync-targets"
+  check_fail "\$HOME/.house-rules-sync-targets doesn't exist" "echo \"$PROJECT_ROOT\" >> \$HOME/.house-rules-sync-targets"
 fi
 
 echo ""

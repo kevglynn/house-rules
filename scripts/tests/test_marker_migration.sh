@@ -135,10 +135,11 @@ check "claude-md orphan BEGIN: warns instead of rewriting" \
 check "claude-md orphan BEGIN: does not claim Updated" \
   out_lacks "$out" "Updated block 'agent-identity'"
 
-# --- 5. Orphan BEGIN in rc file at install: the installer treats the block
-#        as present (substring detection) and must leave the rc untouched —
-#        no rewrite path exists on install, so no truncation is possible.
-#        The rewrite-loop refusal guard is exercised on uninstall (case 8). ---
+# --- 5. Orphan BEGIN in rc file at install: the block reads as present but
+#        stale, so install takes the refresh path — whose rewrite loop must
+#        refuse the malformed markers and leave the rc untouched (truncation
+#        would eat everything below the orphan BEGIN). Same guard is
+#        exercised on uninstall (case 8). ---
 h="$(new_home)"
 cat > "$h/.bashrc" <<'EOF'
 # BEGIN house-rules:aliases
@@ -152,6 +153,32 @@ check "rc orphan BEGIN at install: user content survives" \
   file_has "$h/.bashrc" "export USER_SENTINEL=1"
 check "rc orphan BEGIN at install: rc left byte-identical" \
   test "$sha1" = "$sha2"
+check "rc orphan BEGIN at install: warns malformed instead of rewriting" \
+  out_has "$out" "malformed"
+
+# --- 5b. Stale-but-well-formed rc block at install: the body changed across
+#         kit versions (v0.3.0 dispatcher cut renamed the sourced file), so
+#         a present block with an old body must be refreshed in place —
+#         current body, still exactly one block, neighbors intact. ---
+h="$(new_home)"
+cat > "$h/.bashrc" <<'EOF'
+export USER_ABOVE=1
+# BEGIN house-rules:aliases
+[ -f "$HOME/.playbook-aliases.sh" ] && . "$HOME/.playbook-aliases.sh"
+# END house-rules:aliases
+export USER_BELOW=1
+EOF
+out="$(HOME="$h" bash "$ALIASES" --shell bash 2>&1)"
+check "rc stale block: refreshed to current body" \
+  file_has "$h/.bashrc" ".house-rules-aliases.sh"
+check "rc stale block: old body gone" \
+  bash -c "! grep -qF '.playbook-aliases.sh' '$h/.bashrc'"
+check "rc stale block: still exactly one block" \
+  count_is "$h/.bashrc" "# BEGIN house-rules:aliases" 1
+check "rc stale block: neighbors intact" \
+  bash -c "grep -qF 'export USER_ABOVE=1' '$h/.bashrc' && grep -qF 'export USER_BELOW=1' '$h/.bashrc'"
+check "rc stale block: reports the refresh" \
+  out_has "$out" "Refreshed the source block"
 
 # --- 6. Orphan BEGIN in AGENTS.md: same guard via init.sh ---
 h="$(new_home)"
