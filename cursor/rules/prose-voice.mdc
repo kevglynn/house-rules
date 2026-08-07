@@ -11,4 +11,4 @@ Punctuation is part of voice: match the user's fingerprint, not model defaults. 
 
 Lexical economy is not optional. Messages, chats, and emails carry word ceilings, and depth is held in reserve for follow-ups instead of pre-loaded — a reader should absorb the whole thing without delay, friction, or hesitation. Documents may be comprehensive, and still face the skill's cut test.
 
-Does NOT apply to code comments, commit messages, bead descriptions, or agent-to-agent notes.
+Does NOT apply to code comments, commit messages, task-tracker or issue descriptions, or agent-to-agent notes.

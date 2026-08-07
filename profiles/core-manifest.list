@@ -1,0 +1,33 @@
+# Core-tier manifest — the definitive list of what constitutes
+# house-rules-core, the zero-dependency wedge tier (standalone rules +
+# graybeard skill family + checker CLIs; no beads/bd requirement).
+#
+# Consumed by the plugin-manifests work (process-kit-wsi) to build the
+# house-rules-core plugin manifests; verified by
+# scripts/tests/test_core_manifest.py.
+#
+# Inclusion criterion: the file's semantics must stand alone in a repo
+# with none of the full-tier workflow installed — zero bd/beads
+# references (grep-verified: `grep -niE '\bbd\b|beads'`), and every
+# cross-reference it makes (rules, skills, CLIs) resolves within this
+# list or degrades gracefully when it points at full-tier content.
+#
+# Fields (|-delimited, one line per entry):
+#   kind  rule (a cursor/rules .mdc file), skill (a skills/ dir whose
+#         SKILL.md ships), or cli (an executable under scripts/)
+#   path  repo-relative path to the file (rule, cli) or directory (skill)
+#
+# Adding an entry: the test suite enforces existence and bd-cleanliness;
+# run it after any change here or to a listed file.
+rule|cursor/rules/agent-identity.mdc
+rule|cursor/rules/defer-convention.mdc
+rule|cursor/rules/prose-voice.mdc
+rule|cursor/rules/parallel-subagent-safety.mdc
+rule|cursor/rules/graybeard-playbook.mdc
+skill|skills/graybeard-review
+skill|skills/graybeard-audit
+skill|skills/graybeard-debt
+skill|skills/graybeard-help
+skill|skills/prose-voice
+cli|scripts/defer-lint
+cli|scripts/banned-token-scan

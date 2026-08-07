@@ -1,6 +1,6 @@
 # Graybeard-Playbook: Implementation Ladder
 
-Concept adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT); reimplemented and extended for this kit. Governs how you build — the pragmatic-tdd rule governs how you test.
+Concept adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT); reimplemented and extended for this kit. Governs how you build — test discipline belongs to the pragmatic-tdd rule (see "Test discipline" below).
 
 ## The ladder
 
@@ -46,12 +46,12 @@ Never simplify away:
 
 ## Test discipline — defer to pragmatic-tdd
 
-This rule does NOT govern test policy. Follow pragmatic-tdd.md:
-- Bug beads: test-first, always (reproduce the bug before fixing)
-- Feature beads: ACs become tests (write failing tests from acceptance criteria)
-- Refactor beads: safety net first (behavioral tests before changing structure)
+This rule does NOT govern test policy. That belongs to the pragmatic-tdd rule — follow it where installed; where it isn't, apply its short form:
+- Bug fixes: test-first, always (reproduce the bug before fixing)
+- Features: ACs become tests (write failing tests from acceptance criteria)
+- Refactors: safety net first (behavioral tests before changing structure)
 
-The ladder governs implementation code. pragmatic-tdd governs test code. They are complementary: the ladder produces minimal implementation, pragmatic-tdd ensures that minimal implementation is verified.
+The ladder governs implementation code; test discipline governs test code. They are complementary: the ladder produces minimal implementation, test discipline ensures that minimal implementation is verified.
 
 ## Intensity
 

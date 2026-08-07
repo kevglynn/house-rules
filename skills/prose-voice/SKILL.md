@@ -29,9 +29,9 @@ always-on `prose-voice` rule is the tripwire that tells you to read this.
 - When the user says "voice sweep," "make it not sound like AI," or
   "check the voice"
 
-**Skip when:** writing code comments, commit messages, bead descriptions,
-agent-to-agent notes, or scratchpad entries. Those are functional, not
-voice-sensitive.
+**Skip when:** writing code comments, commit messages, task-tracker or
+issue descriptions, agent-to-agent notes, or working notes. Those are
+functional, not voice-sensitive.
 
 ## Banned Patterns
 

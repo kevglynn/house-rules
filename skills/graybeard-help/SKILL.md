@@ -20,7 +20,7 @@ mode (a rule) plus review, audit, and ledger lenses (skills).
 
 | Member | Kind | What it does |
 |--------|------|--------------|
-| **graybeard-playbook** | Rule (`graybeard-playbook.mdc`) | Implementation mode. The decision ladder for minimal, correct code: YAGNI → stdlib → native → one line → minimum. Use while writing code. Defers to `pragmatic-tdd.mdc` for test discipline. |
+| **graybeard-playbook** | Rule (`graybeard-playbook.mdc`) | Implementation mode. The decision ladder for minimal, correct code: YAGNI → stdlib → native → one line → minimum. Use while writing code. Defers to the pragmatic-tdd rule (where installed) for test discipline. |
 | **graybeard-review** | Skill | Over-engineering review of a diff or file set. One line per finding: what to cut, what replaces it. |
 | **graybeard-audit** | Skill | Repo-wide scan for dead code, stdlib replacements, and YAGNI abstractions, ranked biggest cut first. |
 | **graybeard-debt** | Skill | Harvests `defer:` comments into a debt ledger and flags entries missing upgrade triggers. |
@@ -40,8 +40,7 @@ written — now lives in graybeard-audit.
 
 ## Activation
 
-These are kit skills and rules — there is no plugin marketplace, config file,
-or environment variable involved:
+Activation needs no config file or environment variable:
 
 - **Skills:** invoke by name ("run graybeard-audit") or have the agent read
   the skill file directly (`skills/<name>/SKILL.md` in the kit, or the copy
@@ -49,5 +48,6 @@ or environment variable involved:
 - **Rule:** `graybeard-playbook.mdc` is agent-requestable — say "use
   graybeard-playbook" and the agent loads it for the session.
 
-Updates arrive through the kit's normal distribution: `house-rules sync` for
-rules, `house-rules init` for skills.
+Updates arrive through whatever channel installed the family: `house-rules
+sync` for rules and `house-rules init` for skills in kit-bootstrapped
+repos, or the plugin's own update path where installed as a plugin.
