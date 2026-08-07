@@ -9,6 +9,8 @@ set -euo pipefail
 #   ./scripts/init.sh --tool cursor      # Set up for Cursor
 #   ./scripts/init.sh --tool claude       # Set up for Claude Code
 #   ./scripts/init.sh --tool both         # Set up for both tools
+#   ./scripts/init.sh --tier core        # Core-tier stamp only (no beads/scratchpad/sync)
+#   ./scripts/init.sh --tier full        # Full bootstrap (default)
 #   ./scripts/init.sh --stealth           # Use bd init --stealth (personal repos)
 #   ./scripts/init.sh --no-hooks          # Skip bd hooks install (default: install)
 #   ./scripts/init.sh --skills            # Copy skills into .cursor/skills/
@@ -16,6 +18,7 @@ set -euo pipefail
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL=""
+TIER="full"
 STEALTH=false
 NO_HOOKS=false
 SKILLS=false
@@ -24,6 +27,7 @@ PROJECT_ROOT="$(pwd)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tool)    TOOL="$2"; shift 2 ;;
+    --tier)    TIER="$2"; shift 2 ;;
     --stealth) STEALTH=true; shift ;;
     --no-hooks) NO_HOOKS=true; shift ;;
     --skills) SKILLS=true; shift ;;
@@ -35,6 +39,10 @@ Usage: init.sh [options]
 
 Options:
   --tool <cursor|claude|both> Which tool to set up for (default: ask)
+  --tier <core|full>          Install tier (default: full). core writes
+                              .house-rules-tier only — no beads init,
+                              scratchpad, or sync-target registration.
+                              Pair with a plugin install for rules.
   --stealth                   Use bd init --stealth (for personal repos)
   --no-hooks                  Skip bd hooks install (default: install beads git hooks)
   --skills                    Copy skill directories from the kit into .cursor/skills/
@@ -47,6 +55,14 @@ EOF
     *) echo "Unknown option: $1 (use --help)" >&2; exit 1 ;;
   esac
 done
+
+case "$TIER" in
+  core|full) ;;
+  *)
+    echo "Invalid --tier: ${TIER} (use core or full)" >&2
+    exit 1
+    ;;
+esac
 
 # ---------- Concurrency lock (mkdir is atomic on all filesystems) ----------
 
@@ -66,6 +82,7 @@ fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
 echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
+echo "  tier: $TIER"
 echo ""
 
 # ---------- Prerequisites ----------
@@ -79,16 +96,22 @@ else
   echo "✓ git $(git --version | awk '{print $3}')"
 fi
 
-if ! command -v bd &>/dev/null; then
-  echo "✗ bd (beads) is not on PATH"
-  if command -v brew &>/dev/null; then
-    echo "  Fix: brew install beads"
+# bd is required for the full playbook (task tracking). Core tier is the
+# zero-dependency wedge — plugin-delivered rules, no task-tracking init.
+if [[ "$TIER" == "full" ]]; then
+  if ! command -v bd &>/dev/null; then
+    echo "✗ bd (beads) is not on PATH"
+    if command -v brew &>/dev/null; then
+      echo "  Fix: brew install beads"
+    else
+      echo "  Fix: See https://github.com/steveyegge/beads for install instructions"
+    fi
+    errors=$((errors + 1))
   else
-    echo "  Fix: See https://github.com/steveyegge/beads for install instructions"
+    echo "✓ bd $(bd --version 2>/dev/null || echo '(version unknown)')"
   fi
-  errors=$((errors + 1))
 else
-  echo "✓ bd $(bd --version 2>/dev/null || echo '(version unknown)')"
+  echo "– bd not required (core tier)"
 fi
 
 if ! { [ -d "$PROJECT_ROOT/.git" ] || [ -f "$PROJECT_ROOT/.git" ]; }; then
@@ -113,6 +136,33 @@ if [ $errors -gt 0 ]; then
   exit 1
 fi
 
+# ---------- Tier stamp (written early so partial runs still leave a stamp) ----------
+
+printf '%s\n' "$TIER" > "$PROJECT_ROOT/.house-rules-tier"
+echo "✓ Wrote .house-rules-tier ($TIER)"
+
+# ---------- Core stamp-only path ----------
+#
+# Plugin installs deliver rules; this path only records the tier so doctor
+# and sync-target logic know not to nag. Optional --tool still copies local
+# rules below (same as full), but beads/scratchpad/sync stay skipped.
+
+if [[ "$TIER" == "core" && -z "$TOOL" ]]; then
+  echo ""
+  echo "=== Core tier stamped ==="
+  echo ""
+  echo "What's ready:"
+  echo "  • .house-rules-tier = core"
+  echo "  • Skipped task-tracking init, scratchpad, sync-target registration"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Install the house-rules-core plugin (marketplace / Cursor plugin)"
+  echo "  2. Or re-run with --tier core --tool cursor (or --tool claude / --tool both) to copy local rules"
+  echo "  3. Verify: bash \"$KIT_ROOT/scripts/house-rules\" doctor"
+  echo ""
+  exit 0
+fi
+
 # ---------- Tool choice ----------
 #
 # Security gate: refuse non-interactive invocation without an explicit
@@ -132,6 +182,7 @@ if [ -z "$TOOL" ]; then
     echo "  --tool cursor   # Set up for Cursor" >&2
     echo "  --tool claude   # Set up for Claude Code" >&2
     echo "  --tool both     # Set up for both" >&2
+    echo "  --tier core     # Stamp core tier only (no --tool needed)" >&2
     exit 1
   fi
   echo ""
@@ -294,7 +345,9 @@ fi
 
 # ---------- Beads init ----------
 
-if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped task-tracking init (core tier)"
+elif [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
   echo "✓ Beads already initialized (skipping bd init)"
 else
   if $STEALTH; then
@@ -307,7 +360,7 @@ fi
 # Bead-quality validation at creation time (the bead-authoring skill's
 # validation phase prescribes this; without it the prescription is a silent
 # no-op in fresh repos).
-if command -v bd &>/dev/null && { [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; }; then
+if [[ "$TIER" == "full" ]] && command -v bd &>/dev/null && { [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; }; then
   if bd config set validation.on-create warn >/dev/null 2>&1; then
     echo "✓ Set validation.on-create = warn"
   else
@@ -327,7 +380,9 @@ fi
 # auto-exports and syncs across clones. See: bd hooks --help
 
 HOOKS_INSTALLED=false
-if $NO_HOOKS; then
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped bd hooks install (core tier)"
+elif $NO_HOOKS; then
   echo "✓ Skipping bd hooks install (--no-hooks)"
 elif ! command -v bd &>/dev/null; then
   echo "  (bd not on PATH — skip bd hooks install)"
@@ -378,7 +433,9 @@ SCRATCHPAD
   fi
 }
 
-if [[ "$TOOL" == "both" ]]; then
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped scratchpad (core tier)"
+elif [[ "$TOOL" == "both" ]]; then
   create_scratchpad "$PROJECT_ROOT/.cursor/scratchpad.md"
   create_scratchpad "$PROJECT_ROOT/scratchpad.md"
 elif [[ "$TOOL" == "cursor" ]]; then
@@ -628,21 +685,27 @@ fi
 # Throwaway bootstraps (test/verification runs under /tmp or $TMPDIR) must
 # not register: dead entries surface as 'target does not exist' warnings on
 # every later sync-rules.sh run until removed by hand.
+# Core-tier installs must never register — they are not kit-sync consumers
+# (rules arrive via plugin; registering would invite full-rule sync wipes).
 TARGETS_FILE="$HOME/.house-rules-sync-targets"
 tmp_root="${TMPDIR:-/tmp}"
-case "$PROJECT_ROOT/" in
-  "${tmp_root%/}/"* | /tmp/*)
-    echo "– Skipped ~/.house-rules-sync-targets registration (throwaway path under ${tmp_root%/})"
-    ;;
-  *)
-    if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
-      echo "✓ Already in ~/.house-rules-sync-targets"
-    else
-      echo "$PROJECT_ROOT" >> "$TARGETS_FILE"
-      echo "✓ Added to ~/.house-rules-sync-targets"
-    fi
-    ;;
-esac
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped ~/.house-rules-sync-targets registration (core tier)"
+else
+  case "$PROJECT_ROOT/" in
+    "${tmp_root%/}/"* | /tmp/*)
+      echo "– Skipped ~/.house-rules-sync-targets registration (throwaway path under ${tmp_root%/})"
+      ;;
+    *)
+      if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+        echo "✓ Already in ~/.house-rules-sync-targets"
+      else
+        echo "$PROJECT_ROOT" >> "$TARGETS_FILE"
+        echo "✓ Added to ~/.house-rules-sync-targets"
+      fi
+      ;;
+  esac
+fi
 
 # ---------- Summary ----------
 

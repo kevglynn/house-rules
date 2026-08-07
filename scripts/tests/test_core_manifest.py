@@ -119,13 +119,14 @@ class TestRealManifest(unittest.TestCase):
         # (the family's rule per graybeard-help's own table) and the
         # prose-voice skill (hard dependency of the prose-voice rule) —
         # deleting either breaks the manifest's cross-reference-closure
-        # invariant, so the pin covers all 12 entries.
+        # invariant, so the pin covers all shipped entries.
         required = {
             ("rule", "cursor/rules/agent-identity.mdc"),
             ("rule", "cursor/rules/defer-convention.mdc"),
             ("rule", "cursor/rules/prose-voice.mdc"),
             ("rule", "cursor/rules/parallel-subagent-safety.mdc"),
             ("rule", "cursor/rules/graybeard-playbook.mdc"),
+            ("rule", "cursor/rules/core-upgrade-offer.mdc"),
             ("skill", "skills/graybeard-review"),
             ("skill", "skills/graybeard-audit"),
             ("skill", "skills/graybeard-debt"),

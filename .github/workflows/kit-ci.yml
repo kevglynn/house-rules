@@ -15,7 +15,8 @@
 # (test_core_manifest, in checker-suites), (9) the plugin manifests on
 # the three distribution surfaces stay schema-valid, path-resolvable,
 # and derived from the core manifest (test_plugin_manifests, in
-# checker-suites).
+# checker-suites), (10) tier stamp / tier-aware doctor / sync exclusion /
+# upgrade-offer fixtures (test_tier_mechanics.sh).
 
 name: kit ci
 
@@ -115,3 +116,13 @@ jobs:
         # CLI drift keys, and the absent-profile optional branch (the one
         # mode where the doctor could lie healthy).
         run: bash scripts/tests/test_profile_distribution.sh
+
+  tier-mechanics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tier stamp, tier-aware doctor, sync exclusion, upgrade offer
+        # Throwaway HOME + mktemp repo; pins .house-rules-tier write,
+        # core doctor N/A for beads/scratchpad/sync-targets, core never
+        # registers sync-targets, and the core-upgrade-offer rule contract.
+        run: bash scripts/tests/test_tier_mechanics.sh

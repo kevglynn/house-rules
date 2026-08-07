@@ -46,8 +46,11 @@ Validates kit setup for a project. Reports issues with fix commands.
 Usage: doctor.sh [project-path] [--agent]
 
 Checks:
-  • bd (beads) is on PATH
-  • Agent rules are present and match the canonical source
+  • Install tier (.house-rules-tier; absent = full). Core skips
+    beads/scratchpad/sync-target failures and treats plugin-delivered
+    rules as healthy.
+  • bd (beads) is on PATH (full tier only)
+  • Agent rules are present and match the canonical source (full tier)
   • Each distributed CLI in scripts/distributed-clis.list (if present in
     the target) matches the kit copy
   • The conventions profile (profiles/conventions.toml, if present in the
@@ -55,10 +58,10 @@ Checks:
   • Kit-resident references (skills/…, templates/…) cited by distributed
     rules resolve somewhere on this machine (warn-only)
   • AGENTS.md house-rules section version stamp matches the kit VERSION (warn-only)
-  • Beads is initialized (bd ping + bd list)
+  • Beads is initialized (bd ping + bd list) — full tier
   • Beads git hooks recommended (pre-commit, post-merge, pre-push)
-  • Scratchpad exists with correct sections
-  • Project is in ~/.house-rules-sync-targets
+  • Scratchpad exists with correct sections — full tier
+  • Project is in ~/.house-rules-sync-targets — full tier (never required for core)
   • Worktree hook present (if repo has worktrees)
   • Global safety net installed (per-machine agent rule blocks)
 
@@ -101,7 +104,27 @@ fi
 # Resolve to absolute path (no symlink resolution assumptions)
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd)"
 
+# ---------- Tier stamp ----------
+#
+# Absent stamp = full (backward compat for pre-tier repos). core skips
+# beads/scratchpad/sync-target failures and does not treat missing local
+# rules dirs as bootstrap_needed (plugin-delivered rules are fine).
+HR_TIER="full"
+if [ -f "$PROJECT_ROOT/.house-rules-tier" ]; then
+  HR_TIER="$(tr -d '[:space:]' < "$PROJECT_ROOT/.house-rules-tier")"
+fi
+case "$HR_TIER" in
+  core|full) ;;
+  *)
+    echo "  ⚠ Unrecognized .house-rules-tier value '$HR_TIER' — treating as full"
+    HR_TIER="full"
+    ;;
+esac
+CORE_TIER=false
+[[ "$HR_TIER" == "core" ]] && CORE_TIER=true
+
 echo "=== house-rules doctor: $(basename "$PROJECT_ROOT") ==="
+echo "  tier: $HR_TIER"
 echo ""
 
 pass=0
@@ -133,7 +156,9 @@ check_warn() { echo "  ⚠ $1"; warn=$((warn + 1)); }
 
 echo "Prerequisites:"
 
-if command -v bd &>/dev/null; then
+if $CORE_TIER; then
+  check_pass "bd on PATH — N/A for core tier"
+elif command -v bd &>/dev/null; then
   check_pass "bd on PATH ($(bd --version 2>/dev/null || echo 'version unknown'))"
 elif command -v brew &>/dev/null; then
   check_fail "bd not on PATH" "brew install beads"
@@ -161,41 +186,59 @@ has_claude=false
 if [ -d "$cursor_rules" ]; then
   has_cursor=true
   mdc_count=$(ls -1 "$cursor_rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
-  src_count=$(ls -1 "$KIT_ROOT/cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
-  # Check that every canonical rule is present and current.
-  # Extra rules from other tools (e.g. Jawnt) are fine — only flag missing or stale.
-  stale=0
-  missing=0
-  for f in "$KIT_ROOT/cursor/rules/"*.mdc; do
-    base="$(basename "$f")"
-    if [ ! -f "$cursor_rules/$base" ]; then
-      missing=$((missing + 1))
-    elif ! diff -q "$f" "$cursor_rules/$base" > /dev/null 2>&1; then
-      stale=$((stale + 1))
-    fi
-  done
-  if [ $missing -eq 0 ] && [ $stale -eq 0 ]; then
-    extra=$((mdc_count - src_count))
-    if [ "$extra" -gt 0 ]; then
-      check_pass "Cursor rules: $src_count kit files up to date (+$extra from other tools)"
+  if $CORE_TIER; then
+    # Core may ship a subset (or none — plugin path). Do not require the
+    # full kit rule set or mark missing kit files as rules_drift.
+    if [ "$mdc_count" -gt 0 ]; then
+      check_pass "Cursor rules: $mdc_count files present (core tier — full-kit drift check skipped)"
     else
-      check_pass "Cursor rules: $mdc_count files, all up to date"
+      check_warn "Cursor rules directory exists but is empty"
     fi
   else
-    issues=""
-    [ $missing -gt 0 ] && issues="$missing missing"
-    [ $stale -gt 0 ] && { [ -n "$issues" ] && issues="$issues, "; issues="${issues}$stale stale"; }
-    check_fail "Cursor rules: $issues (of $src_count expected)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format cursor"
-    cursor_stale=1
+    src_count=$(ls -1 "$KIT_ROOT/cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+    # Check that every canonical rule is present and current.
+    # Extra rules from other tools (e.g. Jawnt) are fine — only flag missing or stale.
+    stale=0
+    missing=0
+    for f in "$KIT_ROOT/cursor/rules/"*.mdc; do
+      base="$(basename "$f")"
+      if [ ! -f "$cursor_rules/$base" ]; then
+        missing=$((missing + 1))
+      elif ! diff -q "$f" "$cursor_rules/$base" > /dev/null 2>&1; then
+        stale=$((stale + 1))
+      fi
+    done
+    if [ $missing -eq 0 ] && [ $stale -eq 0 ]; then
+      extra=$((mdc_count - src_count))
+      if [ "$extra" -gt 0 ]; then
+        check_pass "Cursor rules: $src_count kit files up to date (+$extra from other tools)"
+      else
+        check_pass "Cursor rules: $mdc_count files, all up to date"
+      fi
+    else
+      issues=""
+      [ $missing -gt 0 ] && issues="$missing missing"
+      [ $stale -gt 0 ] && { [ -n "$issues" ] && issues="$issues, "; issues="${issues}$stale stale"; }
+      check_fail "Cursor rules: $issues (of $src_count expected)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format cursor"
+      cursor_stale=1
+    fi
   fi
 else
-  check_warn "No Cursor rules (.cursor/rules/ not found)"
+  if ! $CORE_TIER; then
+    check_warn "No Cursor rules (.cursor/rules/ not found)"
+  fi
 fi
 
 if [ -d "$claude_rules" ]; then
   has_claude=true
   md_count=$(ls -1 "$claude_rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$md_count" -eq 0 ]; then
+  if $CORE_TIER; then
+    if [ "$md_count" -gt 0 ]; then
+      check_pass "Claude rules: $md_count files present (core tier — full-kit drift check skipped)"
+    else
+      check_warn "Claude rules directory exists but is empty"
+    fi
+  elif [ "$md_count" -eq 0 ]; then
     check_fail "Claude rules directory exists but is empty" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
     claude_stale=1
   else
@@ -226,8 +269,13 @@ if [ -d "$claude_rules" ]; then
 fi
 
 if ! $has_cursor && ! $has_claude; then
-  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
-  bootstrap_missing=1
+  if $CORE_TIER; then
+    # Plugin installs leave no local rules dirs — not bootstrap_needed.
+    check_pass "No local rules dirs — N/A for core tier (plugin-delivered ok)"
+  else
+    check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
+    bootstrap_missing=1
+  fi
 fi
 
 # Warn if rules directories are gitignored (skip for the kit repo itself,
@@ -472,7 +520,9 @@ echo ""
 
 echo "Beads:"
 
-if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
+if $CORE_TIER; then
+  check_pass "Beads / task tracking — N/A for core tier"
+elif [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
   check_pass "Beads directory exists"
   if command -v bd &>/dev/null; then
     if bd ping > /dev/null 2>&1; then
@@ -504,28 +554,32 @@ echo ""
 
 echo "Scratchpad:"
 
-scratchpad=""
-if [ -f "$PROJECT_ROOT/.cursor/scratchpad.md" ]; then
-  scratchpad="$PROJECT_ROOT/.cursor/scratchpad.md"
-elif [ -f "$PROJECT_ROOT/scratchpad.md" ]; then
-  scratchpad="$PROJECT_ROOT/scratchpad.md"
-fi
-
-if [ -n "$scratchpad" ]; then
-  check_pass "Scratchpad found at $(basename "$(dirname "$scratchpad")")/$(basename "$scratchpad")"
-  missing_sections=0
-  for section in "Background and Motivation" "Key Challenges and Analysis" "High-level Task Breakdown" "Current Status / Progress Tracking" "Executor's Feedback or Assistance Requests" "Lessons"; do
-    if ! grep -qF "$section" "$scratchpad" 2>/dev/null; then
-      missing_sections=$((missing_sections + 1))
-    fi
-  done
-  if [ $missing_sections -eq 0 ]; then
-    check_pass "All 6 required sections present"
-  else
-    check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
-  fi
+if $CORE_TIER; then
+  check_pass "Scratchpad — N/A for core tier"
 else
-  check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (creates it automatically)"
+  scratchpad=""
+  if [ -f "$PROJECT_ROOT/.cursor/scratchpad.md" ]; then
+    scratchpad="$PROJECT_ROOT/.cursor/scratchpad.md"
+  elif [ -f "$PROJECT_ROOT/scratchpad.md" ]; then
+    scratchpad="$PROJECT_ROOT/scratchpad.md"
+  fi
+
+  if [ -n "$scratchpad" ]; then
+    check_pass "Scratchpad found at $(basename "$(dirname "$scratchpad")")/$(basename "$scratchpad")"
+    missing_sections=0
+    for section in "Background and Motivation" "Key Challenges and Analysis" "High-level Task Breakdown" "Current Status / Progress Tracking" "Executor's Feedback or Assistance Requests" "Lessons"; do
+      if ! grep -qF "$section" "$scratchpad" 2>/dev/null; then
+        missing_sections=$((missing_sections + 1))
+      fi
+    done
+    if [ $missing_sections -eq 0 ]; then
+      check_pass "All 6 required sections present"
+    else
+      check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
+    fi
+  else
+    check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (creates it automatically)"
+  fi
 fi
 
 echo ""
@@ -538,7 +592,9 @@ TARGETS_FILE="$HOME/.house-rules-sync-targets"
 has_beads=false
 [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
 
-if $is_kit_repo; then
+if $CORE_TIER; then
+  check_pass "Sync targets — N/A for core tier (core installs are not sync targets)"
+elif $is_kit_repo; then
   # The kit is the sync SOURCE — registration as a target is inapplicable.
   echo "  – kit repo itself: sync source, not a target (registration check skipped)"
 elif [ -f "$TARGETS_FILE" ]; then

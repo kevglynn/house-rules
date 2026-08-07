@@ -13,6 +13,23 @@ The one-command path is `house-rules init` (see the README quickstart). The manu
 
 To add a new project repo later, append its root path to `~/.house-rules-sync-targets`. The file is local and untracked, so there are no merge conflicts.
 
+## Install tiers (core vs full)
+
+The kit has two install tiers. A project-root stamp file `.house-rules-tier` records which one applies — a single line, `core` or `full`.
+
+| Tier | How you get it | Stamp | Sync targets | Doctor |
+|------|----------------|-------|--------------|--------|
+| **full** | `house-rules init` (default `--tier full`) | writes `full` | registers in `~/.house-rules-sync-targets` | Full checks: rules drift, task tracking, scratchpad, sync registration |
+| **core** | core plugin install, or `house-rules init --tier core` | writes `core` | **never** registered | Skips beads / scratchpad / sync-target failures (reports "N/A for core tier"); missing local rules dirs are fine (plugin-delivered) |
+
+**Absent stamp = full** for backward compatibility — pre-tier repos keep today's doctor semantics.
+
+`init --tier core` without `--tool` is stamp-only: no task-tracking init, no scratchpad, no sync-target append. Pair it with the `house-rules-core` plugin for rules. Re-run with `--tier core --tool cursor` (or `--tool claude` / `--tool both`) if you also want a local rules copy without upgrading to full.
+
+Core installs are deliberately excluded from `~/.house-rules-sync-targets`. Kit sync would overwrite a core subset with the full rule set and delete unrecognized files; keeping core off the list is the support guardrail.
+
+The core plugin carries an in-agent upgrade offer (`core-upgrade-offer` rule): after core skills prove useful in a repo with no task tracking, the agent offers the full install once, with consent, and persists `.house-rules-upgrade-offered` so it does not re-nag.
+
 ## Checking for drift
 
 ```bash

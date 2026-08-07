@@ -55,3 +55,5 @@
 {"bead": "process-kit-4cn", "commit": "f48dc48", "event": "green", "output_digest": "9c736a96a2d7cfdc4c777f39e3d119dd568ba4ac299dc4cc2483d8345f4a125f", "test_id": "test_docs_path_lint::suite", "ts": "2026-08-07T20:31:50+00:00"}
 {"bead": "process-kit-wsi", "commit": "054ba55", "event": "red", "output_digest": "9f0f2ac5da94443980974c81058c817438d53abdbe7fb646c73fee9a0136a91b", "test_id": "scripts/tests/test_plugin_manifests.py", "ts": "2026-08-07T20:58:26+00:00"}
 {"bead": "process-kit-wsi", "commit": "054ba55", "event": "green", "output_digest": "bf28a817eff28827f6968558c65c3d56672a77e9bb114c386a96da062a17a838", "test_id": "scripts/tests/test_plugin_manifests.py", "ts": "2026-08-07T20:59:08+00:00"}
+{"bead": "process-kit-12q", "commit": "bdae55d", "event": "red", "output_digest": "bcd00b07a5ea4edf31fc55a17b128f415a3024a0310ff8db26dba22288c3e41b", "test_id": "tier-mechanics-ac1-ac2-ac3", "ts": "2026-08-07T21:20:50+00:00"}
+{"bead": "process-kit-12q", "commit": "2f52536", "event": "green", "output_digest": "2e2349d1d036e5482ec8aa0172b96c5c98cc1b260c42c39e48ad1c259bb34dfc", "test_id": "tier-mechanics-ac1-ac2-ac3", "ts": "2026-08-07T21:24:49+00:00"}

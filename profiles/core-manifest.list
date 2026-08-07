@@ -47,6 +47,7 @@ rule|cursor/rules/defer-convention.mdc
 rule|cursor/rules/prose-voice.mdc
 rule|cursor/rules/parallel-subagent-safety.mdc
 rule|cursor/rules/graybeard-playbook.mdc
+rule|cursor/rules/core-upgrade-offer.mdc
 skill|skills/graybeard-review
 skill|skills/graybeard-audit
 skill|skills/graybeard-debt

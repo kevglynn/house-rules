@@ -28,7 +28,8 @@
         "./claude/rules/defer-convention.md",
         "./claude/rules/prose-voice.md",
         "./claude/rules/parallel-subagent-safety.md",
-        "./claude/rules/graybeard-playbook.md"
+        "./claude/rules/graybeard-playbook.md",
+        "./claude/rules/core-upgrade-offer.md"
       ]
     },
     {

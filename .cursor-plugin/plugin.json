@@ -11,7 +11,8 @@
     "./cursor/rules/defer-convention.mdc",
     "./cursor/rules/prose-voice.mdc",
     "./cursor/rules/parallel-subagent-safety.mdc",
-    "./cursor/rules/graybeard-playbook.mdc"
+    "./cursor/rules/graybeard-playbook.mdc",
+    "./cursor/rules/core-upgrade-offer.mdc"
   ],
   "skills": [
     "./skills/graybeard-review",
