@@ -93,6 +93,8 @@ python3 scripts/tests/test_defer_lint.py
 python3 scripts/tests/test_close_reason_lint.py
 python3 scripts/tests/test_banned_token_scan.py
 python3 scripts/tests/test_tdd_ledger.py
+python3 scripts/tests/test_docs_path_lint.py
+python3 scripts/tests/test_core_manifest.py
 ```
 
 Checker CLIs are stdlib-only Python by design — no new runtime dependencies without a decision record making the case.

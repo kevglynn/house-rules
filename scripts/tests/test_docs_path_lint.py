@@ -127,14 +127,28 @@ class DocsPathLintTest(FixtureTest):
         self.assertEqual(out["findings"], [])
         self.assertGreaterEqual(out["refs_checked"], 5)
 
-    def test_glob_reference_checks_glob_expansion(self):
+    def test_glob_reference_is_counted_skip(self):
+        # Globs are skipped, not existence-checked — but counted, so the
+        # skip is never silent. Promote to real glob checking when a doc
+        # actually fences a glob (none do today).
         self.write("docs/a.md", fenced("shellcheck scripts/*.sh"))
         r, out = self.scan_json()
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertEqual(out["findings"][0]["path"], "scripts/*.sh")
-        self.write("scripts/one.sh", "#!/bin/sh\n")
-        r, out = self.scan_json()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        self.assertEqual(out["skips_by_reason"].get("glob"), 1)
+
+    def test_trailing_sentence_punctuation_is_trimmed_from_token(self):
+        # "see scripts/real-cli." in a fence comment must not flag the
+        # existing script; a genuinely missing path keeps its clean name.
+        self.write("scripts/real-cli", "#!/usr/bin/env python3\n")
+        self.write("README.md", fenced(
+            "# see scripts/real-cli.",
+            "echo scripts/gone-two.sh.",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 1)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone-two.sh")
 
     # --- Scope: only fenced shell blocks in the doc set are scanned ---
 
@@ -151,6 +165,13 @@ class DocsPathLintTest(FixtureTest):
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["findings"], [])
+
+    def test_fence_tag_with_info_string_attributes_is_scanned(self):
+        self.write("README.md", fenced(
+            "bash scripts/gone.sh", tag='bash title="setup"'))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone.sh")
 
     def test_untagged_fence_with_shellish_first_line_is_scanned(self):
         self.write("README.md", fenced("bash scripts/gone.sh", tag=""))
@@ -178,20 +199,26 @@ class DocsPathLintTest(FixtureTest):
 
     def test_doc_set_selection(self):
         bad = fenced("bash scripts/gone.sh")
-        # In the set: root README/QUICKSTART/WELCOME, docs/*.md, sandbox/*.md.
+        # In the set: root README/QUICKSTART/WELCOME/AGENTS/CONTRIBUTING,
+        # docs/*.md, sandbox/*.md.
         self.write("QUICKSTART.md", bad)
+        self.write("AGENTS.md", bad)
+        self.write("CONTRIBUTING.md", bad)
         self.write("docs/faq.md", bad)
         self.write("sandbox/WALKTHROUGH.md", bad)
-        # Out of the set: nested docs dirs, other root files, sandbox subdirs.
+        # Out of the set: nested docs dirs (historical records), other root
+        # files, sandbox subdirs, global-safety-net (commands live in
+        # tables/blockquotes a fence scanner cannot see).
         self.write("docs/specs/plan.md", bad)
-        self.write("CONTRIBUTING.md", bad)
+        self.write("CLAUDE.md", bad)
         self.write("sandbox/project/notes.md", bad)
+        self.write("global-safety-net/agent-protocol.md", bad)
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(sorted(f["file"] for f in out["findings"]),
-                         ["QUICKSTART.md", "docs/faq.md",
-                          "sandbox/WALKTHROUGH.md"])
-        self.assertEqual(out["files_scanned"], 3)
+                         ["AGENTS.md", "CONTRIBUTING.md", "QUICKSTART.md",
+                          "docs/faq.md", "sandbox/WALKTHROUGH.md"])
+        self.assertEqual(out["files_scanned"], 5)
 
     # --- Placeholder and outside-repo tokens are skipped ---
 
@@ -237,28 +264,33 @@ class DocsPathLintTest(FixtureTest):
         self.assertEqual(out["findings"][0]["path"], "scripts/really-gone.sh")
         self.assertEqual(out["refs_allowed"], 1)
 
-    def test_allow_marker_with_paths_narrows_the_exception(self):
+    def test_allow_marker_skips_unscannable_fence_to_next_scannable(self):
+        # A ```markdown example fence between the marker and the intended
+        # bash fence is never consulted; arming it would silently waste
+        # the exception.
         self.write("README.md", (
-            f"<!-- {ALLOW} scripts/illustrative.sh -->\n"
-            + fenced("bash scripts/illustrative.sh",
-                     "bash scripts/really-gone.sh")
+            f"<!-- {ALLOW} -->\n"
+            + fenced("bash scripts/example.sh", tag="markdown")
+            + fenced("bash scripts/illustrative.sh")
         ))
         r, out = self.scan_json()
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertEqual(len(out["findings"]), 1)
-        self.assertEqual(out["findings"][0]["path"], "scripts/really-gone.sh")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(out["refs_allowed"], 1)
 
     def test_embedded_marker_substring_is_inert(self):
-        # Whole-token contract: a longer word carrying the marker as a
-        # substring must not arm an exception.
-        self.write("README.md", (
-            f"<!-- {ALLOW}list-of-things -->\n"
-            + fenced("bash scripts/gone.sh")
-        ))
-        r, out = self.scan_json()
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertEqual(out["refs_allowed"], 0)
+        # Whole-token contract, both directions: a longer word carrying
+        # the marker as a substring must not arm an exception. The prefix
+        # case is the dangerous one — a naive substring match would turn
+        # it into allow-everything for the next fence.
+        for embedded in (f"{ALLOW}list-of-things", f"x{ALLOW}"):
+            with self.subTest(embedded=embedded):
+                self.write("README.md", (
+                    f"<!-- {embedded} -->\n"
+                    + fenced("bash scripts/gone.sh")
+                ))
+                r, out = self.scan_json()
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertEqual(out["refs_allowed"], 0)
 
     # --- Output shapes ---
 
@@ -282,8 +314,8 @@ class DocsPathLintTest(FixtureTest):
         r, out = self.scan_json()
         self.assertEqual(r.returncode, 1)
         for key in ("ok", "root", "files_scanned", "fences_scanned",
-                    "refs_checked", "refs_allowed", "refs_skipped",
-                    "findings"):
+                    "fences_skipped", "refs_checked", "refs_allowed",
+                    "refs_skipped", "skips_by_reason", "findings"):
             self.assertIn(key, out)
         self.assertNotIn("exit_code", out)
         f = out["findings"][0]
@@ -293,8 +325,14 @@ class DocsPathLintTest(FixtureTest):
     # --- Agent-CLI conventions: stable exit codes ---
 
     def test_empty_root_is_usage_error_exit_2(self):
+        # Pinning the stderr JSON distinguishes "argparse rejected the
+        # input" from "the interpreter never ran the program" (a deleted
+        # CLI also exits 2) and pins the JSON-on-stderr agent convention.
         r = run_cli(["--root", ""])
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
 
     def test_nonexistent_root_is_io_error_exit_3(self):
         r = run_cli(["--root", str(self.root / "nope")])
@@ -314,6 +352,9 @@ class DocsPathLintTest(FixtureTest):
     def test_unknown_flag_is_usage_error_exit_2(self):
         r = run_cli(["--bogus"])
         self.assertEqual(r.returncode, 2)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
 
     def test_help_exits_zero_and_carries_worked_examples(self):
         r = run_cli(["--help"])

@@ -22,17 +22,23 @@ against the repo root:
     $PROCESS_KIT/, ${PROCESS_KIT:-$HOME/process-kit}/)
   - any `bash`/`sh`/`source`-invoked path ending in .sh
 Tokens that are URLs, absolute/home paths outside a known clone prefix,
-or illustrative placeholders (<...>, YYYY/NNN/XXX, unresolved $VAR, ...)
-are skipped, and skips are counted so they are never silent. A token
-containing `*` is checked as a glob (missing when it matches nothing).
+illustrative placeholders (<...>, YYYY/NNN/XXX, unresolved $VAR, ...),
+or globs are skipped, and skips are counted per reason so they are never
+silent. Trailing sentence punctuation (`scripts/x.sh.`) is trimmed from
+tokens before classification.
+
+Deliberately NOT scanned (decisions, not accidents): global-safety-net/
+sources carry their commands in blockquotes and tables, which a
+fence-only detector cannot see; docs/ subdirectories (specs/, decisions/,
+reviews/, ...) are historical records whose paths were true at writing
+time; CLAUDE.md is a pointer file with no fenced commands.
 
 Allow marker (deliberate exceptions, content-side like banned-token-scan's
 declared-token regions): a line outside any fence carrying the whole-token
 marker `docs-path-lint:allow` — typically an HTML comment — arms an
-exception for the NEXT fenced block. Bare marker: every missing path in
-that block is allowed; with space-separated repo-relative paths after the
-marker, only those paths are allowed. Allowed refs are counted in the
-output, never silently dropped.
+exception for the NEXT scannable fenced block: every missing path in that
+block is allowed. Allowed refs are counted in the output, never silently
+dropped.
 
 Exit codes: 0 clean · 1 missing paths · 2 usage error · 3 I/O error.
 Human-readable output by default; --json for agents. I/O and usage errors
@@ -40,14 +46,14 @@ are JSON on stderr in both output modes. Non-interactive.
 """
 
 import argparse
-import glob
+import collections
 import json
 import re
 import sys
 from pathlib import Path
 
-DOC_GLOBS = ("README.md", "QUICKSTART.md", "WELCOME.md",
-             "docs/*.md", "sandbox/*.md")
+DOC_GLOBS = ("README.md", "QUICKSTART.md", "WELCOME.md", "AGENTS.md",
+             "CONTRIBUTING.md", "docs/*.md", "sandbox/*.md")
 
 SHELL_TAGS = {"bash", "sh", "shell", "zsh", "console"}
 
@@ -66,7 +72,13 @@ CLONE_PREFIXES = (
 
 # Illustrative-placeholder fragments; a token carrying any of these is a
 # doc's teaching device, not a checkable path.
-PLACEHOLDER_FRAGMENTS = ("<", ">", "YYYY", "NNN", "XXX", "...", "\u2026")
+PLACEHOLDER_FRAGMENTS = ("<", ">", "YYYY", "NNN", "XXX", "...")
+
+# Whole-token boundary for the allow marker: not embedded in a longer
+# word on either side (same contract as banned-token-scan's declared-
+# token markers).
+ALLOW_RE = re.compile(
+    r"(?<![\w-])" + re.escape(ALLOW_MARKER) + r"(?![\w-])")
 
 # Class (a): any token containing scripts/ — prefix chars cover the clone
 # idioms above (~, $, {, }, :); suffix chars keep <placeholders> and *globs
@@ -109,8 +121,8 @@ skipped, never flagged:
   curl https://example.com/x.sh        URL
 
 allow marker (deliberate exceptions):
-  <!-- {ALLOW_MARKER} -->                       allow the whole next fence
-  <!-- {ALLOW_MARKER} scripts/demo.sh -->       allow only that path in it
+  <!-- {ALLOW_MARKER} -->     allow every missing path in the next
+                              scannable fence
   Allowed refs are counted in the output — suppression is never silent.
 
 known limitations:
@@ -120,7 +132,8 @@ known limitations:
     ```markdown example block are treated as fence boundaries, not
     content (the current doc corpus has none)
   - prose outside fences is not scanned — inline `code spans` teaching a
-    stale path escape this checker
+    stale path escape this checker; the same is true of commands in
+    tables and blockquotes (why global-safety-net/ sources are excluded)
   - the clone-prefix list is kit-specific by design (see KIT-REPO-ONLY
     in the description)
 """
@@ -149,26 +162,15 @@ class JsonArgumentParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def marker_at(line, marker):
-    """Index where `marker` stands as a whole token in `line` (not embedded
-    in a longer word), else -1. Same word-ish boundary contract as
-    banned-token-scan's declared-token markers."""
-    idx = line.find(marker)
-    while idx != -1:
-        end = idx + len(marker)
-        before_ok = idx == 0 or not (line[idx - 1].isalnum()
-                                     or line[idx - 1] in "_-")
-        after_ok = end >= len(line) or not (line[end].isalnum()
-                                            or line[end] in "_-")
-        if before_ok and after_ok:
-            return idx
-        idx = line.find(marker, idx + 1)
-    return -1
-
-
 def resolve_token(token):
     """Classify a candidate token. Returns ("check", repo-relative path)
     or ("skip", reason)."""
+    # Trailing sentence punctuation attaches to the token ("see
+    # scripts/house-rules." in a fence comment); trim it — but a trailing
+    # run of dots is an ellipsis placeholder, not punctuation.
+    token = token.rstrip(",")
+    if token.endswith(".") and not token.endswith(".."):
+        token = token[:-1]
     if "://" in token:
         return ("skip", "url")
     if any(frag in token for frag in PLACEHOLDER_FRAGMENTS):
@@ -185,16 +187,9 @@ def resolve_token(token):
     # A $ surviving prefix-stripping is an unresolved variable, not a path.
     if "$" in token:
         return ("skip", "placeholder")
-    token = token.strip("/")
-    if not token:
-        return ("skip", "placeholder")
-    return ("check", token)
-
-
-def path_exists(root, relpath):
-    if "*" in relpath:
-        return bool(glob.glob(str(root / relpath)))
-    return (root / relpath).exists()
+    if "*" in token:
+        return ("skip", "glob")
+    return ("check", token.strip("/"))
 
 
 def extract_tokens(line):
@@ -218,7 +213,10 @@ def iter_fences(lines):
         if stripped.startswith("```"):
             if block is None:
                 block = []
-                tag = stripped.lstrip("`").strip().lower()
+                # First word of the info string: ```bash title="x" is
+                # still a bash fence.
+                info = stripped.lstrip("`").strip().lower()
+                tag = info.split()[0] if info else ""
                 opener = lineno
             else:
                 yield opener, tag, block
@@ -242,53 +240,54 @@ def block_is_scannable(tag, block):
 
 
 def scan_file(rel, lines, root):
-    """Returns (findings, fences_scanned, refs_checked, refs_allowed,
-    refs_skipped) for one doc."""
-    # Arm allow exceptions: marker lines outside fences apply to the next
-    # fence opener after them. allow_at[opener_lineno] = set of paths
-    # (empty set = allow everything in that block).
+    """Returns (findings, counters) for one doc. counters is a Counter
+    with fences_scanned, fences_skipped, refs_checked, refs_allowed,
+    refs_skipped, and per-reason skip:<reason> keys."""
+    # Arm allow exceptions: a marker line outside any fence allows every
+    # missing path in the next SCANNABLE fence after it (an intervening
+    # ```markdown example fence is never consulted, so arming it would
+    # silently waste the exception).
     fences = list(iter_fences(lines))
-    openers = [op for op, _, _ in fences]
+    scannable_openers = [op for op, tag, block in fences
+                         if block_is_scannable(tag, block)]
     in_fence_lines = set()
     for op, _, block in fences:
         in_fence_lines.add(op)
         in_fence_lines.update(n for n, _ in block)
-    allow_at = {}
+    allowed_openers = set()
     for lineno, line in enumerate(lines, start=1):
         if lineno in in_fence_lines:
             continue
-        idx = marker_at(line, ALLOW_MARKER)
-        if idx == -1:
+        if not ALLOW_RE.search(line):
             continue
-        args = line[idx + len(ALLOW_MARKER):].replace("-->", " ").split()
-        target = next((op for op in openers if op > lineno), None)
+        target = next((op for op in scannable_openers if op > lineno), None)
         if target is not None:
-            allow_at.setdefault(target, set()).update(args)
+            allowed_openers.add(target)
 
     findings = []
-    fences_scanned = 0
-    refs_checked = refs_allowed = refs_skipped = 0
+    counters = collections.Counter()
     for opener, tag, block in fences:
         if not block_is_scannable(tag, block):
+            counters["fences_skipped"] += 1
             continue
-        fences_scanned += 1
-        allowed_paths = allow_at.get(opener)
+        counters["fences_scanned"] += 1
+        block_allowed = opener in allowed_openers
         seen = set()
         for lineno, text in block:
             for token in extract_tokens(text):
                 verdict, value = resolve_token(token)
                 if verdict == "skip":
-                    refs_skipped += 1
+                    counters["refs_skipped"] += 1
+                    counters[f"skip:{value}"] += 1
                     continue
                 if (lineno, value) in seen:
                     continue
                 seen.add((lineno, value))
-                refs_checked += 1
-                if path_exists(root, value):
+                counters["refs_checked"] += 1
+                if (root / value).exists():
                     continue
-                if allowed_paths is not None and (
-                        not allowed_paths or value in allowed_paths):
-                    refs_allowed += 1
+                if block_allowed:
+                    counters["refs_allowed"] += 1
                     continue
                 findings.append({
                     "file": rel,
@@ -297,7 +296,7 @@ def scan_file(rel, lines, root):
                     "token": token,
                     "text": text.strip()[:200],
                 })
-    return findings, fences_scanned, refs_checked, refs_allowed, refs_skipped
+    return findings, counters
 
 
 def collect_docs(root):
@@ -312,11 +311,12 @@ def main(argv=None):
         prog="docs-path-lint",
         description=(
             "Check that shell commands fenced in the kit's user-facing "
-            "docs (README.md, QUICKSTART.md, WELCOME.md, docs/*.md, "
-            "sandbox/*.md) reference repo script paths that exist. "
-            "Existence checking only — nothing is executed. Kit-repo-only: "
-            "not distributed to target repos. Exit codes: 0 clean, "
-            "1 missing paths, 2 usage error, 3 I/O error."
+            "docs (README.md, QUICKSTART.md, WELCOME.md, AGENTS.md, "
+            "CONTRIBUTING.md, docs/*.md, sandbox/*.md) reference repo "
+            "script paths that exist. Existence checking only — nothing "
+            "is executed. Kit-repo-only: not distributed to target repos. "
+            "Exit codes: 0 clean, 1 missing paths, 2 usage error, "
+            "3 I/O error."
         ),
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -339,7 +339,7 @@ def main(argv=None):
             f"{', '.join(DOC_GLOBS)}) — wrong --root?", "io", 3)
 
     findings = []
-    fences_scanned = refs_checked = refs_allowed = refs_skipped = 0
+    totals = collections.Counter()
     for doc in docs:
         rel = doc.relative_to(root).as_posix()
         try:
@@ -347,23 +347,24 @@ def main(argv=None):
                                   errors="replace").splitlines()
         except OSError as e:
             emit_error(f"cannot read {rel}: {e}", "io", 3)
-        f, fences, checked, allowed, skipped = scan_file(rel, lines, root)
+        f, counters = scan_file(rel, lines, root)
         findings.extend(f)
-        fences_scanned += fences
-        refs_checked += checked
-        refs_allowed += allowed
-        refs_skipped += skipped
+        totals.update(counters)
     exit_code = 1 if findings else 0
 
+    skips_by_reason = {k.split(":", 1)[1]: v for k, v in totals.items()
+                       if k.startswith("skip:")}
     if args.json:
         json.dump({
             "ok": not findings,
             "root": str(root),
             "files_scanned": len(docs),
-            "fences_scanned": fences_scanned,
-            "refs_checked": refs_checked,
-            "refs_allowed": refs_allowed,
-            "refs_skipped": refs_skipped,
+            "fences_scanned": totals["fences_scanned"],
+            "fences_skipped": totals["fences_skipped"],
+            "refs_checked": totals["refs_checked"],
+            "refs_allowed": totals["refs_allowed"],
+            "refs_skipped": totals["refs_skipped"],
+            "skips_by_reason": skips_by_reason,
             "findings": findings,
         }, sys.stdout, sort_keys=True)
         sys.stdout.write("\n")
@@ -374,11 +375,13 @@ def main(argv=None):
     status = ("clean" if not findings
               else f"{len(findings)} missing path(s)")
     extra = ""
-    if refs_allowed or refs_skipped:
-        extra = (f" [{refs_allowed} allowlisted, "
-                 f"{refs_skipped} skipped]")
-    print(f"Scanned {len(docs)} doc file(s), {fences_scanned} shell "
-          f"fence(s), {refs_checked} path ref(s): {status}.{extra}")
+    if totals["refs_allowed"] or totals["refs_skipped"]:
+        detail = ", ".join(f"{v} {k}" for k, v in sorted(skips_by_reason.items()))
+        extra = (f" [{totals['refs_allowed']} allowlisted, "
+                 f"{totals['refs_skipped']} skipped"
+                 + (f" ({detail})" if detail else "") + "]")
+    print(f"Scanned {len(docs)} doc file(s), {totals['fences_scanned']} shell "
+          f"fence(s), {totals['refs_checked']} path ref(s): {status}.{extra}")
     return exit_code
 
 
