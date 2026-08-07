@@ -121,11 +121,15 @@ alias pbd='bash "\$PROCESS_KIT/scripts/playbook-doctor.sh"'
 ALIASES
 }
 
+# Writer return codes (shared by the writers below): 0 = written, 1 = I/O
+# failure (mktemp/write/mv — callers must fail loud, process-kit-e71),
+# 2 = malformed markers (deliberate warn-and-skip, file untouched — the
+# process-kit-0em guard contract).
 write_aliases_file() {
   local tmp
-  tmp="$(mktemp "${ALIASES_FILE}.tmp.XXXXXX")"
-  render_aliases_file > "$tmp"
-  mv "$tmp" "$ALIASES_FILE"
+  tmp="$(mktemp "${ALIASES_FILE}.tmp.XXXXXX")" || return 1
+  render_aliases_file > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$ALIASES_FILE" || { rm -f "$tmp"; return 1; }
 }
 
 aliases_file_is_current() {
@@ -159,7 +163,7 @@ rc_has_legacy_block() {
 
 rc_append_block() {
   local rc="$1"
-  mkdir -p "$(dirname "$rc")"
+  mkdir -p "$(dirname "$rc")" || return 1
   # Atomic write: stage the new content (existing rc + spacer + block) to
   # a temp file in the same directory, then mv. A non-atomic group
   # append (`{ ... } >> "$rc"`) is exposed to OOM kills and SIGKILL
@@ -168,7 +172,7 @@ rc_append_block() {
   # would make `rc_has_block` falsely report "already installed" on
   # re-run, bypassing repair.
   local tmp
-  tmp="$(mktemp "${rc}.tmp.XXXXXX")"
+  tmp="$(mktemp "${rc}.tmp.XXXXXX")" || return 1
   {
     if [ -f "$rc" ]; then
       cat "$rc"
@@ -178,8 +182,8 @@ rc_append_block() {
     fi
     rc_block
     printf '\n'
-  } > "$tmp"
-  mv "$tmp" "$rc"
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
 }
 
 # One scanner for both rewrites: strips every managed block (either marker
@@ -189,7 +193,7 @@ rc_append_block() {
 rc_rewrite_block() {
   local rc="$1" emit="${2:-}"
   local tmp
-  tmp="$(mktemp "${rc}.tmp.XXXXXX")"
+  tmp="$(mktemp "${rc}.tmp.XXXXXX")" || return 1
   local in_block=0 consumed=0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && { [ "$line" = "$SOURCE_BEGIN" ] || [ "$line" = "$LEGACY_SOURCE_BEGIN" ]; }; then
@@ -217,9 +221,9 @@ rc_rewrite_block() {
   if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 1
+    return 2
   fi
-  mv "$tmp" "$rc"
+  mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
 }
 
 rc_remove_block() {
@@ -289,46 +293,73 @@ case "$MODE" in
 
   uninstall)
     changed=0
+    failed=0
     if [ -f "$ALIASES_FILE" ]; then
-      rm -f "$ALIASES_FILE"
-      echo "✓ Removed $ALIASES_FILE"
-      changed=1
-    fi
-    if rc_has_block "$rc_file"; then
-      if rc_remove_block "$rc_file"; then
-        echo "✓ Removed source line from $rc_file"
+      if rm -f "$ALIASES_FILE"; then
+        echo "✓ Removed $ALIASES_FILE"
         changed=1
+      else
+        echo "✗ Failed to remove $ALIASES_FILE (check permissions)" >&2
+        failed=$((failed + 1))
       fi
     fi
-    if [ $changed -eq 0 ]; then
+    if rc_has_block "$rc_file"; then
+      rc_remove_block "$rc_file"
+      case $? in
+        0)
+          echo "✓ Removed source line from $rc_file"
+          changed=1
+          ;;
+        2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+        *)
+          echo "✗ Failed to rewrite $rc_file removing the source line (write error — check permissions)" >&2
+          failed=$((failed + 1))
+          ;;
+      esac
+    fi
+    if [ $changed -eq 0 ] && [ $failed -eq 0 ]; then
       echo "  Nothing to remove (not installed)."
-    else
+    elif [ $changed -eq 1 ]; then
       echo ""
       echo "Restart your shell or run: source $rc_file"
     fi
+    [ $failed -gt 0 ] && exit 1
     exit 0
     ;;
 
   install)
-    echo "=== Installing process-kit aliases ($shell_kind) ==="
+    echo "=== Installing house-rules aliases ($shell_kind) ==="
     echo ""
 
+    failed=0
     if aliases_file_is_current; then
       echo "✓ $ALIASES_FILE is already current"
-    else
-      write_aliases_file
+    elif write_aliases_file; then
       echo "✓ Wrote $ALIASES_FILE"
+    else
+      echo "✗ Failed to write $ALIASES_FILE (write error — check permissions)" >&2
+      failed=$((failed + 1))
     fi
 
     if rc_has_legacy_block "$rc_file"; then
-      if rc_migrate_block "$rc_file"; then
-        echo "✓ Migrated alias block in $rc_file to house-rules markers"
-      fi
+      rc_migrate_block "$rc_file"
+      case $? in
+        0) echo "✓ Migrated alias block in $rc_file to house-rules markers" ;;
+        2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+        *)
+          echo "✗ Failed to rewrite the alias block in $rc_file (write error — check permissions)" >&2
+          failed=$((failed + 1))
+          ;;
+      esac
     elif rc_has_block "$rc_file"; then
       echo "✓ Source line already present in $rc_file"
     else
-      rc_append_block "$rc_file"
-      echo "✓ Added source line to $rc_file"
+      if rc_append_block "$rc_file"; then
+        echo "✓ Added source line to $rc_file"
+      else
+        echo "✗ Failed to append the source line to $rc_file (write error — check permissions)" >&2
+        failed=$((failed + 1))
+      fi
     fi
 
     echo ""
@@ -342,6 +373,10 @@ case "$MODE" in
     echo "  PROCESS_KIT → $PLAYBOOK_ROOT"
     echo ""
     echo "Verify: bash $(cd "$(dirname "$0")" && pwd)/install-aliases.sh --check"
+    if [ $failed -gt 0 ]; then
+      echo "✗ $failed write failure(s) above — the ✗-marked items were NOT installed" >&2
+      exit 1
+    fi
     exit 0
     ;;
 esac

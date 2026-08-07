@@ -142,10 +142,14 @@ block_is_current() {
 
 # --- Single-block write operations (multi-pass: one file rewrite per block) ---
 
+# Writer return codes (shared by the three block writers): 0 = written,
+# 1 = I/O failure (mktemp/write/mv — callers must fail loud, process-kit-e71),
+# 2 = malformed markers (deliberate warn-and-skip, file untouched — the
+# process-kit-0em guard contract).
 append_block_new() {
   local id="$1"
   local tmp
-  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
+  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
   {
     if [ ! -f "$CLAUDE_MD" ]; then
       printf '# CLAUDE.md\n\n'
@@ -157,14 +161,14 @@ append_block_new() {
     fi
     render_block "$id"
     printf '\n'
-  } > "$tmp"
-  mv "$tmp" "$CLAUDE_MD"
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
 replace_block() {
   local id="$1"
   local tmp
-  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
+  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
   local begin end lbegin lend in_block=0 emitted=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
@@ -196,9 +200,9 @@ replace_block() {
   if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 1
+    return 2
   fi
-  mv "$tmp" "$CLAUDE_MD"
+  mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
 remove_block() {
@@ -206,7 +210,7 @@ remove_block() {
   [ -f "$CLAUDE_MD" ] || return 0
   has_block "$id" || return 0
   local tmp
-  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")"
+  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
   local begin end lbegin lend in_block=0 consumed=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
@@ -231,9 +235,9 @@ remove_block() {
   if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 1
+    return 2
   fi
-  mv "$tmp" "$CLAUDE_MD"
+  mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
 # --- Cursor paste snippet ---
@@ -247,7 +251,7 @@ render_all_blocks() {
 }
 
 write_cursor_snippet() {
-  mkdir -p "$SAFETY_NET_DIR"
+  mkdir -p "$SAFETY_NET_DIR" || return 1
   render_all_blocks > "$CURSOR_SNIPPET_FILE"
 }
 
@@ -343,15 +347,24 @@ case "$MODE" in
 
   uninstall)
     removed=0
+    failed=0
     for id in "${BLOCKS[@]}"; do
       if has_block "$id"; then
-        if remove_block "$id"; then
-          echo "✓ Removed block '$id' from $CLAUDE_MD"
-          removed=$((removed + 1))
-        fi
+        remove_block "$id"
+        case $? in
+          0)
+            echo "✓ Removed block '$id' from $CLAUDE_MD"
+            removed=$((removed + 1))
+            ;;
+          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+          *)
+            echo "✗ Failed to rewrite $CLAUDE_MD removing block '$id' (write error — check permissions)" >&2
+            failed=$((failed + 1))
+            ;;
+        esac
       fi
     done
-    if [ $removed -eq 0 ]; then
+    if [ $removed -eq 0 ] && [ $failed -eq 0 ]; then
       echo "  No managed blocks found in $CLAUDE_MD (nothing to do)"
     fi
     echo ""
@@ -359,6 +372,7 @@ case "$MODE" in
     echo "rules, remove it manually via Cursor → Settings → Rules for AI."
     echo "(An auto-imported CLAUDE rule needs no action — it follows the"
     echo "file ~/CLAUDE.md on the next Cursor restart.)"
+    [ $failed -gt 0 ] && exit 1
     exit 0
     ;;
 
@@ -371,31 +385,56 @@ case "$MODE" in
     echo "=== Installing global safety net ==="
     echo ""
 
+    failed=0
     for id in "${BLOCKS[@]}"; do
       if ! has_block "$id"; then
-        append_block_new "$id"
-        echo "✓ Added block '$id' to $CLAUDE_MD"
-      elif has_legacy_block "$id"; then
-        if replace_block "$id"; then
-          echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers"
+        if append_block_new "$id"; then
+          echo "✓ Added block '$id' to $CLAUDE_MD"
+        else
+          echo "✗ Failed to write block '$id' to $CLAUDE_MD (write error — check permissions)" >&2
+          failed=$((failed + 1))
         fi
+      elif has_legacy_block "$id"; then
+        replace_block "$id"
+        case $? in
+          0) echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers" ;;
+          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+          *)
+            echo "✗ Failed to rewrite block '$id' in $CLAUDE_MD (write error — check permissions)" >&2
+            failed=$((failed + 1))
+            ;;
+        esac
       elif block_is_current "$id"; then
         echo "✓ Block '$id' is already current (no changes)"
       else
-        if replace_block "$id"; then
-          echo "✓ Updated block '$id' in $CLAUDE_MD"
-        fi
+        replace_block "$id"
+        case $? in
+          0) echo "✓ Updated block '$id' in $CLAUDE_MD" ;;
+          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+          *)
+            echo "✗ Failed to rewrite block '$id' in $CLAUDE_MD (write error — check permissions)" >&2
+            failed=$((failed + 1))
+            ;;
+        esac
       fi
     done
 
-    write_cursor_snippet
-    echo "✓ Wrote combined Cursor paste snippet to $CURSOR_SNIPPET_FILE"
+    if write_cursor_snippet; then
+      echo "✓ Wrote combined Cursor paste snippet to $CURSOR_SNIPPET_FILE"
+    else
+      echo "✗ Failed to write Cursor paste snippet to $CURSOR_SNIPPET_FILE" >&2
+      failed=$((failed + 1))
+    fi
 
     print_cursor_instructions
 
     echo "=== Done ==="
     echo ""
     echo "Verify anytime: bash $(cd "$(dirname "$0")" && pwd)/install-global-safety-net.sh --check"
+    if [ $failed -gt 0 ]; then
+      echo "✗ $failed write failure(s) above — the ✗-marked items were NOT installed" >&2
+      exit 1
+    fi
     exit 0
     ;;
 esac
