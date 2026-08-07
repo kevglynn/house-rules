@@ -31,8 +31,14 @@ case "${1:-}" in
   init)   shift; exec bash "$SCRIPT_DIR/init.sh" "$@" ;;
   doctor) shift; exec bash "$SCRIPT_DIR/doctor.sh" "$@" ;;
   sync)   shift; exec bash "$SCRIPT_DIR/sync-rules.sh" "$@" ;;
-  -h|--help|help|"")
+  -h|--help|help)
     usage
+    ;;
+  "")
+    # A missing subcommand is a usage error, same as an unknown one — an
+    # accidentally empty variable must not print usage and "succeed".
+    usage >&2
+    exit 64
     ;;
   *)
     echo "house-rules: unknown subcommand '$1'" >&2

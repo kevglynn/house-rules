@@ -490,9 +490,13 @@ AGENTS_SECTION
 # Replace the existing marker-delimited block in place (atomic tmp+mv), used
 # when the section is present but its version stamp is stale or missing.
 # Emits exactly one fresh section even if the file somehow carries several.
+# Returns the shared writer contract (0 = written, 1 = I/O failure,
+# 2 = malformed markers, warn-and-skip) — same codes as the block writers
+# in install-aliases.sh and install-global-safety-net.sh, whose scan loop
+# this mirrors (defer/extraction trigger noted at rewrite_block there).
 refresh_agents_section() {
   local tmp in_block=0 emitted=0
-  tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
+  tmp="$(mktemp "${agents_md}.tmp.XXXXXX")" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && [ "$line" = "$agents_begin" ]; then
       in_block=1
@@ -505,30 +509,42 @@ refresh_agents_section() {
     if [ $in_block -eq 1 ]; then
       if [ "$line" = "$agents_end" ]; then
         in_block=0
+      elif [ "$line" = "$agents_begin" ]; then
+        # A BEGIN while a block is already open means the earlier BEGIN
+        # lost its END and the scan is swallowing a real section plus any
+        # user lines between them — stop here so the guard below refuses.
+        break
       fi
       continue
     fi
     printf '%s\n' "$line"
   done < "$agents_md" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF) would have swallowed everything below it
-  # into the tmp file — silently deleting user content on mv; a scan that
-  # consumed no BEGIN at all (emitted=0, e.g. CRLF or indented marker
-  # lines that match the substring grep but not the whole-line test)
-  # would claim success while rewriting nothing.
+  # (in_block still open at EOF, or a nested BEGIN hit above) would have
+  # swallowed user content into the tmp file — silently deleting it on
+  # mv; a scan that consumed no BEGIN at all (emitted=0, e.g. CRLF or
+  # indented marker lines that match the substring grep but not the
+  # whole-line test) would claim success while rewriting nothing.
   if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $agents_md: house-rules section markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 1
+    return 2
   fi
-  mv "$tmp" "$agents_md"
+  mv "$tmp" "$agents_md" || { rm -f "$tmp"; return 1; }
 }
 
+agents_refresh_failed=0
 if [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
   if grep -qF "<!-- house-rules:version ${kit_version} -->" "$agents_md"; then
     echo "✓ AGENTS.md house-rules section current (${kit_version_label})"
   elif refresh_agents_section; then
     echo "✓ Refreshed AGENTS.md house-rules section → ${kit_version_label} (stamp was stale or missing)"
+  else
+    # Guard refusal (or write failure): warned on stderr above. The rest
+    # of the bootstrap is still worth finishing, but the exit code must
+    # not claim a clean setup while the section is stale.
+    agents_refresh_failed=1
+    echo "✗ AGENTS.md house-rules section is stale but was NOT refreshed — repair the marker lines and re-run init" >&2
   fi
 elif [ -f "$agents_md" ]; then
   # Atomic write: stage to mktemp, then mv. A partial multi-line append
@@ -619,3 +635,6 @@ echo "  4. Run: bd prime (agent does this automatically at session start)"
 echo "  5. ⚠ Rules take effect on next session start — restart your editor/CLI"
 echo ""
 echo "Verify setup: bash \"$KIT_ROOT/scripts/house-rules\" doctor"
+if [ "$agents_refresh_failed" -eq 1 ]; then
+  exit 1
+fi

@@ -183,7 +183,7 @@ if [ -d "$cursor_rules" ]; then
     issues=""
     [ $missing -gt 0 ] && issues="$missing missing"
     [ $stale -gt 0 ] && { [ -n "$issues" ] && issues="$issues, "; issues="${issues}$stale stale"; }
-    check_fail "Cursor rules: $issues (of $src_count expected)" "$KIT_ROOT/scripts/sync-rules.sh --format cursor"
+    check_fail "Cursor rules: $issues (of $src_count expected)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format cursor"
     cursor_stale=1
   fi
 else
@@ -194,7 +194,7 @@ if [ -d "$claude_rules" ]; then
   has_claude=true
   md_count=$(ls -1 "$claude_rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
   if [ "$md_count" -eq 0 ]; then
-    check_fail "Claude rules directory exists but is empty" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
+    check_fail "Claude rules directory exists but is empty" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
     claude_stale=1
   else
     claude_src="$KIT_ROOT/claude/rules"
@@ -214,17 +214,17 @@ if [ -d "$claude_rules" ]; then
       if [ $claude_stale -eq 0 ]; then
         check_pass "Claude rules: $md_count files, all up to date"
       else
-        check_fail "Claude rules: $claude_stale of $md_count are stale" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
+        check_fail "Claude rules: $claude_stale of $md_count are stale" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
       fi
     else
-      check_fail "Claude rules: $md_count files (expected $claude_src_count)" "$KIT_ROOT/scripts/sync-rules.sh --format claude"
+      check_fail "Claude rules: $md_count files (expected $claude_src_count)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
       claude_stale=1
     fi
   fi
 fi
 
 if ! $has_cursor && ! $has_claude; then
-  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash $KIT_ROOT/scripts/init.sh --tool cursor|claude|both"
+  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both"
   bootstrap_missing=1
 fi
 
@@ -470,7 +470,7 @@ if [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
         && echo "$hooks_list_out" | grep -q '✓ pre-push'; then
         check_pass "Beads git hooks: pre-commit, post-merge, pre-push installed"
       else
-        check_warn "Beads git hooks missing or incomplete (bd recommends pre-commit, post-merge, pre-push)" "bd hooks install"
+        check_warn "Beads git hooks missing or incomplete (bd recommends pre-commit, post-merge, pre-push) — fix: bd hooks install"
       fi
     else
       check_fail "bd ping failed (database unreachable)" "bd doctor --agent"
@@ -507,7 +507,7 @@ if [ -n "$scratchpad" ]; then
     check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
   fi
 else
-  check_fail "No scratchpad found" "bash $KIT_ROOT/scripts/init.sh --tool cursor|claude|both (creates it automatically)"
+  check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both (creates it automatically)"
 fi
 
 echo ""
@@ -528,7 +528,7 @@ elif [ -f "$TARGETS_FILE" ]; then
     check_pass "Project is in ~/.house-rules-sync-targets"
   elif $has_beads; then
     check_fail "Beads project not in ~/.house-rules-sync-targets — rules will drift silently" \
-      "bash \"$KIT_ROOT/scripts/init.sh\" --tool cursor|claude|both"
+      "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both"
   else
     check_fail "Project not in ~/.house-rules-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.house-rules-sync-targets"
   fi
@@ -669,7 +669,7 @@ fi
 
 if [ $fail -gt 0 ]; then
   echo ""
-  echo "Run 'bash $KIT_ROOT/scripts/init.sh' to fix most issues automatically."
+  echo "Run 'bash \"$KIT_ROOT/scripts/house-rules\" init' to fix most issues automatically."
   exit 1
 else
   if [ $warn -gt 0 ]; then

@@ -41,9 +41,9 @@ while [[ $# -gt 0 ]]; do
     --version) PIN_VERSION="$2"; shift 2 ;;
     --show-version)
       if [ -f "$KIT_ROOT/VERSION" ]; then
-        echo "process-kit v$(cat "$KIT_ROOT/VERSION" | tr -d '[:space:]')"
+        echo "house-rules v$(cat "$KIT_ROOT/VERSION" | tr -d '[:space:]')"
       else
-        echo "process-kit (no VERSION file)"
+        echo "house-rules (no VERSION file)"
       fi
       exit 0
       ;;
@@ -371,14 +371,10 @@ fi
 
 # --- Load targets ---
 
-NEW_CONFIG="$HOME/.house-rules-sync-targets"
-
-CONFIG_FILE=""
+CONFIG_FILE="$HOME/.house-rules-sync-targets"
 TARGETS=()
 
-if [ -f "$NEW_CONFIG" ]; then
-  CONFIG_FILE="$NEW_CONFIG"
-else
+if [ ! -f "$CONFIG_FILE" ]; then
   echo "No config file found."
   echo "Create ~/.house-rules-sync-targets with one repo root per line:"
   cat <<TMPL
@@ -400,19 +396,6 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
   echo "No targets in $CONFIG_FILE. Add repo paths, one per line."
   exit 1
 fi
-
-# --- Derive repo root from old-style config paths ---
-
-derive_repo_root() {
-  local target="$1"
-  if [[ "$target" == */.cursor/rules ]]; then
-    echo "$(cd "$target/../.." 2>/dev/null && pwd)"
-  elif [[ "$target" == */.cursor/rules/ ]]; then
-    echo "$(cd "$target/../../" 2>/dev/null && pwd)"
-  else
-    echo "$target"
-  fi
-}
 
 # --- Format dispatch for a single repo ---
 
@@ -437,19 +420,6 @@ sync_repo() {
     else
       sync_claude_to "$claude_dest"
       if ! $DRY_RUN; then echo "Synced ($label) → $repo_root"; fi
-
-      # Migration: remove legacy claude/rules/ (no dot) in target repos only
-      local legacy_dir="$repo_root/claude/rules"
-      if [ -d "$legacy_dir" ] && [[ "$repo_root" != "$KIT_ROOT" ]]; then
-        if $SAFE_MODE; then
-          echo "  ⚠ Legacy claude/rules/ found — backed up and removed (rules now at .claude/rules/)"
-          local bak_dir="$repo_root/claude/rules.v1.0.bak"
-          cp -R "$legacy_dir" "$bak_dir"
-        else
-          echo "  ⚠ Legacy claude/rules/ found — removed (rules now at .claude/rules/)"
-        fi
-        rm -rf "$legacy_dir"
-      fi
 
       # Warn if .claude/rules/ is gitignored
       if git -C "$repo_root" check-ignore -q ".claude/rules/test.md" 2>/dev/null; then
@@ -499,7 +469,7 @@ else
 fi
 
 for target in "${TARGETS[@]}"; do
-  repo_root="$(derive_repo_root "$target")"
+  repo_root="$target"
 
   if ! validate_target "$repo_root"; then
     error_count=$((error_count + 1))

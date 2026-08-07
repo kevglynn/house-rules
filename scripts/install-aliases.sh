@@ -160,7 +160,7 @@ rc_block_is_current() {
   want="$(rc_block)"
   have="$(awk -v b="$SOURCE_BEGIN" -v e="$SOURCE_END" \
     '$0==b{f=1} f{print} $0==e{f=0}' "$rc")"
-  [ -n "$have" ] && [ "$have" = "$want" ]
+  [ "$have" = "$want" ]
 }
 
 rc_append_block() {
@@ -210,17 +210,21 @@ rc_rewrite_block() {
     if [ $in_block -eq 1 ]; then
       if [ "$line" = "$SOURCE_END" ]; then
         in_block=0
+      elif [ "$line" = "$SOURCE_BEGIN" ]; then
+        # A BEGIN while a block is already open means the earlier BEGIN
+        # lost its END and the scan is swallowing a real block plus any
+        # user lines between them — stop here so the guard below refuses.
+        break
       fi
       continue
     fi
     printf '%s\n' "$line"
   done < "$rc" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF) would have swallowed everything below it
-  # — silently deleting the user's shell config on mv; a scan that
-  # consumed no BEGIN (e.g. CRLF or indented marker lines that match the
-  # substring grep but not the whole-line test) would report a rewrite
-  # that never happened.
+  # (in_block still open at EOF, or a nested BEGIN hit above) would have
+  # swallowed user content on mv; a scan that consumed no BEGIN (e.g.
+  # CRLF or indented marker lines that match the substring grep but not
+  # the whole-line test) would report a rewrite that never happened.
   if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
@@ -236,9 +240,6 @@ rc_remove_block() {
   rc_rewrite_block "$rc"
 }
 
-rc_refresh_block() {
-  rc_rewrite_block "$1" emit
-}
 # --- Dispatch ---
 
 shell_kind="$(detect_shell)"
@@ -293,6 +294,7 @@ case "$MODE" in
   uninstall)
     changed=0
     failed=0
+    refused=0
     if [ -f "$ALIASES_FILE" ]; then
       if rm -f "$ALIASES_FILE"; then
         echo "✓ Removed $ALIASES_FILE"
@@ -309,20 +311,28 @@ case "$MODE" in
           echo "✓ Removed source line from $rc_file"
           changed=1
           ;;
-        2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+        2)
+          # Malformed markers: warned on stderr, file untouched (0em
+          # contract) — but the block is still there, so this uninstall
+          # did not finish; report and exit nonzero, don't claim success.
+          refused=$((refused + 1))
+          ;;
         *)
           echo "✗ Failed to rewrite $rc_file removing the source line (write error — check permissions)" >&2
           failed=$((failed + 1))
           ;;
       esac
     fi
-    if [ $changed -eq 0 ] && [ $failed -eq 0 ]; then
+    if [ $changed -eq 0 ] && [ $failed -eq 0 ] && [ $refused -eq 0 ]; then
       echo "  Nothing to remove (not installed)."
     elif [ $changed -eq 1 ]; then
       echo ""
       echo "Restart your shell or run: source $rc_file"
     fi
-    [ $failed -gt 0 ] && exit 1
+    if [ $refused -gt 0 ]; then
+      echo "⚠ The source block in $rc_file was NOT removed (malformed markers — see warning above; repair the marker lines and re-run)" >&2
+    fi
+    [ $((failed + refused)) -gt 0 ] && exit 1
     exit 0
     ;;
 
@@ -331,6 +341,7 @@ case "$MODE" in
     echo ""
 
     failed=0
+    refused=0
     if aliases_file_is_current; then
       echo "✓ $ALIASES_FILE is already current"
     elif write_aliases_file; then
@@ -343,10 +354,16 @@ case "$MODE" in
     if rc_block_is_current "$rc_file"; then
       echo "✓ Source line already present in $rc_file"
     elif rc_has_block "$rc_file"; then
-      rc_refresh_block "$rc_file"
+      rc_rewrite_block "$rc_file" emit
       case $? in
         0) echo "✓ Refreshed the source block in $rc_file" ;;
-        2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+        2)
+          # Malformed markers: warned on stderr, file untouched (0em
+          # contract) — but the rc still sources nothing current, so the
+          # aliases are NOT active; report and exit nonzero, matching
+          # what --check would say about this exact state.
+          refused=$((refused + 1))
+          ;;
         *)
           echo "✗ Failed to rewrite the source block in $rc_file (write error — check permissions)" >&2
           failed=$((failed + 1))
@@ -372,10 +389,13 @@ case "$MODE" in
     echo "  PROCESS_KIT → $KIT_ROOT"
     echo ""
     echo "Verify: bash $(cd "$(dirname "$0")" && pwd)/install-aliases.sh --check"
+    if [ $refused -gt 0 ]; then
+      echo "⚠ The rc source block was NOT refreshed (malformed markers — see warning above); the aliases are not active until the marker lines in $rc_file are repaired and the installer re-run" >&2
+    fi
     if [ $failed -gt 0 ]; then
       echo "✗ $failed write failure(s) above — the ✗-marked items were NOT installed" >&2
-      exit 1
     fi
+    [ $((failed + refused)) -gt 0 ] && exit 1
     exit 0
     ;;
 esac

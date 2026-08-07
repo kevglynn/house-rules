@@ -130,7 +130,7 @@ block_is_current() {
 
 # --- Single-block write operations (multi-pass: one file rewrite per block) ---
 
-# Writer return codes (shared by the three block writers): 0 = written,
+# Writer return codes (shared by the block writers): 0 = written,
 # 1 = I/O failure (mktemp/write/mv — callers must fail loud, process-kit-e71),
 # 2 = malformed markers (deliberate warn-and-skip, file untouched — the
 # process-kit-0em guard contract).
@@ -153,37 +153,51 @@ append_block_new() {
   mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
-replace_block() {
-  local id="$1"
+# One scanner for both rewrites: strips every copy of the block; with
+# `emit`, re-emits the current render at the first BEGIN (position in the
+# file is preserved). Used by install (emit) and uninstall (strip).
+#
+# defer: this marker-scan loop is hand-copied across the three installers
+# (rc_rewrite_block in install-aliases.sh, refresh_agents_section in
+# init.sh, here) because each installer must stay a standalone single
+# file. ceiling: a scan or guard fix must be hand-propagated to all three
+# copies. upgrade when: a fourth copy appears, or a scan-behavior fix has
+# to land in every copy — extract a sourced scripts/lib helper then.
+rewrite_block() {
+  local id="$1" emit="${2:-}"
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end in_block=0 emitted=0
+  local begin end in_block=0 consumed=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
     if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
       in_block=1
-      if [ $emitted -eq 0 ]; then
+      if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
         render_block "$id"
-        emitted=1
       fi
+      consumed=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
       if [ "$line" = "$end" ]; then
         in_block=0
+      elif [ "$line" = "$begin" ]; then
+        # A BEGIN while a block is already open means the earlier BEGIN
+        # lost its END and the scan is swallowing a real block plus any
+        # user lines between them — stop here so the guard below refuses.
+        break
       fi
       continue
     fi
     printf '%s\n' "$line"
   done < "$CLAUDE_MD" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF) would have swallowed everything below it
-  # — silently deleting user content on mv; a scan that consumed no BEGIN
-  # (emitted=0, e.g. CRLF or indented marker lines that match the
-  # substring grep but not the whole-line test) would claim success while
-  # rewriting nothing.
-  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
+  # (in_block still open at EOF, or a nested BEGIN hit above) would have
+  # swallowed user content on mv; a scan that consumed no BEGIN (e.g.
+  # CRLF or indented marker lines that match the substring grep but not
+  # the whole-line test) would claim success while rewriting nothing.
+  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
     rm -f "$tmp"
     echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
     return 2
@@ -195,33 +209,7 @@ remove_block() {
   local id="$1"
   [ -f "$CLAUDE_MD" ] || return 0
   has_block "$id" || return 0
-  local tmp
-  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end in_block=0 consumed=0
-  begin="$(marker_begin "$id")"
-  end="$(marker_end "$id")"
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
-      in_block=1
-      consumed=1
-      continue
-    fi
-    if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$end" ]; then
-        in_block=0
-      fi
-      continue
-    fi
-    printf '%s\n' "$line"
-  done < "$CLAUDE_MD" > "$tmp"
-  # Same guard as replace_block: unpaired BEGIN swallows to EOF; a scan
-  # that consumed nothing would report a removal that never happened.
-  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
-    rm -f "$tmp"
-    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 2
-  fi
-  mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
+  rewrite_block "$id"
 }
 
 # --- Cursor paste snippet ---
@@ -332,6 +320,7 @@ case "$MODE" in
   uninstall)
     removed=0
     failed=0
+    refused=0
     for id in "${BLOCKS[@]}"; do
       if has_block "$id"; then
         remove_block "$id"
@@ -340,7 +329,12 @@ case "$MODE" in
             echo "✓ Removed block '$id' from $CLAUDE_MD"
             removed=$((removed + 1))
             ;;
-          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+          2)
+            # Malformed markers: warned on stderr, file untouched (0em
+            # contract) — the block is still there; count it so the exit
+            # code says the uninstall did not finish.
+            refused=$((refused + 1))
+            ;;
           *)
             echo "✗ Failed to rewrite $CLAUDE_MD removing block '$id' (write error — check permissions)" >&2
             failed=$((failed + 1))
@@ -348,15 +342,18 @@ case "$MODE" in
         esac
       fi
     done
-    if [ $removed -eq 0 ] && [ $failed -eq 0 ]; then
+    if [ $removed -eq 0 ] && [ $failed -eq 0 ] && [ $refused -eq 0 ]; then
       echo "  No managed blocks found in $CLAUDE_MD (nothing to do)"
+    fi
+    if [ $refused -gt 0 ]; then
+      echo "⚠ $refused block(s) were NOT removed (malformed markers — see warnings above; repair the marker lines and re-run)" >&2
     fi
     echo ""
     echo "Note: if you previously pasted the snippet into Cursor's user"
     echo "rules, remove it manually via Cursor → Settings → Rules for AI."
     echo "(An auto-imported CLAUDE rule needs no action — it follows the"
     echo "file ~/CLAUDE.md on the next Cursor restart.)"
-    [ $failed -gt 0 ] && exit 1
+    [ $((failed + refused)) -gt 0 ] && exit 1
     exit 0
     ;;
 
@@ -370,6 +367,7 @@ case "$MODE" in
     echo ""
 
     failed=0
+    refused=0
     for id in "${BLOCKS[@]}"; do
       if ! has_block "$id"; then
         if append_block_new "$id"; then
@@ -381,10 +379,15 @@ case "$MODE" in
       elif block_is_current "$id"; then
         echo "✓ Block '$id' is already current (no changes)"
       else
-        replace_block "$id"
+        rewrite_block "$id" emit
         case $? in
           0) echo "✓ Updated block '$id' in $CLAUDE_MD" ;;
-          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
+          2)
+            # Malformed markers: warned on stderr, file untouched (0em
+            # contract) — the block stays stale; count it so the exit
+            # code says the install did not finish.
+            refused=$((refused + 1))
+            ;;
           *)
             echo "✗ Failed to rewrite block '$id' in $CLAUDE_MD (write error — check permissions)" >&2
             failed=$((failed + 1))
@@ -405,10 +408,13 @@ case "$MODE" in
     echo "=== Done ==="
     echo ""
     echo "Verify anytime: bash $(cd "$(dirname "$0")" && pwd)/install-global-safety-net.sh --check"
+    if [ $refused -gt 0 ]; then
+      echo "⚠ $refused block(s) were NOT updated (malformed markers — see warnings above); repair the marker lines in $CLAUDE_MD and re-run" >&2
+    fi
     if [ $failed -gt 0 ]; then
       echo "✗ $failed write failure(s) above — the ✗-marked items were NOT installed" >&2
-      exit 1
     fi
+    [ $((failed + refused)) -gt 0 ] && exit 1
     exit 0
     ;;
 esac
