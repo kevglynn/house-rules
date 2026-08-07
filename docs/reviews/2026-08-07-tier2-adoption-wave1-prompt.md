@@ -1,0 +1,4086 @@
+# Tier 2 cross-model review — adoption wave 1 — core manifest, docs-path-lint, plugin manifests, tier mechanics (`process-kit-3mr`)
+
+Paste everything below this line into each external model (Grok, Gemini, GPT). Collect the responses and hand them back for triage.
+
+---
+
+Review this Bash/Python/JSON core-tier adoption surface (manifest + checker + plugins + doctor/init) with a critical eye. Accept or reject each finding with a reason — don't rubber-stamp. Focus on: Hunt these failure classes, in priority order. (1) Core-manifest bd-cleanliness escapes: any listed rule/skill path whose on-disk content still matches \bbd\b|\bbeads?\b (or a near-miss the stricter pattern was meant to catch but does not), or a parser/test gap that lets a dirty file, absolute/traversal/duplicate path, or undeclared required member reach CI green — especially skill-dir .md files beyond SKILL.md and the newly added core-upgrade-offer rule. (2) docs-path-lint false positives and false negatives: a fenced command whose path is real but flagged (trailing punctuation, info-string quirks, allow-marker lookaround, untagged-fence heuristic), or a stale/wrong path that exits 0 — including skip-reason accounting that silently drops fences that should have been findings, and scan-scope holes (files that teach script paths but are excluded without an explicit decision). (3) Plugin surface mismatch: marketplace strict:false + source ./ path resolution that installs the wrong tree or omits declared skills/rules; .cursor-plugin explicit arrays drifting from profiles/core-manifest.list; root plugin.json (Agent Plugins closed field set) vs skills-CLI resolution via .claude-plugin declarations — any claim that one surface validates another when the loaders differ. (4) Doctor core-tier honesty: a repo stamped .house-rules-tier=core that still fails on beads/scratchpad/sync-targets (false red), or a broken/mis-stamped/full-tier-broken repo that reports SUMMARY: ok (false healthy); also stamp-absent defaulting that misclassifies intent. (5) Upgrade-offer re-nag or pipeline-command teaching: any path where the offer fires again after .house-rules-upgrade-offered exists, fires without consent prerequisites, or teaches house-rules init without an explicit --tool cursor|claude|both (anq-class pipeline hazard). (6) Sync-target registration leaks: init --tier core creating or appending ~/.house-rules-sync-targets, or any doctor/sync path that treats a core-stamped repo as a full sync target. Style and performance polish is out of scope.
+
+## Review discipline
+
+- Verdicts require evidence. For every focus area and every finding — including a clean pass — quote the exact code that decides your conclusion. A verdict without quoted code is invalid.
+- Scope objections are not rejections. A real defect that falls outside this change's scope is still a finding — report it tagged out-of-scope. Triage owns scope decisions, not you; never self-reject a finding you believe is real.
+- The packet's claims — the context, the already-addressed list, the trusted-layer boundary — are assertions, not facts. Verify the ones your verdict depends on; disproving one counts as a finding.
+
+## Context
+
+Adoption wave 1 for house-rules (incubated as process-kit): four related commits already on main that make the zero-dependency core wedge installable and supportable. (A) process-kit-pon 89aadfe + Tier1 8d5aa67 — profiles/core-manifest.list curates 5 rules + 5 skills + 2 CLIs; de-beads shared full-tier rule/skill prose so core content is bd-clean; scripts/tests/test_core_manifest.py enforces cleanliness, membership, and parser guards. (B) process-kit-4cn 69ea89c + Tier1 f430ef7 — scripts/docs-path-lint fails CI when fenced bash in kit docs references missing paths; suite + docs-path-gate in kit-ci. (C) process-kit-wsi 8f68494 — three plugin surfaces: .claude-plugin/marketplace.json (house-rules-core + house-rules-full, strict:false), .cursor-plugin/plugin.json (explicit core rules/skills arrays), root plugin.json (Agent Plugins standard; skills CLI does not read it — documented discrepancy). (D) process-kit-12q 58d3042 — .house-rules-tier stamp, tier-aware doctor/init (core skips beads/scratchpad/sync fails; core not registered in sync-targets), alwaysApply core-upgrade-offer rule, test_tier_mechanics.sh. Spec: docs/specs/2026-08-07-adoption-plan.md. Tier 1 already ran on pon and 4cn; wsi and 12q skipped/deferred Tier 1 and are included here so cross-model eyes cover them before the next release cut.
+
+The layers below are trusted, do not re-review: the four distributed checker CLIs themselves (defer-lint, banned-token-scan, tdd-ledger, close-reason-lint) and profiles/conventions.toml; full-tier beads-workflow rules not listed in the core manifest (bead-completion, operating-model, session-lifecycle, etc.); brand-cohesion installer/marker scanners already Tier-2'd under process-kit-anq (except the doctor/init deltas in this wave); git/gh/Actions runners beyond the kit-ci.yml job definitions embedded here; the beads (bd) CLI; marketplace submission / live Claude /plugin UI (out of launch scope).
+
+## Rules this layer must uphold
+
+- Every path listed in profiles/core-manifest.list as rule| or skill| must be bd-clean under the test's \bbd\b|\bbeads?\b scan of relevant .md/.mdc content; required named members (incl. graybeard-playbook, prose-voice skill, defer-lint, banned-token-scan, core-upgrade-offer) must be present as exact tuples.
+- Manifest parser must refuse absolute paths, .. traversal, and duplicate entries — tests pin these; CI runs test_core_manifest in checker-suites.
+- docs-path-lint exit contract: 0 clean, 1 findings, 2 usage/bad args, 3 I/O — matching sibling checkers; --json must expose fences_skipped and skips_by_reason; a known-stale playbook-init.sh reference fixture must exit 1.
+- Plugin manifests: Claude marketplace uses source ./ + strict:false and must not ship a conflicting .claude-plugin/plugin.json; Cursor plugin arrays and marketplace skill/rule lists must track the core manifest; root plugin.json validates against the Agent Plugins closed schema and is not the skills-CLI resolution surface.
+- init --tier core writes .house-rules-tier=core and must not create/append ~/.house-rules-sync-targets; doctor on a healthy core-stamped repo reports SUMMARY: ok without beads/scratchpad/sync-target failures.
+- core-upgrade-offer fires at most once per repo (marker .house-rules-upgrade-offered), only when eligibility holds (core value already demonstrated, no task tracking, marker absent), and every taught init command includes an explicit --tool cursor|claude|both.
+- Doctor machine contract remains: exit 0/2/3/1 with SUMMARY keys; core mode narrows the check subset without inventing a false ok for a genuinely broken tree.
+
+## Already addressed (from prior review — don't re-report)
+
+- pon Tier 1 (four lenses, 0 Critical; Importants fixed in 8d5aa67): CI wiring of test_core_manifest into kit-ci checker-suites; absolute/traversal/duplicate parser guards; full required-membership pin (incl. graybeard-playbook + prose-voice skill); cli-path packaging constraint documented in manifest header; pattern tightened to \bbd\b|\bbeads?\b over every .md in listed skill dirs; boundary fixtures; skill-dir grep; prose trims; defer: trigger recorded for the shared-file ceiling. Accepted/latent: bash-consumer whitespace tolerance — documented, do not re-report.
+- 4cn Tier 1 (four lenses, 0 Critical / 4 Important / 10 Minor; Importants fixed in f430ef7): trailing-punctuation false positive trim; tautological marker-boundary test replaced with mutant-killing prefix/suffix subtests + ALLOW_RE lookaround; scan-scope exclusions documented and AGENTS.md/CONTRIBUTING.md added to scan set; silent skips now counted per reason in --json. Minors fixed: exit-2 stderr-JSON pins, info-string first-word tag, glob branch simplified to counted skip, path-scoped allow narrowing deleted, README/CONTRIBUTING inventories updated. Simplify cuts rejected where other lenses showed coverage value (clone prefixes, INVOKED_SH_RE, untagged-fence heuristic kept). Remaining latent minors tracked on process-kit-020 — reject re-reports with that pointer.
+- wsi: Tier 1 skipped/deferred at close — no already-addressed list; review plugin manifests and test_plugin_manifests fresh. Documented non-bug: root plugin.json is Agent Plugins standard, not skills-CLI resolution (skills CLI uses skills/ walk + .claude-plugin declarations).
+- 12q: Tier 1 skipped/deferred at close — no already-addressed list; review doctor/init tier paths, core-upgrade-offer, and test_tier_mechanics fresh. Parent pre-commit fix already removed cursor|claude|both pipeline hazard from upgrade-offer + operations/init teach strings (anq class) — verify that fix held, do not assume it without quoting the teaching strings. Known ceiling (not a silent bug report): --tier core --tool still copies the full local rule set while doctor skips full-kit drift; stamp-only + plugin is the primary core path.
+
+## Files
+
+### profiles/core-manifest.list
+
+```
+# Core-tier manifest — the definitive list of what constitutes
+# house-rules-core, the zero-dependency wedge tier (standalone rules +
+# graybeard skill family + checker CLIs; no beads/bd requirement).
+#
+# Kit-internal build input — NOT distributed to targets (unlike
+# conventions.toml in this directory, which is byte-drift-checked in
+# target repos).
+#
+# Consumed by the plugin-manifests work (process-kit-wsi) to build the
+# house-rules-core plugin manifests; verified by
+# scripts/tests/test_core_manifest.py (run in kit CI).
+#
+# Inclusion criterion: the file's semantics must stand alone in a repo
+# with none of the full-tier workflow installed — zero bd/bead/beads
+# references (pattern enforced by the test suite), and every
+# cross-reference it makes (rules, skills, CLIs) resolves within this
+# list or degrades gracefully when it points at full-tier content.
+#
+# Fields (|-delimited, one line per entry):
+#   kind  rule (a cursor/rules .mdc file), skill (a skills/ dir whose
+#         SKILL.md ships), or cli (an executable under scripts/)
+#   path  repo-relative path to the file (rule, cli) or directory (skill)
+#
+# Line order is not significant; duplicates are rejected by the parser.
+#
+# Packaging constraints for consumers:
+#   - cli paths are also the required target-relative install paths:
+#     core rule prose cites scripts/defer-lint and
+#     scripts/banned-token-scan literally, so packaging must preserve
+#     scripts/ placement in targets or rewrite those citations.
+#   - each rule also has a generated claude/rules/<name>.md projection
+#     (frontmatter stripped, .mdc -> .md); a Claude-flavored package
+#     derives those paths from the rule entries here.
+#
+# defer: core and full tiers share single rule/skill files, using
+# conditional prose ("where installed") instead of a rendered core
+# variant. ceiling: conditional clauses accumulating, or core wording
+# needing to differ from full-tier wording rather than merely
+# generalize. upgrade when: a core-tier edit would change full-tier
+# semantics — switch to a scripts/conventions rendered variant.
+#
+# Adding an entry: the test suite enforces existence and cleanliness;
+# kit CI runs it, but run it locally after any change here or to a
+# listed file.
+rule|cursor/rules/agent-identity.mdc
+rule|cursor/rules/defer-convention.mdc
+rule|cursor/rules/prose-voice.mdc
+rule|cursor/rules/parallel-subagent-safety.mdc
+rule|cursor/rules/graybeard-playbook.mdc
+rule|cursor/rules/core-upgrade-offer.mdc
+skill|skills/graybeard-review
+skill|skills/graybeard-audit
+skill|skills/graybeard-debt
+skill|skills/graybeard-help
+skill|skills/prose-voice
+cli|scripts/defer-lint
+cli|scripts/banned-token-scan
+```
+
+### scripts/tests/test_core_manifest.py
+
+```python
+#!/usr/bin/env python3
+"""Behavioral tests for profiles/core-manifest.list — the house-rules-core
+content list.
+
+Asserts the three durable properties the core tier depends on:
+  1. the manifest exists and parses (kind|path lines, known kinds),
+  2. every listed path exists in the expected shape (rule file, skill dir
+     with SKILL.md, executable CLI),
+  3. every listed rule file and every .md in a listed skill dir is free
+     of bd/bead/beads references — the core-tier promise is zero
+     workflow nagging.
+
+Checks are factored as helpers so fixture tests can prove they actually
+flag violations (a checker that passes regardless of correctness is zero
+signal).
+
+Run: python3 scripts/tests/test_core_manifest.py
+"""
+
+import os
+import re
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MANIFEST = REPO_ROOT / "profiles" / "core-manifest.list"
+
+KNOWN_KINDS = {"rule", "skill", "cli"}
+
+# The core-tier cleanliness pattern: no `bd` as a word, no `bead`/`beads`
+# as a word (singular included — "claim the bead" is workflow language even
+# though the AC's literal grep only named the plural). Case-insensitive.
+BD_PATTERN = re.compile(r"\bbd\b|\bbeads?\b", re.IGNORECASE)
+
+
+def parse_manifest(text):
+    """Parse manifest text into (kind, path) tuples.
+
+    Raises ValueError on a malformed line (missing '|', unknown kind,
+    absolute or ..-traversal path, duplicate entry) so a bad manifest fails
+    loudly rather than resolving against whatever exists on the machine.
+    """
+    entries = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" not in line:
+            raise ValueError(f"line {lineno}: no '|' separator: {line!r}")
+        kind, path = line.split("|", 1)
+        if kind not in KNOWN_KINDS:
+            raise ValueError(f"line {lineno}: unknown kind {kind!r}")
+        if not path:
+            raise ValueError(f"line {lineno}: empty path")
+        if Path(path).is_absolute() or ".." in Path(path).parts:
+            raise ValueError(f"line {lineno}: path must be repo-relative: {path!r}")
+        if (kind, path) in entries:
+            raise ValueError(f"line {lineno}: duplicate entry: {line!r}")
+        entries.append((kind, path))
+    return entries
+
+
+def find_missing(entries, root):
+    """Return entries whose path does not exist in the expected shape."""
+    missing = []
+    for kind, path in entries:
+        target = root / path
+        if kind == "rule":
+            ok = target.is_file()
+        elif kind == "skill":
+            ok = target.is_dir() and (target / "SKILL.md").is_file()
+        else:  # cli
+            ok = target.is_file() and os.access(target, os.X_OK)
+        if not ok:
+            missing.append((kind, path))
+    return missing
+
+
+def grep_targets(entries, root):
+    """Files whose text must be bd/beads-clean.
+
+    A skill entry denotes the whole directory, so every .md in it is
+    checked — SKILL.md plus any companion files a skill grows later.
+    """
+    targets = []
+    for kind, path in entries:
+        if kind == "rule":
+            targets.append(root / path)
+        elif kind == "skill":
+            targets.extend(sorted((root / path).rglob("*.md")))
+    return targets
+
+
+def find_unclean(entries, root):
+    """Return (file, lineno, line) for every bd/beads hit in grep targets."""
+    hits = []
+    for target in grep_targets(entries, root):
+        for lineno, line in enumerate(
+            target.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            if BD_PATTERN.search(line):
+                hits.append((str(target.relative_to(root)), lineno, line.strip()))
+    return hits
+
+
+class TestRealManifest(unittest.TestCase):
+    """The shipped manifest satisfies the core-tier acceptance criteria."""
+
+    def setUp(self):
+        self.assertTrue(
+            MANIFEST.is_file(),
+            f"core manifest missing at {MANIFEST.relative_to(REPO_ROOT)}",
+        )
+        self.entries = parse_manifest(MANIFEST.read_text(encoding="utf-8"))
+
+    def test_required_core_members_present(self):
+        # The full shipped set: the AC-named members plus graybeard-playbook
+        # (the family's rule per graybeard-help's own table) and the
+        # prose-voice skill (hard dependency of the prose-voice rule) —
+        # deleting either breaks the manifest's cross-reference-closure
+        # invariant, so the pin covers all shipped entries.
+        required = {
+            ("rule", "cursor/rules/agent-identity.mdc"),
+            ("rule", "cursor/rules/defer-convention.mdc"),
+            ("rule", "cursor/rules/prose-voice.mdc"),
+            ("rule", "cursor/rules/parallel-subagent-safety.mdc"),
+            ("rule", "cursor/rules/graybeard-playbook.mdc"),
+            ("rule", "cursor/rules/core-upgrade-offer.mdc"),
+            ("skill", "skills/graybeard-review"),
+            ("skill", "skills/graybeard-audit"),
+            ("skill", "skills/graybeard-debt"),
+            ("skill", "skills/graybeard-help"),
+            ("skill", "skills/prose-voice"),
+            ("cli", "scripts/defer-lint"),
+            ("cli", "scripts/banned-token-scan"),
+        }
+        self.assertLessEqual(
+            required,
+            set(self.entries),
+            "manifest is missing required core members",
+        )
+
+    def test_every_listed_path_exists(self):
+        self.assertEqual(find_missing(self.entries, REPO_ROOT), [])
+
+    def test_core_rules_and_skills_are_bd_clean(self):
+        hits = find_unclean(self.entries, REPO_ROOT)
+        self.assertEqual(
+            hits, [], "core-listed files contain bd/beads references: " f"{hits}"
+        )
+
+
+class TestCheckersAreNotVacuous(unittest.TestCase):
+    """Fixture negatives: the helpers must flag violations, not wave them by."""
+
+    def test_parse_rejects_unknown_kind_and_malformed_line(self):
+        with self.assertRaises(ValueError):
+            parse_manifest("hook|scripts/some-hook\n")
+        with self.assertRaises(ValueError):
+            parse_manifest("cursor/rules/agent-identity.mdc\n")
+
+    def test_parse_rejects_absolute_traversal_and_duplicate_paths(self):
+        # Path(root) / "/usr/bin/env" silently discards root — a typo'd
+        # absolute entry would resolve against the test machine's
+        # filesystem and pass. Traversal and duplicates likewise fail loud.
+        with self.assertRaises(ValueError):
+            parse_manifest("cli|/usr/bin/env\n")
+        with self.assertRaises(ValueError):
+            parse_manifest("rule|../outside/rule.mdc\n")
+        with self.assertRaises(ValueError):
+            parse_manifest("cli|scripts/defer-lint\ncli|scripts/defer-lint\n")
+
+    def test_missing_path_is_flagged(self):
+        entries = [("rule", "cursor/rules/does-not-exist.mdc")]
+        self.assertEqual(find_missing(entries, REPO_ROOT), entries)
+
+    def test_skill_dir_without_skill_md_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "skills" / "empty-skill").mkdir(parents=True)
+            entries = [("skill", "skills/empty-skill")]
+            self.assertEqual(find_missing(entries, root), entries)
+
+    def test_bd_referencing_rule_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules = root / "cursor" / "rules"
+            rules.mkdir(parents=True)
+            (rules / "dirty.mdc").write_text(
+                "Run bd ready to find the next task.\n"
+                "Beads is the source of truth.\n"
+                "Claim the bead before starting.\n",
+                encoding="utf-8",
+            )
+            hits = find_unclean([("rule", "cursor/rules/dirty.mdc")], root)
+            self.assertEqual(len(hits), 3)
+
+    def test_clean_rule_produces_no_hits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules = root / "cursor" / "rules"
+            rules.mkdir(parents=True)
+            # Word-boundary negatives that would trip a boundary-less
+            # pattern: "subdirectory" and "lambda" contain the bd
+            # substring; "beadwork" starts with bead but is one word.
+            (rules / "clean.mdc").write_text(
+                "Check the subdirectory for lambda helpers; beadwork"
+                " metaphors are fine.\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                find_unclean([("rule", "cursor/rules/clean.mdc")], root), []
+            )
+
+    def test_dirty_skill_companion_file_is_flagged(self):
+        # A skill entry denotes the directory: a clean SKILL.md must not
+        # shield a companion .md carrying workflow references.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skills" / "some-skill"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("Clean text.\n", encoding="utf-8")
+            (skill / "references.md").write_text(
+                "Track it with bd create.\n", encoding="utf-8"
+            )
+            hits = find_unclean([("skill", "skills/some-skill")], root)
+            self.assertEqual(len(hits), 1)
+            self.assertIn("references.md", hits[0][0])
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+### cursor/rules/graybeard-playbook.mdc
+
+```
+---
+description: "Lazy senior dev implementation mode — the decision ladder for minimal, correct code. Activate with 'use graybeard-playbook' or when implementing features or tasks where code minimalism matters. Defers to the pragmatic-tdd rule (where installed) for test discipline."
+alwaysApply: false
+---
+
+# Graybeard-Playbook: Implementation Ladder
+
+Concept adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT); reimplemented and extended for this kit. Governs how you build — test discipline belongs to the pragmatic-tdd rule (see "Test discipline" below).
+
+## The ladder
+
+Stop at the first rung that holds:
+
+1. **Does this need to exist at all?** Speculative need = skip it, say so in one line. (YAGNI)
+2. **Already in this codebase?** A helper, util, type, or pattern that already lives here — reuse it. Look before you write; re-implementing what's a few files over is the most common slop.
+3. **Stdlib does it?** Use it.
+4. **Native platform feature covers it?** `<input type="date">` over a picker lib, CSS over JS, DB constraint over app code.
+5. **Already-installed dependency solves it?** Use it. Never add a new one for what a few lines can do.
+6. **Can it be one line?** One line.
+7. **Only then:** the minimum code that works.
+
+The ladder runs *after* you understand the problem, not instead of it. Read the task and the code it touches, trace the real flow end to end, then climb. Two rungs work — take the higher one and move on.
+
+## Bug fix = root cause, not symptom
+
+A report names a symptom. Before you edit, grep every caller of the function you're about to touch. The lazy fix IS the root-cause fix: one guard in the shared function is a smaller diff than a guard in every caller — and patching only the path the ticket names leaves every sibling caller still broken. Fix it once, where all callers route through.
+
+## Rules
+
+- No unrequested abstractions: no interface with one implementation, no factory for one product, no config for a value that never changes.
+- No boilerplate, no scaffolding "for later" — later can scaffold for itself.
+- Deletion over addition. Boring over clever — clever is what someone decodes at 3am.
+- Fewest files possible. Shortest working diff wins — but only once you understand the problem.
+- Complex request? Ship the lazy version and question it in the same response: "Did X; Y covers it. Need full X? Say so." Never stall on an answer you can default.
+- Two stdlib options, same size? Take the one that's correct on edge cases.
+- Mark deliberate simplifications with a `defer:` comment (see defer-convention.mdc).
+
+## Output
+
+Code first. Then at most three short lines: what was skipped, when to add it. If the explanation is longer than the code, delete the explanation. Explanation the user explicitly asked for is not debt — give it in full.
+
+## When NOT to be lazy
+
+Never simplify away:
+- **Understanding the problem** — read fully, trace the real flow before picking a rung. A small diff you don't understand is the dangerous kind of laziness.
+- **Input validation at trust boundaries**
+- **Error handling that prevents data loss**
+- **Security measures**
+- **Accessibility basics**
+- **Anything explicitly requested** — user insists on the full version, build it.
+
+## Test discipline — defer to pragmatic-tdd
+
+This rule does NOT govern test policy. That belongs to the pragmatic-tdd rule — follow it where installed; where it isn't, apply its short form:
+- Bug fixes: test-first, always (reproduce the bug before fixing)
+- Features: ACs become tests (write failing tests from acceptance criteria)
+- Refactors: safety net first (behavioral tests before changing structure)
+
+The ladder governs implementation code; test discipline governs test code. They are complementary: the ladder produces minimal implementation, test discipline ensures that minimal implementation is verified.
+
+## Intensity
+
+| Level | What changes |
+|-------|-------------|
+| **lite** | Build what's asked, but name the lazier alternative in one line. User picks. |
+| **full** | The ladder enforced. Stdlib and native first. Shortest diff, shortest explanation. Default. |
+| **ultra** | YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same breath. |
+
+## Boundaries
+
+This rule governs what you build, not how you talk. Deactivate with "stop graybeard-playbook" or "normal mode." Level persists until changed or session end. Default: **full**.
+```
+
+### cursor/rules/prose-voice.mdc
+
+```
+---
+description: Voice discipline for human-facing prose — kills AI-sounding rhetorical patterns. Read the prose-voice skill before writing or editing any document a human will read or send.
+alwaysApply: true
+---
+
+# Prose Voice
+
+When producing prose a human will read or forward — positioning docs, pre-whitepapers, packets, deck copy, primers, emails, briefs, or any artifact described as "ready to send" — read and follow `skills/prose-voice` before writing. The skill carries the pattern catalog (contrastive pivots, mic-drop closers, triplet escalation, gravitas inflation, parallel openers, complement framing, length inflation, punctuation fingerprint), budgets per pattern, worked before/after examples, and a mechanical self-correction protocol to run before finalizing.
+
+Punctuation is part of voice: match the user's fingerprint, not model defaults. Per-user parameters (banned marks, register rules) live in the machine-global user overlay (`~/.agents/overlay.md` § `prose-voice`; a per-project overlay wins on conflicts); generic law applies when none exists.
+
+Lexical economy is not optional. Messages, chats, and emails carry word ceilings, and depth is held in reserve for follow-ups instead of pre-loaded — a reader should absorb the whole thing without delay, friction, or hesitation. Documents may be comprehensive, and still face the skill's cut test.
+
+Does NOT apply to code comments, commit messages, task-tracker or issue descriptions, or agent-to-agent notes.
+```
+
+### cursor/rules/parallel-subagent-safety.mdc
+
+```
+---
+description: Prevents file-edit conflicts when launching parallel subagents — blast radius rules for parent agents. Load when launching or coordinating subagents via the Task tool.
+alwaysApply: false
+---
+
+# Parallel Subagent Safety
+
+When an agent launches subagents to work on files in parallel, the parent agent must not edit files that overlap with any running subagent's scope. Subagents operate on independent snapshots — overlapping writes both land, producing duplicate exports, conflicting type declarations, or malformed config that requires manual deduplication. The fix is always trivial; the pattern wastes cycles and erodes confidence in agent coordination.
+
+## Rules
+
+### Before launching subagents
+
+Identify each subagent's **blast radius** — the set of files it will create, modify, or append to. This includes:
+- Files explicitly assigned to the subagent
+- Barrel/index files that re-export the subagent's output (e.g., `index.ts`, `__init__.py`, `mod.rs`)
+- Shared type files, config files, or manifests the subagent may update
+- Any file where the subagent's new code needs to be registered or wired in
+
+When the overlap isn't obvious, apply these heuristics:
+
+| Subagent task | Likely blast radius beyond assigned files |
+|---|---|
+| New module/component | Barrel exports, route registration, type index |
+| API route | Router config, middleware chain, API type definitions |
+| Database migration | Schema files, model index, seed data |
+| UI component | Component index, style imports, story/test registration |
+| Config change | Environment files, feature flags, shared constants |
+
+If uncertain whether a file is in a subagent's blast radius, treat it as if it is. False positives (unnecessary waiting) cost less than false negatives (conflict resolution).
+
+### While subagents are running
+
+**DO NOT** edit any file in any running subagent's blast radius — including adding exports to barrel files a subagent will also update, modifying shared type definitions a subagent depends on or extends, updating config or manifest files a subagent will also touch, or writing to any file where the subagent's task description implies a write.
+
+**DO** use foreground time for genuinely non-overlapping work: reading documentation, source, or specs for context; running diagnostics, type checks, or linters on unrelated files; editing files no running subagent will touch; updating planning artifacts or progress notes no subagent owns; preparing review criteria for when subagents complete.
+
+**DO** wait if there is no productive non-overlapping work. Idling is correct behavior when every useful foreground action would conflict with a running subagent. Do not invent busywork that risks file conflicts.
+
+### After subagents complete
+
+1. **Review all subagent output before committing** — duplicate entries in barrel/index files, conflicting type definitions or interface declarations, redundant imports or registrations, overlapping modifications to shared files.
+2. **Resolve conflicts** before proceeding — deduplicate exports, merge type definitions, reconcile config entries.
+3. **Only then** make integration edits: wiring subagent outputs together in shared files, adding missing exports, updating barrel files with the final consolidated set.
+
+## Anti-pattern: "I'll just add it now"
+
+The most common violation is the parent agent thinking "the subagent is building the module, but I can go ahead and add the export to the barrel file since I know what it'll be called." This is exactly the pattern that causes duplicate exports. The subagent will add the same export as part of its task. Wait for it.
+```
+
+### cursor/rules/core-upgrade-offer.mdc
+
+````
+---
+description: Core-tier upgrade offer — after core skills prove useful in a repo without task tracking, offer the full playbook once with consent.
+alwaysApply: true
+---
+
+# Core Upgrade Offer
+
+This rule ships with the **house-rules-core** plugin. It is the pull-path from the zero-dependency wedge to the full playbook.
+
+## When to offer
+
+Offer the full playbook install **once**, with explicit consent, when **all** of the following are true in the current workspace:
+
+1. Core skills or core rules have already been relevant this session (the user got value from graybeard review/audit/debt/help, prose-voice, defer-lint, banned-token-scan, or another core surface).
+2. The repo has **no task tracking** set up — neither a `.dolt` database nor the usual project-local task-tracking directory at the repo root.
+3. The marker file `.house-rules-upgrade-offered` is **absent** at the repo root.
+
+If any condition fails, do nothing. Do not nag.
+
+## How to offer (consent required)
+
+Ask the user **once**, using this shape (adapt wording lightly; keep the three options):
+
+> The core playbook is working here. Want the full playbook (task tracking, session lifecycle, planning/review workflow)?
+>
+> 1. Yes — confirm tool choice, then run
+>    `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool <choice>`
+>    e.g. `--tool cursor` (or `--tool claude` / `--tool both`)
+> 2. Not now — skip for this session
+> 3. Never for this repo — leave the marker so this offer does not return
+>
+> Which?
+
+Act only after the user answers. Never run init without consent and an explicit `--tool` flag (or a TTY).
+
+If `"${PROCESS_KIT:-$HOME/process-kit}"` does not exist, tell the user to clone first:
+
+> house-rules is not installed at `~/process-kit`. Clone it with:
+> `git clone https://github.com/kevglynn/house-rules ~/process-kit`
+
+## Persist the offer (no re-nag)
+
+After offering — whether the user accepts, declines, or picks "never" — create an empty marker file at the repo root:
+
+```bash
+touch .house-rules-upgrade-offered
+```
+
+If that file already exists, **do not re-ask / do not re-offer**. The offer was already made.
+
+Option 3 is the same marker; options 1 and 2 also write it so a soft "not now" does not become a every-session prompt. Users who want another chance can delete `.house-rules-upgrade-offered`.
+
+## Non-goals
+
+- Do not auto-upgrade or silently run init.
+- Do not mention this offer in repos that already have task tracking.
+- Do not re-offer after the marker exists.
+````
+
+### claude/rules/core-upgrade-offer.md
+
+````markdown
+# Core Upgrade Offer
+
+This rule ships with the **house-rules-core** plugin. It is the pull-path from the zero-dependency wedge to the full playbook.
+
+## When to offer
+
+Offer the full playbook install **once**, with explicit consent, when **all** of the following are true in the current workspace:
+
+1. Core skills or core rules have already been relevant this session (the user got value from graybeard review/audit/debt/help, prose-voice, defer-lint, banned-token-scan, or another core surface).
+2. The repo has **no task tracking** set up — neither a `.dolt` database nor the usual project-local task-tracking directory at the repo root.
+3. The marker file `.house-rules-upgrade-offered` is **absent** at the repo root.
+
+If any condition fails, do nothing. Do not nag.
+
+## How to offer (consent required)
+
+Ask the user **once**, using this shape (adapt wording lightly; keep the three options):
+
+> The core playbook is working here. Want the full playbook (task tracking, session lifecycle, planning/review workflow)?
+>
+> 1. Yes — confirm tool choice, then run
+>    `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool <choice>`
+>    e.g. `--tool cursor` (or `--tool claude` / `--tool both`)
+> 2. Not now — skip for this session
+> 3. Never for this repo — leave the marker so this offer does not return
+>
+> Which?
+
+Act only after the user answers. Never run init without consent and an explicit `--tool` flag (or a TTY).
+
+If `"${PROCESS_KIT:-$HOME/process-kit}"` does not exist, tell the user to clone first:
+
+> house-rules is not installed at `~/process-kit`. Clone it with:
+> `git clone https://github.com/kevglynn/house-rules ~/process-kit`
+
+## Persist the offer (no re-nag)
+
+After offering — whether the user accepts, declines, or picks "never" — create an empty marker file at the repo root:
+
+```bash
+touch .house-rules-upgrade-offered
+```
+
+If that file already exists, **do not re-ask / do not re-offer**. The offer was already made.
+
+Option 3 is the same marker; options 1 and 2 also write it so a soft "not now" does not become a every-session prompt. Users who want another chance can delete `.house-rules-upgrade-offered`.
+
+## Non-goals
+
+- Do not auto-upgrade or silently run init.
+- Do not mention this offer in repos that already have task tracking.
+- Do not re-offer after the marker exists.
+````
+
+### skills/graybeard-review/SKILL.md
+
+```markdown
+---
+name: graybeard-review
+description: >
+  Code review focused exclusively on over-engineering. Finds what to delete:
+  reinvented standard library, unneeded dependencies, speculative abstractions,
+  dead flexibility. One line per finding: location, what to cut, what replaces
+  it. Use when the user says "review for over-engineering", "what can we
+  delete", "is this over-engineered", "simplify review", or invokes
+  /graybeard-review. Complements correctness-focused review, this one only
+  hunts complexity.
+---
+
+Review diffs for unnecessary complexity. One line per finding: location, what
+to cut, what replaces it. The diff's best outcome is getting shorter.
+
+## Format
+
+`L<line>: <tag> <what>. <replacement>.`, or `<file>:L<line>: ...` for
+multi-file diffs.
+
+Tags: `delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:` — the examples
+below demonstrate usage. (Canonical definitions live in the simplify
+template in `skills/tier1-review/lenses.md`, where the full kit is
+installed.)
+
+## Examples
+
+❌ "This EmailValidator class might be more complex than necessary, have you
+considered whether all these validation rules are needed at this stage?"
+
+✅ `L12-38: stdlib: 27-line validator class. "@" in email, 1 line, real validation is the confirmation mail.`
+
+✅ `L4: native: moment.js imported for one format call. Intl.DateTimeFormat, 0 deps.`
+
+✅ `repo.py:L88: yagni: AbstractRepository with one implementation. Inline it until a second one exists.`
+
+✅ `L52-71: delete: retry wrapper around an idempotent local call. Nothing replaces it.`
+
+✅ `L30-44: shrink: manual loop builds dict. dict(zip(keys, values)), 1 line.`
+
+## Scoring
+
+End with the only metric that matters: `net: -<N> lines possible.`
+
+If there is nothing to cut, say `Lean already. Ship.` and stop.
+
+## Boundaries
+
+Scope: over-engineering and complexity only. Correctness bugs, security holes,
+and performance are explicitly out of scope. Route them to a normal review
+pass, not this one. A single smoke test or `assert`-based
+self-check is the graybeard minimum, not bloat, never flag it for deletion.
+Does not apply the fixes, only lists them.
+"stop graybeard-review" or "normal mode": revert to verbose review style.
+```
+
+### skills/graybeard-audit/SKILL.md
+
+```markdown
+---
+name: graybeard-audit
+description: >
+  Whole-repo audit for over-engineering. Like graybeard-review, but scans the
+  entire codebase instead of a diff: a ranked list of what to delete, simplify,
+  or replace with stdlib/native equivalents. Use when the user says "audit this
+  codebase", "audit for over-engineering", "what can I delete from this repo",
+  "find bloat", "graybeard-audit", or "/graybeard-audit". One-shot report, does
+  not apply fixes.
+---
+
+graybeard-review, repo-wide. Scan the whole tree instead of a diff. Rank
+findings biggest cut first.
+
+## Tags
+
+`delete:`, `stdlib:`, `native:`, `yagni:`, `shrink:` — same tags as
+graybeard-review; its examples demonstrate usage.
+
+## Hunt
+
+Deps the stdlib or platform already ships, single-implementation interfaces,
+factories with one product, wrappers that only delegate, files exporting one
+thing, dead flags and config, hand-rolled stdlib.
+
+## Output
+
+One line per finding, ranked: `<tag> <what to cut>. <replacement>. [path]`.
+End with `net: -<N> lines, -<M> deps possible.` Nothing to cut: `Lean already. Ship.`
+
+## Boundaries
+
+Scope: over-engineering and complexity only. Correctness bugs, security holes,
+and performance are explicitly out of scope. Route them to a normal review
+pass. Lists findings, applies nothing. One-shot.
+Never print a per-repo savings number ("you saved X lines/tokens here") — the
+unbuilt version was never written, so there is no real baseline to subtract from.
+"stop graybeard-audit" or "normal mode" to revert.
+```
+
+### skills/graybeard-help/SKILL.md
+
+```markdown
+---
+name: graybeard-help
+description: >
+  Quick-reference index for the graybeard family: which skill or rule to use
+  for over-engineering review, repo-wide audit, defer-ledger harvesting, or
+  minimal-implementation mode. One-shot display, not a persistent mode.
+  Trigger: "graybeard help", "use graybeard", "which graybeard skill",
+  "how do I use graybeard", "what graybeard commands".
+---
+
+# Graybeard Help
+
+Display this reference card when invoked. One-shot: do NOT change mode, write
+flag files, or persist anything.
+
+The graybeard family is the kit's over-engineering defense: one implementation
+mode (a rule) plus review, audit, and ledger lenses (skills).
+
+## The family
+
+| Member | Kind | What it does |
+|--------|------|--------------|
+| **graybeard-playbook** | Rule (`graybeard-playbook.mdc`) | Implementation mode. The decision ladder for minimal, correct code: YAGNI → stdlib → native → one line → minimum. Use while writing code. Defers to the pragmatic-tdd rule (where installed) for test discipline. |
+| **graybeard-review** | Skill | Over-engineering review of a diff or file set. One line per finding: what to cut, what replaces it. |
+| **graybeard-audit** | Skill | Repo-wide scan for dead code, stdlib replacements, and YAGNI abstractions, ranked biggest cut first. |
+| **graybeard-debt** | Skill | Harvests `defer:` comments into a debt ledger and flags entries missing upgrade triggers. |
+| **graybeard-help** | Skill | This card. |
+
+## Picking the right member
+
+- Writing (or about to write) code → activate the **graybeard-playbook** rule.
+- Reviewing a diff or PR for complexity → **graybeard-review**.
+- Periodic hygiene pass over the whole repo → **graybeard-audit**.
+- "What did we defer?" / ledger review → **graybeard-debt**.
+
+## Activation
+
+Activation needs no config file or environment variable:
+
+- **Skills:** invoke by name ("run graybeard-audit") or have the agent read
+  the skill file directly (`skills/<name>/SKILL.md` in the kit, or the copy
+  installed in the project).
+- **Rule:** `graybeard-playbook.mdc` is agent-requestable — say "use
+  graybeard-playbook" and the agent loads it for the session.
+```
+
+### skills/prose-voice/SKILL.md
+
+```markdown
+---
+name: prose-voice
+description: >-
+  Voice discipline for human-facing prose — pattern catalog, self-correction
+  protocol, and worked examples for killing AI-sounding rhetorical tics.
+  Load when writing positioning docs, pre-whitepapers, packets, deck copy,
+  primers, emails, briefs, or any prose a human will read or forward.
+  Trigger phrases: "prose voice", "writing voice", "check the voice",
+  "before I send this", "make it not sound like AI", "voice sweep".
+---
+
+# Prose Voice
+
+AI-generated prose converges on a handful of rhetorical moves and uses them
+dozens of times per document. Each one is fine once. The twelfth instance
+makes the reader's skin crawl. The cumulative effect is a document that
+announces "a language model wrote this" on every page.
+
+This skill is the pattern catalog and self-correction protocol. The
+always-on `prose-voice` rule is the tripwire that tells you to read this.
+
+## When to Use This Skill
+
+- Writing or editing any prose a human will read or send: positioning docs,
+  pre-whitepapers, packets, deck copy, primers, emails, briefs, README
+  narratives, design doc prose sections
+- Any artifact addressed to a named reader or described as "ready to
+  send"
+- When the user says "voice sweep," "make it not sound like AI," or
+  "check the voice"
+
+**Skip when:** writing code comments, commit messages, task-tracker or
+issue descriptions, agent-to-agent notes, or working notes. Those are
+functional, not voice-sensitive.
+
+## Banned Patterns
+
+These are banned *habits*, not banned words. Any of them used once in a
+2,000-word document is unremarkable. The same move appearing 3+ times is
+the failure mode.
+
+### P1 — Contrastive pivot overuse
+
+The "not X — Y" and "X. But Y." two-beat structure where the first half
+sets up a straw man and the second half delivers the real point.
+
+Examples:
+- "This is not a logging system. It is a proof system."
+- "The question isn't whether X — it's whether Y."
+- "Others do A. We do B."
+- "X is a tool feature. Y is a property of the record."
+
+**Budget: 1 per 1,000 words.** Two is pushing it. Three or more and the
+document reads like a TED talk transcript. Rewrite the surplus as direct
+statements — say what the thing IS without the theatrical wind-up of what
+it ISN'T.
+
+Before:
+> This is not an observability trace. It is a durable proof that the
+> decision happened the way the record says it did.
+
+After:
+> The assembly is a durable record of the decision: what context was
+> provided, how it was scored, and what the agent saw. Observability traces
+> capture what happened at runtime; the assembly captures what informed the
+> outcome.
+
+### P2 — Mic-drop closers
+
+Final sentences or paragraphs designed to land with dramatic weight.
+
+Examples:
+- "And that changes everything."
+- "No competitor currently claims this."
+- "That's the difference."
+- "This is stronger than what any competitor claims, and the honest edges
+  make the claim credible rather than aspirational."
+- One-sentence paragraphs that exist solely for emphasis.
+
+**Budget: 1 per document, max.** The content should carry its own weight.
+If the point is strong, it doesn't need a punchline. End sections with
+substance, not applause lines.
+
+Before:
+> No competitor currently claims to meet all five criteria. The honest
+> edges below keep us from overclaiming the same way.
+
+After:
+> No competitor currently claims to meet all five. Here's where we stand
+> on each, including the gaps.
+
+### P3 — Triplet escalation
+
+Three parallel items presented in escalating importance, especially when
+the third item is positioned as the "real" one.
+
+Examples:
+- "Re-viewing, re-running, reproducing — only the third survives contact
+  with an auditor, a regulator, a court."
+- "Invaluable for X. Essential for Y. Required for Z."
+
+**Budget: use when the taxonomy is genuinely three things.** Don't force
+content into triplets for rhetorical rhythm. If two of the three are just
+setup for the third, say the third directly.
+
+### P4 — Gravitas inflation
+
+Words and constructions that signal "this is important" instead of letting
+the reader decide.
+
+Watch list: `unambiguous`, `genuinely`, `fundamentally`, `precisely`,
+`critical(ly)`, `the reality is`, `the honest answer is`, `make no
+mistake`, `let's be clear`, `full stop`, `the hard truth`, `it bears
+repeating`, `cannot be overstated`, `X is real` (as emphasis, not
+existence claim).
+
+**Rule: state the fact.** If it's important, the reader will notice.
+Bolding a claim doesn't make it true; hedging it with "genuinely" doesn't
+make it credible.
+
+Before:
+> Let's be clear: signing is genuinely new scope, and claiming otherwise
+> would fundamentally misrepresent the current state.
+
+After:
+> Signing is not built. Content addressing proves the record hasn't
+> changed if you trust the fingerprint computation. Cryptographic signing
+> proves who produced it, which is separate work.
+
+### P5 — Parallel sentence openers
+
+Starting 3+ consecutive sentences or bullet points with the same syntactic
+structure.
+
+Examples:
+- "The record proves X. The record captures Y. The record survives Z."
+- "Content addressing ships X. Content addressing enables Y."
+
+**Rule: vary the entry point after 2.** Restructure some as dependent
+clauses, combine others, or start differently.
+
+### P6 — Complement/complement framing
+
+"These are complements, not competitors" and its siblings: "These are X,
+not Y." Used once, it's a clean distinction. Repeated, it becomes a tic.
+
+Before:
+> These are complements, not competitors. An execution record without
+> provenance shows a file was deleted but not what reasoning produced
+> the deletion.
+
+After:
+> All three layers are needed for a complete picture. An execution record
+> tells you a file was deleted; decision provenance tells you what
+> reasoning produced that deletion.
+
+## Self-Correction Protocol
+
+Before finalizing any human-facing prose, run this mechanical scan — not
+a vibes check:
+
+1. **Count contrastive pivots** (P1). More than 1 per 1,000 words →
+   rewrite the surplus as direct statements.
+2. **Count mic-drop closers** (P2). More than 1 in the document →
+   cut or fold the point into the preceding paragraph.
+3. **Count rhetorical triplets** (P3). More than 1 per 2,000 words →
+   collapse to pairs or direct claims.
+4. **Scan for gravitas words** (P4). Three or more in a single paragraph →
+   the paragraph is trying too hard. Restate plainly.
+5. **Check for parallel openers** (P5). Three or more consecutive →
+   restructure.
+6. **Count complement framings** (P6). More than 1 in the document →
+   rewrite the extras.
+7. **Word-count the draft against its channel ceiling** (P8). Over the
+   ceiling → cut whole items and hold them in reserve for a follow-up.
+   Do not get there by trimming the surviving sentences into fragments.
+8. **Scan punctuation against the user's fingerprint** (P9); P9 carries
+   the overlay → principal's-writing → restrained-default ladder.
+
+If you catch the pattern mid-draft, fix it inline and keep going. The
+reader never sees the first draft.
+
+## What Good Looks Like
+
+- **Varied sentence structure.** Long sentences with subordinate clauses
+  next to short declarative ones. Paragraphs that don't all start the
+  same way.
+- **Direct claims.** "The assembly records every input" rather than
+  "This is not a summary — it is a complete record of every input."
+- **Substance at section ends.** The last sentence of a section should
+  contain information, not a flourish.
+- **Earned emphasis.** Bold or italics for terms of art or surprising
+  claims, not for rhetorical volume.
+- **Honest uncertainty stated flatly.** "Signing is not built" rather
+  than "Let's be honest: signing is new scope, and claiming otherwise
+  would be..."
+
+## Scope Boundaries
+
+- This skill governs **voice and rhetorical pattern**, not content
+  accuracy. Content claims are governed by whatever fact-checking
+  mechanism the project uses.
+- Strong claims are fine — theatrical delivery is not. Say the strong
+  thing directly.
+- Metaphors and analogies are fine when they clarify. They're not fine
+  when they exist to sound clever.
+- The user may override any part of this skill for a specific document.
+
+## P7 — Evaluative authority framing (messages and emails)
+
+When drafting messages on behalf of the user to peers, co-founders, or
+anyone who is not a direct report, do not position the user as the
+authority grading the recipient's work.
+
+**Banned forms:**
+
+- "The instinct is right" / "the instinct is correct"
+- "This is the right list" / "are the right categories"
+- "Good work on X" / "nice job with Y" (manager-to-report register)
+- "You're on the right track" / "you're heading in the right direction"
+- Any construction where the user implicitly sits above the recipient
+  and evaluates their output as passing or failing
+
+**Use instead:**
+
+- "I like this" / "I like the direction"
+- "This tracks" / "this makes sense" / "this feels right"
+- "Works for me" / "I'm into it"
+- Agreement and enthusiasm expressed as personal reaction, not judgment
+  from a position of authority
+
+The test: if you swap the names (recipient says it to the user), does
+it sound condescending? If yes, rewrite.
+
+## P8 — Length inflation
+
+Every pattern above governs how a sentence is shaped. This one governs
+whether it should exist. A draft can clear all seven checks — varied
+openers, one pivot, no mic-drop, peer register — and still run twice the
+length its channel deserves, which is how prose nobody finishes gets
+written.
+
+**Channel ceilings.**
+
+| Channel | Ceiling | Shape |
+|---|---|---|
+| Chat, Slack, text | 150 words, aim under 100 | One ask or one answer. If the reader has to scroll, it wanted to be a doc with a link to it. |
+| Email | 250 words | Lead with the ask. Detail past that belongs in an attachment or a linked doc, not in the body. |
+| Document, packet, spec | None | Ungated on total length, but every section still faces the cut test. Thorough is the job; self-indulgent is not. |
+
+Comprehensive material does sometimes have to travel by message. That is
+the exception and should be announced as one ("long one — summary up
+top"), never the default.
+
+**The cut test.** For each sentence, ask whether the reader would do
+anything differently if they never saw it. If not, cut it. Classes that
+reliably fail:
+
+- Restating what the recipient already knows — their own words, their own
+  plan, a decision they made
+- Narrating your own process ("two things came out of writing this,"
+  "having reviewed the docs")
+- Pre-answering objections nobody raised
+- Supplying the evidence chain for a claim the reader can check in one
+  click
+- A second example that makes the same point as the first
+- Runway in front of a request — the request survives, the approach does
+  not
+
+**Hold the rest in reserve.** Depth is held, not deleted. Send the
+version that lands, keep the supporting detail ready, and let the reader
+pull it. A message that provokes "tell me more about the second one" did
+its job; a message that answers that question pre-emptively never got
+read that far.
+
+**Do not compress the survivors.** Economy means fewer sentences, not
+shorter ones. Fragments, arrow chains (`A → B → fails`), dropped
+articles, and invented abbreviations all make prose harder to absorb,
+which is the thing this pattern exists to prevent. Cut whole items and
+write the remaining ones as full sentences.
+
+Before (~95 words):
+> On the mockup item — that's already in the plan, Week 2 is the design
+> review with the customer, so nothing new is needed there. One thing
+> worth flagging before you take it in front of him: the deck's
+> trust-scores panel needs to come out, because we ratified no numeric
+> score anywhere, on his own objection that a 90 and a 70 don't mean
+> anything different to him, and tiers now express as evidence with the
+> promotion history behind them instead of as a number.
+
+After (~40 words):
+> The mockup item is already Week 2. One heads-up before the deck goes in
+> front of him: the trust-scores panel has to come out. No numeric score
+> anywhere, his own objection ("what's the difference between a 90 and a
+> 70").
+
+Both carry the same ask. What went: a restatement of the schedule the
+recipient set himself, the reasoning behind a decision he was party to,
+and "nothing new is needed there."
+
+## P9 — Punctuation fingerprint
+
+Punctuation is a voice signature the same way word choice is, and model
+defaults are recognizable: em dashes chained through every paragraph are
+the single most-cited AI tell. The law is generic. Match the user's own
+fingerprint, never the model's default.
+
+The fingerprint itself is per-user data, not skill content — read it
+from the user overlay (see "User Overlay" below). With no overlay, learn
+the fingerprint from the principal's own writing — their emails,
+documents, and messages are the reference. With no sample either,
+default to restrained punctuation: no em-dash chains, no ellipses in
+formal register.
+
+Scope: this pattern governs prose drafted in the user's voice. The
+catalog's own explanatory text and agent-to-agent output are exempt (the
+skill-wide skip list already covers them), but the worked good-examples
+above follow the restrained default.
+
+## User Overlay
+
+Voice parameters are per-user, not per-project: they follow the
+principal across every repo they work in. They live in a machine-global
+overlay at `~/.agents/overlay.md`, under a `## prose-voice` section —
+the same one-file, one-section-per-skill format as the per-project
+`.agents/overlay.md` (shared overlay convention). If a project overlay
+also carries a `## prose-voice` section, the project value wins for any
+key both define. Keys this skill reads:
+
+| Key | Meaning | Default when absent |
+|---|---|---|
+| `reader_personas` | Named recipients whose artifacts always count as human-facing prose; project-overlay personas add to (never replace) the user's | None — the generic "When to Use" triggers govern |
+| `punctuation_fingerprint` | Banned marks and their replacements; register rules for native connectors (P9) | Learn from the principal's own writing; else the restrained default |
+
+The skill behaves sensibly with no overlay file and no section: every
+pattern above is generic law and applies as written.
+
+## When Reviewing Other Agents' Work
+
+Fix the patterns in the edit pass. Don't add comments explaining the fix.
+The goal is prose that reads as if a thoughtful human wrote it, not prose
+with "[AI pattern removed]" annotations.
+```
+
+### scripts/docs-path-lint
+
+````
+#!/usr/bin/env python3
+"""docs-path-lint — fenced doc commands must reference real script paths.
+
+Extracts fenced shell blocks from the kit's user-facing docs (README.md,
+QUICKSTART.md, WELCOME.md, docs/*.md, sandbox/*.md) and fails when a
+referenced repo script path does not exist in the tree. Motivation: during
+a rename wave, active docs taught `playbook-init.sh` for a window in which
+the script had been renamed — a stranger's first command 404'd. Manual
+sweeps fixed it once; this checker makes the drift mechanical.
+
+KIT-REPO-ONLY: deliberately NOT in scripts/distributed-clis.list. It
+checks the kit's own docs against the kit's own tree; a target repo has
+neither this doc set nor these clone-path idioms, so distributing it
+would only add drift surface.
+
+Detection scope (existence checking only — nothing is executed): inside
+fenced blocks tagged bash/sh/shell/zsh/console (and untagged fences whose
+first line looks like a shell command), two token classes are resolved
+against the repo root:
+  - any token containing `scripts/` (bare, ./-prefixed, or behind a
+    known clone prefix: ~/process-kit/, ~/house-rules/, $HOME/<either>,
+    $PROCESS_KIT/, ${PROCESS_KIT:-$HOME/process-kit}/)
+  - any `bash`/`sh`/`source`-invoked path ending in .sh
+Tokens that are URLs, absolute/home paths outside a known clone prefix,
+illustrative placeholders (<...>, YYYY/NNN/XXX, unresolved $VAR, ...),
+or globs are skipped, and skips are counted per reason so they are never
+silent. Trailing sentence punctuation (`scripts/x.sh.`) is trimmed from
+tokens before classification.
+
+Deliberately NOT scanned (decisions, not accidents): global-safety-net/
+sources carry their commands in blockquotes and tables, which a
+fence-only detector cannot see; docs/ subdirectories (specs/, decisions/,
+reviews/, ...) are historical records whose paths were true at writing
+time; CLAUDE.md is a pointer file with no fenced commands.
+
+Allow marker (deliberate exceptions, content-side like banned-token-scan's
+declared-token regions): a line outside any fence carrying the whole-token
+marker `docs-path-lint:allow` — typically an HTML comment — arms an
+exception for the NEXT scannable fenced block: every missing path in that
+block is allowed. Allowed refs are counted in the output, never silently
+dropped.
+
+Exit codes: 0 clean · 1 missing paths · 2 usage error · 3 I/O error.
+Human-readable output by default; --json for agents. I/O and usage errors
+are JSON on stderr in both output modes. Non-interactive.
+"""
+
+import argparse
+import collections
+import json
+import re
+import sys
+from pathlib import Path
+
+DOC_GLOBS = ("README.md", "QUICKSTART.md", "WELCOME.md", "AGENTS.md",
+             "CONTRIBUTING.md", "docs/*.md", "sandbox/*.md")
+
+SHELL_TAGS = {"bash", "sh", "shell", "zsh", "console"}
+
+ALLOW_MARKER = "docs-path-lint:allow"
+
+# Longest first: the ${PROCESS_KIT:-...} idiom embeds $HOME/process-kit/.
+CLONE_PREFIXES = (
+    "${PROCESS_KIT:-$HOME/process-kit}/",
+    "${PROCESS_KIT}/",
+    "$PROCESS_KIT/",
+    "$HOME/process-kit/",
+    "$HOME/house-rules/",
+    "~/process-kit/",
+    "~/house-rules/",
+)
+
+# Illustrative-placeholder fragments; a token carrying any of these is a
+# doc's teaching device, not a checkable path.
+PLACEHOLDER_FRAGMENTS = ("<", ">", "YYYY", "NNN", "XXX", "...")
+
+# Whole-token boundary for the allow marker: not embedded in a longer
+# word on either side (same contract as banned-token-scan's declared-
+# token markers).
+ALLOW_RE = re.compile(
+    r"(?<![\w-])" + re.escape(ALLOW_MARKER) + r"(?![\w-])")
+
+# Class (a): any token containing scripts/ — prefix chars cover the clone
+# idioms above (~, $, {, }, :); suffix chars keep <placeholders> and *globs
+# attached so they can be classified instead of truncated.
+SCRIPTS_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9_.${}:~*+/-]*scripts/[A-Za-z0-9_.${}<>*/-]+")
+
+# Class (b): an invoked path ending in .sh, wherever it lives.
+INVOKED_SH_RE = re.compile(
+    r"\b(?:bash|sh|source)\s+([A-Za-z0-9_.${}:~*<>+/-]+\.sh)\b")
+
+# Untagged-fence heuristic: does the first nonblank line look like a shell
+# command? Deliberately narrow — a miss means an unscanned block, and a
+# tagged ```bash fence never needs this.
+SHELLISH_FIRST_RE = re.compile(
+    r"^(?:\$\s|#!|\./|~/"
+    r"|(?:bash|sh|zsh|source|cd|git|sudo|brew|npm|npx|pip3?|python3?"
+    r"|make|curl|wget|cat|cp|mv|rm|mkdir|chmod|echo|ls|export|bd|hr)\b)")
+
+EPILOG = f"""\
+the incident this checker prevents:
+  docs taught `bash ~/process-kit/scripts/playbook-init.sh` after the
+  script had been renamed to init.sh — a reader's first command 404'd.
+
+good — fenced command references a script that exists (exit 0):
+  ```bash
+  bash ~/process-kit/scripts/house-rules init --tool cursor
+  ```
+
+bad — fenced command references a missing script (exit 1):
+  ```bash
+  bash ~/process-kit/scripts/playbook-init.sh
+  ```
+  README.md:6: missing scripts/playbook-init.sh — bash ~/process-kit/...
+
+skipped, never flagged:
+  bash scripts/<your-script>.sh        placeholder (<...>)
+  bash scripts/$SCRIPT_NAME.sh         unresolved variable
+  source ~/.house-rules-aliases.sh     home path outside a clone prefix
+  curl https://example.com/x.sh        URL
+
+allow marker (deliberate exceptions):
+  <!-- {ALLOW_MARKER} -->     allow every missing path in the next
+                              scannable fence
+  Allowed refs are counted in the output — suppression is never silent.
+
+known limitations:
+  - existence checking only: a command can reference a real path and
+    still be wrong (bad flags, wrong order); nothing is executed
+  - fence parsing is a simple open/close toggle: nested fences inside a
+    ```markdown example block are treated as fence boundaries, not
+    content (the current doc corpus has none)
+  - prose outside fences is not scanned — inline `code spans` teaching a
+    stale path escape this checker; the same is true of commands in
+    tables and blockquotes (why global-safety-net/ sources are excluded)
+  - the clone-prefix list is kit-specific by design (see KIT-REPO-ONLY
+    in the description)
+"""
+
+
+def emit_error(message, kind, code):
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+def nonempty(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must be a non-empty string")
+    return value
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "exit_code": 2},
+                  sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(2)
+
+
+def resolve_token(token):
+    """Classify a candidate token. Returns ("check", repo-relative path)
+    or ("skip", reason)."""
+    # Trailing sentence punctuation attaches to the token ("see
+    # scripts/house-rules." in a fence comment); trim it — but a trailing
+    # run of dots is an ellipsis placeholder, not punctuation.
+    token = token.rstrip(",")
+    if token.endswith(".") and not token.endswith(".."):
+        token = token[:-1]
+    if "://" in token:
+        return ("skip", "url")
+    if any(frag in token for frag in PLACEHOLDER_FRAGMENTS):
+        return ("skip", "placeholder")
+    for prefix in CLONE_PREFIXES:
+        if token.startswith(prefix):
+            token = token[len(prefix):]
+            break
+    else:
+        if token.startswith("./"):
+            token = token[2:]
+        elif token.startswith(("~", "/")):
+            return ("skip", "outside-repo")
+    # A $ surviving prefix-stripping is an unresolved variable, not a path.
+    if "$" in token:
+        return ("skip", "placeholder")
+    if "*" in token:
+        return ("skip", "glob")
+    return ("check", token.strip("/"))
+
+
+def extract_tokens(line):
+    """Candidate path tokens on one line, deduped, order-preserved.
+    Quotes are scrubbed first so quoted clone idioms parse as one token."""
+    scrubbed = line.replace('"', "").replace("'", "").replace("`", "")
+    tokens = SCRIPTS_TOKEN_RE.findall(scrubbed)
+    tokens += INVOKED_SH_RE.findall(scrubbed)
+    return list(dict.fromkeys(tokens))
+
+
+def iter_fences(lines):
+    """Yields (opener_lineno, info_tag, [(lineno, text), ...]) per fenced
+    block. Simple toggle state machine: any ``` line opens or closes; an
+    unclosed fence at EOF still yields its content."""
+    block = None
+    tag = None
+    opener = None
+    for lineno, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if block is None:
+                block = []
+                # First word of the info string: ```bash title="x" is
+                # still a bash fence.
+                info = stripped.lstrip("`").strip().lower()
+                tag = info.split()[0] if info else ""
+                opener = lineno
+            else:
+                yield opener, tag, block
+                block = None
+        elif block is not None:
+            block.append((lineno, line))
+    if block is not None:
+        yield opener, tag, block
+
+
+def block_is_scannable(tag, block):
+    if tag in SHELL_TAGS:
+        return True
+    if tag:
+        return False
+    for _, text in block:
+        first = text.strip()
+        if first:
+            return bool(SHELLISH_FIRST_RE.match(first))
+    return False
+
+
+def scan_file(rel, lines, root):
+    """Returns (findings, counters) for one doc. counters is a Counter
+    with fences_scanned, fences_skipped, refs_checked, refs_allowed,
+    refs_skipped, and per-reason skip:<reason> keys."""
+    # Arm allow exceptions: a marker line outside any fence allows every
+    # missing path in the next SCANNABLE fence after it (an intervening
+    # ```markdown example fence is never consulted, so arming it would
+    # silently waste the exception).
+    fences = list(iter_fences(lines))
+    scannable_openers = [op for op, tag, block in fences
+                         if block_is_scannable(tag, block)]
+    in_fence_lines = set()
+    for op, _, block in fences:
+        in_fence_lines.add(op)
+        in_fence_lines.update(n for n, _ in block)
+    allowed_openers = set()
+    for lineno, line in enumerate(lines, start=1):
+        if lineno in in_fence_lines:
+            continue
+        if not ALLOW_RE.search(line):
+            continue
+        target = next((op for op in scannable_openers if op > lineno), None)
+        if target is not None:
+            allowed_openers.add(target)
+
+    findings = []
+    counters = collections.Counter()
+    for opener, tag, block in fences:
+        if not block_is_scannable(tag, block):
+            counters["fences_skipped"] += 1
+            continue
+        counters["fences_scanned"] += 1
+        block_allowed = opener in allowed_openers
+        seen = set()
+        for lineno, text in block:
+            for token in extract_tokens(text):
+                verdict, value = resolve_token(token)
+                if verdict == "skip":
+                    counters["refs_skipped"] += 1
+                    counters[f"skip:{value}"] += 1
+                    continue
+                if (lineno, value) in seen:
+                    continue
+                seen.add((lineno, value))
+                counters["refs_checked"] += 1
+                if (root / value).exists():
+                    continue
+                if block_allowed:
+                    counters["refs_allowed"] += 1
+                    continue
+                findings.append({
+                    "file": rel,
+                    "line": lineno,
+                    "path": value,
+                    "token": token,
+                    "text": text.strip()[:200],
+                })
+    return findings, counters
+
+
+def collect_docs(root):
+    docs = []
+    for pattern in DOC_GLOBS:
+        docs.extend(sorted(root.glob(pattern)))
+    return [d for d in docs if d.is_file()]
+
+
+def main(argv=None):
+    parser = JsonArgumentParser(
+        prog="docs-path-lint",
+        description=(
+            "Check that shell commands fenced in the kit's user-facing "
+            "docs (README.md, QUICKSTART.md, WELCOME.md, AGENTS.md, "
+            "CONTRIBUTING.md, docs/*.md, sandbox/*.md) reference repo "
+            "script paths that exist. Existence checking only — nothing "
+            "is executed. Kit-repo-only: not distributed to target repos. "
+            "Exit codes: 0 clean, 1 missing paths, 2 usage error, "
+            "3 I/O error."
+        ),
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--root", default=".", type=nonempty,
+                        help="Repo root to check (default: current directory)")
+    parser.add_argument("--json", action="store_true",
+                        help="Structured JSON output on stdout")
+    args = parser.parse_args(argv)
+
+    root = Path(args.root)
+    if not root.is_dir():
+        emit_error(f"root is not a directory: {root}", "io", 3)
+    root = root.resolve()
+
+    docs = collect_docs(root)
+    if not docs:
+        emit_error(
+            f"no doc files found under {root} (looked for "
+            f"{', '.join(DOC_GLOBS)}) — wrong --root?", "io", 3)
+
+    findings = []
+    totals = collections.Counter()
+    for doc in docs:
+        rel = doc.relative_to(root).as_posix()
+        try:
+            lines = doc.read_text(encoding="utf-8",
+                                  errors="replace").splitlines()
+        except OSError as e:
+            emit_error(f"cannot read {rel}: {e}", "io", 3)
+        f, counters = scan_file(rel, lines, root)
+        findings.extend(f)
+        totals.update(counters)
+    exit_code = 1 if findings else 0
+
+    skips_by_reason = {k.split(":", 1)[1]: v for k, v in totals.items()
+                       if k.startswith("skip:")}
+    if args.json:
+        json.dump({
+            "ok": not findings,
+            "root": str(root),
+            "files_scanned": len(docs),
+            "fences_scanned": totals["fences_scanned"],
+            "fences_skipped": totals["fences_skipped"],
+            "refs_checked": totals["refs_checked"],
+            "refs_allowed": totals["refs_allowed"],
+            "refs_skipped": totals["refs_skipped"],
+            "skips_by_reason": skips_by_reason,
+            "findings": findings,
+        }, sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return exit_code
+
+    for f in findings:
+        print(f"{f['file']}:{f['line']}: missing {f['path']} — {f['text']}")
+    status = ("clean" if not findings
+              else f"{len(findings)} missing path(s)")
+    extra = ""
+    if totals["refs_allowed"] or totals["refs_skipped"]:
+        detail = ", ".join(f"{v} {k}" for k, v in sorted(skips_by_reason.items()))
+        extra = (f" [{totals['refs_allowed']} allowlisted, "
+                 f"{totals['refs_skipped']} skipped"
+                 + (f" ({detail})" if detail else "") + "]")
+    print(f"Scanned {len(docs)} doc file(s), {totals['fences_scanned']} shell "
+          f"fence(s), {totals['refs_checked']} path ref(s): {status}.{extra}")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+````
+
+### scripts/tests/test_docs_path_lint.py
+
+````python
+#!/usr/bin/env python3
+"""Behavioral tests for scripts/docs-path-lint.
+
+Every test drives the CLI as a subprocess against tempdir fixtures and
+asserts observable behavior: exit codes, human/JSON output, and finding
+shapes. No internals.
+
+The flagship fixture reproduces the incident that motivated the checker:
+active docs teaching `playbook-init.sh` after the script had been renamed
+— a stale reference inside a fenced bash block must be caught with the
+file, line, and missing path named.
+
+Run: python3 scripts/tests/test_docs_path_lint.py
+"""
+
+import json
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+CLI = Path(__file__).resolve().parent.parent / "docs-path-lint"
+
+ALLOW = "docs-path-lint:allow"
+
+STALE_FENCE = (
+    "# Quickstart\n"
+    "\n"
+    "Run the installer:\n"
+    "\n"
+    "```bash\n"
+    "bash ~/process-kit/scripts/playbook-init.sh\n"
+    "```\n"
+)
+
+
+def run_cli(args, cwd=None):
+    return subprocess.run(
+        ["python3", str(CLI)] + args,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
+class FixtureTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, relpath, content):
+        p = self.root / relpath
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return p
+
+    def scan(self, *extra):
+        return run_cli(["--root", str(self.root), *extra])
+
+    def scan_json(self, *extra):
+        r = run_cli(["--root", str(self.root), "--json", *extra])
+        payload = json.loads(r.stdout) if r.stdout.strip() else None
+        return r, payload
+
+
+def fenced(*lines, tag="bash"):
+    return "```" + tag + "\n" + "\n".join(lines) + "\n```\n"
+
+
+class DocsPathLintTest(FixtureTest):
+    # --- AC: a stale script reference in a fenced block is caught ---
+
+    def test_stale_playbook_init_reference_is_finding_exit_1(self):
+        self.write("README.md", STALE_FENCE)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse(out["ok"])
+        self.assertEqual(len(out["findings"]), 1)
+        f = out["findings"][0]
+        self.assertEqual(f["file"], "README.md")
+        self.assertEqual(f["line"], 6)
+        self.assertEqual(f["path"], "scripts/playbook-init.sh")
+        self.assertIn("playbook-init.sh", f["token"])
+
+    def test_repo_relative_and_dot_slash_references_are_checked(self):
+        self.write("README.md", fenced(
+            "./scripts/gone-one sync",
+            "bash scripts/gone-two.sh",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(sorted(f["path"] for f in out["findings"]),
+                         ["scripts/gone-one", "scripts/gone-two.sh"])
+
+    def test_process_kit_env_idiom_is_resolved(self):
+        self.write("README.md", fenced(
+            'bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/missing-cli" doctor',
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "scripts/missing-cli")
+
+    def test_bash_invoked_sh_path_outside_scripts_dir_is_checked(self):
+        self.write("README.md", fenced("bash setup/missing.sh"))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "setup/missing.sh")
+
+    # --- Existing references pass ---
+
+    def test_existing_references_in_all_spellings_are_clean(self):
+        self.write("scripts/real.sh", "#!/bin/sh\n")
+        self.write("scripts/real-cli", "#!/usr/bin/env python3\n")
+        self.write("README.md", fenced(
+            "bash ~/process-kit/scripts/real.sh",
+            "bash ~/house-rules/scripts/real.sh --check",
+            "./scripts/real-cli sync --format cursor",
+            "bash scripts/real.sh",
+            'bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/real-cli" doctor',
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["findings"], [])
+        self.assertGreaterEqual(out["refs_checked"], 5)
+
+    def test_glob_reference_is_counted_skip(self):
+        # Globs are skipped, not existence-checked — but counted, so the
+        # skip is never silent. Promote to real glob checking when a doc
+        # actually fences a glob (none do today).
+        self.write("docs/a.md", fenced("shellcheck scripts/*.sh"))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        self.assertEqual(out["skips_by_reason"].get("glob"), 1)
+
+    def test_trailing_sentence_punctuation_is_trimmed_from_token(self):
+        # "see scripts/real-cli." in a fence comment must not flag the
+        # existing script; a genuinely missing path keeps its clean name.
+        self.write("scripts/real-cli", "#!/usr/bin/env python3\n")
+        self.write("README.md", fenced(
+            "# see scripts/real-cli.",
+            "echo scripts/gone-two.sh.",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 1)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone-two.sh")
+
+    # --- Scope: only fenced shell blocks in the doc set are scanned ---
+
+    def test_prose_outside_fences_is_not_scanned(self):
+        self.write("README.md",
+                   "Run `bash scripts/gone.sh` then scripts/also-gone.\n")
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+
+    def test_markdown_tagged_fence_is_not_scanned(self):
+        self.write("README.md", fenced(
+            "bash scripts/gone.sh", tag="markdown"))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+
+    def test_fence_tag_with_info_string_attributes_is_scanned(self):
+        self.write("README.md", fenced(
+            "bash scripts/gone.sh", tag='bash title="setup"'))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone.sh")
+
+    def test_untagged_fence_with_shellish_first_line_is_scanned(self):
+        self.write("README.md", fenced("bash scripts/gone.sh", tag=""))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone.sh")
+
+    def test_untagged_fence_with_prose_first_line_is_not_scanned(self):
+        self.write("README.md", fenced(
+            "Sample output mentioning scripts/gone.sh", tag=""))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+
+    def test_list_indented_fence_is_scanned(self):
+        self.write("README.md", (
+            "1. Clone it:\n"
+            "   ```bash\n"
+            "   bash scripts/gone.sh\n"
+            "   ```\n"
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["line"], 3)
+
+    def test_doc_set_selection(self):
+        bad = fenced("bash scripts/gone.sh")
+        # In the set: root README/QUICKSTART/WELCOME/AGENTS/CONTRIBUTING,
+        # docs/*.md, sandbox/*.md.
+        self.write("QUICKSTART.md", bad)
+        self.write("AGENTS.md", bad)
+        self.write("CONTRIBUTING.md", bad)
+        self.write("docs/faq.md", bad)
+        self.write("sandbox/WALKTHROUGH.md", bad)
+        # Out of the set: nested docs dirs (historical records), other root
+        # files, sandbox subdirs, global-safety-net (commands live in
+        # tables/blockquotes a fence scanner cannot see).
+        self.write("docs/specs/plan.md", bad)
+        self.write("CLAUDE.md", bad)
+        self.write("sandbox/project/notes.md", bad)
+        self.write("global-safety-net/agent-protocol.md", bad)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(sorted(f["file"] for f in out["findings"]),
+                         ["AGENTS.md", "CONTRIBUTING.md", "QUICKSTART.md",
+                          "docs/faq.md", "sandbox/WALKTHROUGH.md"])
+        self.assertEqual(out["files_scanned"], 5)
+
+    # --- Placeholder and outside-repo tokens are skipped ---
+
+    def test_placeholder_tokens_are_skipped(self):
+        self.write("README.md", fenced(
+            "bash scripts/<your-script>.sh",
+            "bash scripts/$SCRIPT_NAME.sh",
+            "cp scripts/YYYY-MM-DD-report.sh backups/",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+        self.assertGreaterEqual(out["refs_skipped"], 3)
+
+    def test_home_and_absolute_paths_outside_clone_are_skipped(self):
+        self.write("README.md", fenced(
+            "source ~/.house-rules-aliases.sh",
+            "bash /opt/other/tool.sh",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+
+    def test_urls_are_skipped(self):
+        self.write("README.md", fenced(
+            "curl -O https://example.com/x/scripts/remote.sh",
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["findings"], [])
+
+    # --- Allow marker: deliberate exceptions, never silent ---
+
+    def test_allow_marker_suppresses_next_fence_only(self):
+        self.write("README.md", (
+            f"<!-- {ALLOW} -->\n"
+            + fenced("bash scripts/illustrative.sh")
+            + fenced("bash scripts/really-gone.sh")
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(len(out["findings"]), 1)
+        self.assertEqual(out["findings"][0]["path"], "scripts/really-gone.sh")
+        self.assertEqual(out["refs_allowed"], 1)
+
+    def test_allow_marker_skips_unscannable_fence_to_next_scannable(self):
+        # A ```markdown example fence between the marker and the intended
+        # bash fence is never consulted; arming it would silently waste
+        # the exception.
+        self.write("README.md", (
+            f"<!-- {ALLOW} -->\n"
+            + fenced("bash scripts/example.sh", tag="markdown")
+            + fenced("bash scripts/illustrative.sh")
+        ))
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(out["refs_allowed"], 1)
+
+    def test_embedded_marker_substring_is_inert(self):
+        # Whole-token contract, both directions: a longer word carrying
+        # the marker as a substring must not arm an exception. The prefix
+        # case is the dangerous one — a naive substring match would turn
+        # it into allow-everything for the next fence.
+        for embedded in (f"{ALLOW}list-of-things", f"x{ALLOW}"):
+            with self.subTest(embedded=embedded):
+                self.write("README.md", (
+                    f"<!-- {embedded} -->\n"
+                    + fenced("bash scripts/gone.sh")
+                ))
+                r, out = self.scan_json()
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertEqual(out["refs_allowed"], 0)
+
+    # --- Output shapes ---
+
+    def test_human_output_names_file_line_and_missing_path(self):
+        self.write("README.md", STALE_FENCE)
+        r = self.scan()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("README.md:6", r.stdout)
+        self.assertIn("scripts/playbook-init.sh", r.stdout)
+
+    def test_clean_tree_human_output_names_scan_summary(self):
+        self.write("README.md", fenced("git status"))
+        r = self.scan()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("clean", r.stdout)
+
+    def test_json_top_level_shape(self):
+        # No exit_code key: the process exit code is the contract, matching
+        # the sibling checkers' payload shape.
+        self.write("README.md", STALE_FENCE)
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1)
+        for key in ("ok", "root", "files_scanned", "fences_scanned",
+                    "fences_skipped", "refs_checked", "refs_allowed",
+                    "refs_skipped", "skips_by_reason", "findings"):
+            self.assertIn(key, out)
+        self.assertNotIn("exit_code", out)
+        f = out["findings"][0]
+        for key in ("file", "line", "path", "token", "text"):
+            self.assertIn(key, f)
+
+    # --- Agent-CLI conventions: stable exit codes ---
+
+    def test_empty_root_is_usage_error_exit_2(self):
+        # Pinning the stderr JSON distinguishes "argparse rejected the
+        # input" from "the interpreter never ran the program" (a deleted
+        # CLI also exits 2) and pins the JSON-on-stderr agent convention.
+        r = run_cli(["--root", ""])
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
+
+    def test_nonexistent_root_is_io_error_exit_3(self):
+        r = run_cli(["--root", str(self.root / "nope")])
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["error_kind"], "io")
+
+    def test_root_with_no_docs_is_io_error_exit_3(self):
+        # A mis-pointed --root must not lie green in CI: zero doc files
+        # found is an error, not a clean scan.
+        r = self.scan()
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        err = json.loads(r.stderr)
+        self.assertEqual(err["error_kind"], "io")
+
+    def test_unknown_flag_is_usage_error_exit_2(self):
+        r = run_cli(["--bogus"])
+        self.assertEqual(r.returncode, 2)
+        err = json.loads(r.stderr)
+        self.assertFalse(err["ok"])
+        self.assertEqual(err["exit_code"], 2)
+
+    def test_help_exits_zero_and_carries_worked_examples(self):
+        r = run_cli(["--help"])
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("playbook-init.sh", r.stdout)
+        self.assertIn(ALLOW, r.stdout)
+        self.assertIn("known limitations", r.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
+````
+
+### .claude-plugin/marketplace.json
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "house-rules",
+  "owner": {
+    "name": "Kevin Glynn",
+    "url": "https://github.com/kevglynn"
+  },
+  "description": "Versioned engineering playbook for AI coding agents: checkable rules, skills, and checker CLIs.",
+  "plugins": [
+    {
+      "name": "house-rules-core",
+      "source": "./",
+      "strict": false,
+      "description": "Zero-dependency core tier: standalone rules loadable as commands, the graybeard skill family, prose-voice, and the checker CLIs carried at scripts/defer-lint and scripts/banned-token-scan. No task-tracking workflow required.",
+      "author": { "name": "Kevin Glynn" },
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "keywords": ["rules", "code-review", "over-engineering", "prose-voice", "checkers"],
+      "skills": [
+        "./skills/graybeard-review",
+        "./skills/graybeard-audit",
+        "./skills/graybeard-debt",
+        "./skills/graybeard-help",
+        "./skills/prose-voice"
+      ],
+      "commands": [
+        "./claude/rules/agent-identity.md",
+        "./claude/rules/defer-convention.md",
+        "./claude/rules/prose-voice.md",
+        "./claude/rules/parallel-subagent-safety.md",
+        "./claude/rules/graybeard-playbook.md",
+        "./claude/rules/core-upgrade-offer.md"
+      ]
+    },
+    {
+      "name": "house-rules-full",
+      "source": "./",
+      "strict": false,
+      "description": "The full playbook: beads task workflow, session lifecycle, planning and review skills, and every rule loadable as a command. Pairs with the beads CLI (bd) and the house-rules init installer.",
+      "author": { "name": "Kevin Glynn" },
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "keywords": ["workflow", "task-tracking", "tdd", "planning", "review"],
+      "skills": ["./skills/"],
+      "commands": ["./claude/rules/"]
+    }
+  ]
+}
+```
+
+### .cursor-plugin/plugin.json
+
+```json
+{
+  "name": "house-rules-core",
+  "description": "Zero-dependency core tier of the house-rules playbook: standalone rules, the graybeard skill family, prose-voice, and checker CLIs carried at scripts/defer-lint and scripts/banned-token-scan.",
+  "author": { "name": "Kevin Glynn" },
+  "homepage": "https://github.com/kevglynn/house-rules",
+  "repository": "https://github.com/kevglynn/house-rules",
+  "license": "Apache-2.0",
+  "keywords": ["rules", "code-review", "over-engineering", "prose-voice", "checkers"],
+  "rules": [
+    "./cursor/rules/agent-identity.mdc",
+    "./cursor/rules/defer-convention.mdc",
+    "./cursor/rules/prose-voice.mdc",
+    "./cursor/rules/parallel-subagent-safety.mdc",
+    "./cursor/rules/graybeard-playbook.mdc",
+    "./cursor/rules/core-upgrade-offer.mdc"
+  ],
+  "skills": [
+    "./skills/graybeard-review",
+    "./skills/graybeard-audit",
+    "./skills/graybeard-debt",
+    "./skills/graybeard-help",
+    "./skills/prose-voice"
+  ]
+}
+```
+
+### plugin.json
+
+```json
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "house-rules",
+  "description": "Versioned engineering playbook for AI coding agents: skills for code review, over-engineering audits, prose voice, planning, and TDD discipline.",
+  "author": { "name": "Kevin Glynn", "url": "https://github.com/kevglynn" },
+  "homepage": "https://github.com/kevglynn/house-rules",
+  "repository": "https://github.com/kevglynn/house-rules",
+  "license": "Apache-2.0",
+  "keywords": ["rules", "skills", "code-review", "workflow", "tdd"]
+}
+```
+
+### scripts/tests/test_plugin_manifests.py
+
+```python
+#!/usr/bin/env python3
+"""Behavioral tests for the plugin manifests on three surfaces
+(process-kit-wsi).
+
+Surfaces and the schema each was verified against (2026-08-07):
+  1. .claude-plugin/marketplace.json — Claude Code plugin marketplace.
+     Docs: https://code.claude.com/docs/en/plugin-marketplaces and
+     https://code.claude.com/docs/en/plugins-reference. Required fields:
+     name, owner.name, plugins; each entry requires name + source. A
+     marketplace-root source ("./") with strict: false makes the entry
+     the complete component definition, and a component-declaring
+     .claude-plugin/plugin.json alongside it would be a load conflict.
+  2. .cursor-plugin/plugin.json — Cursor Plugin manifest.
+     Docs: https://cursor.com/docs/reference/plugins. Required field:
+     name (lowercase kebab-case); rules/skills accept path arrays;
+     paths must be relative with no ".." traversal.
+  3. plugin.json (repo root) — Agent Plugins open standard.
+     Docs: https://agent-plugins.org/plugin-authors/manifest. Required:
+     $schema + name; the top-level field set is closed; names are 1-64
+     chars of lowercase alnum/hyphen/period with alnum ends and no
+     "--" or "..".
+
+Core-plugin contents are DERIVED from profiles/core-manifest.list via
+test_core_manifest.parse_manifest — the single source of truth for core
+membership — never restated here. Helpers are factored so fixture tests
+can prove they flag violations (a checker that passes regardless of
+correctness is zero signal).
+
+Run: python3 scripts/tests/test_plugin_manifests.py
+"""
+
+import json
+import re
+import unittest
+from pathlib import Path
+
+from test_core_manifest import MANIFEST as CORE_MANIFEST
+from test_core_manifest import parse_manifest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+CLAUDE_MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+CLAUDE_PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
+CURSOR_PLUGIN = REPO_ROOT / ".cursor-plugin" / "plugin.json"
+ROOT_PLUGIN = REPO_ROOT / "plugin.json"
+
+# Claude Code and Cursor both require kebab-case plugin/marketplace names.
+KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+# The Agent Plugins manifest schema is closed: unknown top-level fields
+# are schema violations (agent-plugins.org/plugin-authors/manifest).
+AGENT_PLUGINS_FIELDS = {
+    "$schema",
+    "name",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "extensions",
+}
+AGENT_PLUGINS_NAME = re.compile(r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$")
+
+# Beads-workflow members the full plugin must cover (names verified
+# against claude/rules/ and skills/ in this tree).
+FULL_PLUGIN_RULES = [
+    "claude/rules/session-lifecycle.md",
+    "claude/rules/operating-model.md",
+    "claude/rules/bead-completion.md",
+    "claude/rules/beads-quality.md",
+]
+FULL_PLUGIN_SKILLS = [
+    "skills/bead-authoring",
+    "skills/graph-planning",
+]
+
+
+def load_json(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def agent_plugins_name_ok(name):
+    """Name rule from the Agent Plugins standard."""
+    if not isinstance(name, str) or not 1 <= len(name) <= 64:
+        return False
+    if "--" in name or ".." in name:
+        return False
+    return bool(AGENT_PLUGINS_NAME.match(name))
+
+
+def normalize(declared):
+    """Manifest path ("./skills/foo" or "skills/foo/") -> repo-relative."""
+    return declared[2:].rstrip("/") if declared.startswith("./") else declared.rstrip("/")
+
+
+def bad_paths(declared_paths, root):
+    """Return declared paths that are absolute, traverse with '..', or
+    don't exist in the tree. Vendor rule shared by all three surfaces."""
+    bad = []
+    for declared in declared_paths:
+        p = Path(normalize(declared))
+        if p.is_absolute() or ".." in p.parts or not (root / p).exists():
+            bad.append(declared)
+    return bad
+
+
+def declared_covers(declared_paths, member, root):
+    """True if a declared path names `member` directly or is a directory
+    ancestor of it (Claude Code scans declared directories)."""
+    target = (root / member).resolve()
+    for declared in declared_paths:
+        p = (root / normalize(declared)).resolve()
+        if p == target or p in target.parents:
+            return True
+    return False
+
+
+def core_expectations():
+    """Derive per-surface expected paths from the core manifest."""
+    entries = parse_manifest(CORE_MANIFEST.read_text(encoding="utf-8"))
+    skills = {"./" + p for k, p in entries if k == "skill"}
+    rules_mdc = {"./" + p for k, p in entries if k == "rule"}
+    # Each rule has a generated claude/rules/<name>.md projection
+    # (frontmatter stripped, .mdc -> .md) — the Claude-flavored package
+    # derives those paths from the rule entries.
+    rules_md = {
+        "./claude/rules/" + Path(p).stem + ".md" for k, p in entries if k == "rule"
+    }
+    clis = {p for k, p in entries if k == "cli"}
+    return skills, rules_mdc, rules_md, clis
+
+
+class TestClaudeMarketplace(unittest.TestCase):
+    """.claude-plugin/marketplace.json satisfies the vendor schema and
+    the core/full tier contract."""
+
+    def setUp(self):
+        self.assertTrue(CLAUDE_MARKETPLACE.is_file(), "marketplace.json missing")
+        self.doc = load_json(CLAUDE_MARKETPLACE)
+        self.entries = {p["name"]: p for p in self.doc["plugins"]}
+
+    def test_required_marketplace_fields(self):
+        self.assertRegex(self.doc["name"], KEBAB)
+        self.assertIsInstance(self.doc["owner"], dict)
+        self.assertIsInstance(self.doc["owner"]["name"], str)
+        self.assertIsInstance(self.doc["plugins"], list)
+
+    def test_two_plugins_core_and_full(self):
+        self.assertEqual(
+            set(self.entries), {"house-rules-core", "house-rules-full"}
+        )
+        for entry in self.entries.values():
+            self.assertRegex(entry["name"], KEBAB)
+            # Marketplace-root source with strict: false is the pattern
+            # this repo uses: the entry is the complete definition.
+            self.assertEqual(entry["source"], "./")
+            self.assertIs(entry["strict"], False)
+
+    def test_no_conflicting_plugin_json(self):
+        # With strict: false, a component-declaring
+        # .claude-plugin/plugin.json makes the plugin fail to load.
+        self.assertFalse(CLAUDE_PLUGIN_JSON.exists())
+
+    def test_core_contents_derive_from_core_manifest(self):
+        skills, _, rules_md, clis = core_expectations()
+        core = self.entries["house-rules-core"]
+        self.assertEqual(set(core["skills"]), skills)
+        self.assertEqual(set(core["commands"]), rules_md)
+        # CLIs travel because the entry's source is the marketplace root:
+        # every core CLI must exist, executable, at its manifest path.
+        import os
+
+        for cli in clis:
+            target = REPO_ROOT / cli
+            self.assertTrue(
+                target.is_file() and os.access(target, os.X_OK),
+                f"core CLI not packaged at {cli}",
+            )
+
+    def test_full_covers_beads_workflow_surface(self):
+        full = self.entries["house-rules-full"]
+        for member in FULL_PLUGIN_SKILLS:
+            self.assertTrue(
+                declared_covers(full["skills"], member, REPO_ROOT),
+                f"full plugin does not cover {member}",
+            )
+        for member in FULL_PLUGIN_RULES:
+            self.assertTrue(
+                declared_covers(full["commands"], member, REPO_ROOT),
+                f"full plugin does not cover {member}",
+            )
+
+    def test_every_declared_path_exists(self):
+        declared = []
+        for entry in self.entries.values():
+            declared += entry.get("skills", []) + entry.get("commands", [])
+        self.assertEqual(bad_paths(declared, REPO_ROOT), [])
+
+
+class TestCursorPlugin(unittest.TestCase):
+    """.cursor-plugin/plugin.json carries the core tier per the Cursor
+    Plugin schema."""
+
+    def setUp(self):
+        self.assertTrue(CURSOR_PLUGIN.is_file(), "cursor plugin.json missing")
+        self.doc = load_json(CURSOR_PLUGIN)
+
+    def test_required_name_field(self):
+        self.assertEqual(self.doc["name"], "house-rules-core")
+        self.assertRegex(self.doc["name"], KEBAB)
+
+    def test_core_contents_derive_from_core_manifest(self):
+        skills, rules_mdc, _, _ = core_expectations()
+        self.assertEqual(set(self.doc["rules"]), rules_mdc)
+        self.assertEqual(set(self.doc["skills"]), skills)
+
+    def test_every_declared_path_exists(self):
+        declared = self.doc["rules"] + self.doc["skills"]
+        self.assertEqual(bad_paths(declared, REPO_ROOT), [])
+
+
+class TestRootAgentPlugin(unittest.TestCase):
+    """Root plugin.json conforms to the Agent Plugins standard."""
+
+    def setUp(self):
+        self.assertTrue(ROOT_PLUGIN.is_file(), "root plugin.json missing")
+        self.doc = load_json(ROOT_PLUGIN)
+
+    def test_required_schema_and_name(self):
+        self.assertEqual(self.doc["$schema"], AGENT_PLUGINS_SCHEMA)
+        self.assertTrue(agent_plugins_name_ok(self.doc["name"]))
+
+    def test_schema_is_closed(self):
+        unknown = set(self.doc) - AGENT_PLUGINS_FIELDS
+        self.assertEqual(unknown, set(), f"unknown top-level fields: {unknown}")
+
+    def test_standard_discovers_skills_from_skills_dir(self):
+        # The standard has no component-path fields; skills load from
+        # skills/. The layout the manifest relies on must exist.
+        skill_dirs = sorted((REPO_ROOT / "skills").glob("*/SKILL.md"))
+        self.assertGreater(len(skill_dirs), 0)
+
+
+class TestCheckersAreNotVacuous(unittest.TestCase):
+    """Fixture negatives: the helpers must flag violations."""
+
+    def test_kebab_rejects_invalid_names(self):
+        for bad in ("Bad_Name", "has space", "-lead", "trail-", "UPPER"):
+            self.assertNotRegex(bad, KEBAB)
+        self.assertRegex("house-rules-core", KEBAB)
+
+    def test_agent_plugins_name_rule(self):
+        for bad in ("My-Plugin", "-start", "has--double", "too.many..dots", "a" * 65):
+            self.assertFalse(agent_plugins_name_ok(bad), bad)
+        for good in ("house-rules", "acme.tools", "lint3r"):
+            self.assertTrue(agent_plugins_name_ok(good), good)
+
+    def test_bad_paths_flags_absolute_traversal_and_missing(self):
+        flagged = bad_paths(
+            ["/etc/passwd", "./../outside", "./does/not/exist"], REPO_ROOT
+        )
+        self.assertEqual(len(flagged), 3)
+        self.assertEqual(bad_paths(["./skills"], REPO_ROOT), [])
+
+    def test_declared_covers_rejects_uncovered_member(self):
+        self.assertFalse(
+            declared_covers(["./skills/graybeard-review"], "skills/bead-authoring", REPO_ROOT)
+        )
+        self.assertTrue(
+            declared_covers(["./skills/"], "skills/bead-authoring", REPO_ROOT)
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+### scripts/doctor.sh
+
+```bash
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Validates the kit setup for the current project.
+# Reports issues with fix commands. CI-friendly exit code.
+#
+# Usage:
+#   ./scripts/doctor.sh                    # Check current directory
+#   ./scripts/doctor.sh /path/to/project   # Check specific project
+#   ./scripts/doctor.sh --agent            # Agent-consumable output
+#   ./scripts/doctor.sh --help
+#
+# --agent mode emits a final "SUMMARY: <key>" line and uses structured exit
+# codes for agent branching. See the agent-protocol global safety-net block
+# for the full contract.
+#
+# Exit codes:
+#   0 = ok (no action needed)
+#   2 = bootstrap_needed (no rules in this repo)
+#   3 = drift (kit-managed files present but stale vs kit source:
+#       rules_drift_*, profile_drift, or a per-CLI key from
+#       scripts/distributed-clis.list — dispatch on the SUMMARY key)
+#   1 = generic error / other failure
+#
+# SUMMARY keys (--agent mode) for rules_drift carry the format that needs
+# remediation: rules_drift_cursor, rules_drift_claude, rules_drift_both.
+# profile_drift means profiles/conventions.toml is stale vs the kit copy.
+# Each distributed CLI carries its own drift key, registered in
+# scripts/distributed-clis.list (currently ledger_drift, defer_lint_drift,
+# close_reason_lint_drift, banned_token_scan_drift — the manifest is the
+# source of truth); the key means that scripts/<name> is stale vs the kit
+# copy. Agents must dispatch on the specific key, not the generic exit
+# code, to avoid running sync-rules.sh with the wrong --format.
+
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AGENT_MODE=false
+PROJECT_ROOT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent)  AGENT_MODE=true; shift ;;
+    -h|--help)
+      cat <<'EOF'
+Validates kit setup for a project. Reports issues with fix commands.
+
+Usage: doctor.sh [project-path] [--agent]
+
+Checks:
+  • Install tier (.house-rules-tier; absent = full). Core skips
+    beads/scratchpad/sync-target failures and treats plugin-delivered
+    rules as healthy.
+  • bd (beads) is on PATH (full tier only)
+  • Agent rules are present and match the canonical source (full tier)
+  • Each distributed CLI in scripts/distributed-clis.list (if present in
+    the target) matches the kit copy
+  • The conventions profile (profiles/conventions.toml, if present in the
+    target) matches the kit copy byte-for-byte
+  • Kit-resident references (skills/…, templates/…) cited by distributed
+    rules resolve somewhere on this machine (warn-only)
+  • AGENTS.md house-rules section version stamp matches the kit VERSION (warn-only)
+  • Beads is initialized (bd ping + bd list) — full tier
+  • Beads git hooks recommended (pre-commit, post-merge, pre-push)
+  • Scratchpad exists with correct sections — full tier
+  • Project is in ~/.house-rules-sync-targets — full tier (never required for core)
+  • Worktree hook present (if repo has worktrees)
+  • Global safety net installed (per-machine agent rule blocks)
+
+Flags:
+  --agent   Emit a machine-consumable SUMMARY line and use structured
+            exit codes (0=ok, 2=bootstrap_needed, 3=drift, 1=error).
+            Exit 3 SUMMARY keys: rules_drift_cursor|rules_drift_claude|
+            rules_drift_both (stale rules), profile_drift (stale
+            profiles/conventions.toml), or the stale CLI's drift key
+            from scripts/distributed-clis.list (rules drift wins when
+            several drift, then profile_drift; CLI keys follow the
+            manifest's line order).
+  --help    Show this help.
+
+Exit codes (human mode): 0 = all pass, 1 = issues found.
+EOF
+      exit 0
+      ;;
+    --*) echo "Unknown option: $1 (use --help)" >&2; exit 1 ;;
+    *)
+      if [ -z "$PROJECT_ROOT" ]; then
+        PROJECT_ROOT="$1"
+      else
+        echo "Too many arguments (use --help)" >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
+
+# --- Path validation (hardening for --agent mode, light checks otherwise) ---
+if [ ! -d "$PROJECT_ROOT" ]; then
+  echo "ERROR: project path does not exist: $PROJECT_ROOT" >&2
+  if $AGENT_MODE; then echo "SUMMARY: error"; fi
+  exit 1
+fi
+# Resolve to absolute path (no symlink resolution assumptions)
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd)"
+
+# ---------- Tier stamp ----------
+#
+# Absent stamp = full (backward compat for pre-tier repos). core skips
+# beads/scratchpad/sync-target failures and does not treat missing local
+# rules dirs as bootstrap_needed (plugin-delivered rules are fine).
+HR_TIER="full"
+if [ -f "$PROJECT_ROOT/.house-rules-tier" ]; then
+  HR_TIER="$(tr -d '[:space:]' < "$PROJECT_ROOT/.house-rules-tier")"
+fi
+case "$HR_TIER" in
+  core|full) ;;
+  *)
+    echo "  ⚠ Unrecognized .house-rules-tier value '$HR_TIER' — treating as full"
+    HR_TIER="full"
+    ;;
+esac
+CORE_TIER=false
+[[ "$HR_TIER" == "core" ]] && CORE_TIER=true
+
+echo "=== house-rules doctor: $(basename "$PROJECT_ROOT") ==="
+echo "  tier: $HR_TIER"
+echo ""
+
+pass=0
+fail=0
+warn=0
+
+# Agent-mode state: tracks the specific class of issue so SUMMARY can
+# select the most accurate remediation category. The authoritative
+# precedence chain is documented once, at the SUMMARY block below.
+#
+# rules_drift is split per-format so the SUMMARY can map directly to the
+# correct sync-rules.sh --format flag. A flat rules_stale flag would
+# default the agent's remediation to --format cursor (sync-rules' default)
+# and create unwanted .cursor/rules/ files on Claude-only projects.
+bootstrap_missing=0
+cursor_stale=0
+claude_stale=0
+# Space-separated SUMMARY keys of stale distributed CLIs, appended in
+# manifest order — so the first entry is the highest-precedence CLI drift.
+cli_stale_keys=""
+# Set to 1 when the distributed conventions profile drifts from the kit copy.
+profile_stale=0
+
+check_pass() { echo "  ✓ $1"; pass=$((pass + 1)); }
+check_fail() { echo "  ✗ $1"; echo "    Fix: $2"; fail=$((fail + 1)); }
+check_warn() { echo "  ⚠ $1"; warn=$((warn + 1)); }
+
+# ---------- Prerequisites ----------
+
+echo "Prerequisites:"
+
+if $CORE_TIER; then
+  check_pass "bd on PATH — N/A for core tier"
+elif command -v bd &>/dev/null; then
+  check_pass "bd on PATH ($(bd --version 2>/dev/null || echo 'version unknown'))"
+elif command -v brew &>/dev/null; then
+  check_fail "bd not on PATH" "brew install beads"
+else
+  check_fail "bd not on PATH" "See https://github.com/steveyegge/beads for install instructions"
+fi
+
+if command -v git &>/dev/null; then
+  check_pass "git on PATH"
+else
+  check_fail "git not on PATH" "Install git"
+fi
+
+echo ""
+
+# ---------- Rules ----------
+
+echo "Rules:"
+
+cursor_rules="$PROJECT_ROOT/.cursor/rules"
+claude_rules="$PROJECT_ROOT/.claude/rules"
+has_cursor=false
+has_claude=false
+
+if [ -d "$cursor_rules" ]; then
+  has_cursor=true
+  mdc_count=$(ls -1 "$cursor_rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+  if $CORE_TIER; then
+    # Core may ship a subset (or none — plugin path). Do not require the
+    # full kit rule set or mark missing kit files as rules_drift.
+    if [ "$mdc_count" -gt 0 ]; then
+      check_pass "Cursor rules: $mdc_count files present (core tier — full-kit drift check skipped)"
+    else
+      check_warn "Cursor rules directory exists but is empty"
+    fi
+  else
+    src_count=$(ls -1 "$KIT_ROOT/cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+    # Check that every canonical rule is present and current.
+    # Extra rules from other tools (e.g. Jawnt) are fine — only flag missing or stale.
+    stale=0
+    missing=0
+    for f in "$KIT_ROOT/cursor/rules/"*.mdc; do
+      base="$(basename "$f")"
+      if [ ! -f "$cursor_rules/$base" ]; then
+        missing=$((missing + 1))
+      elif ! diff -q "$f" "$cursor_rules/$base" > /dev/null 2>&1; then
+        stale=$((stale + 1))
+      fi
+    done
+    if [ $missing -eq 0 ] && [ $stale -eq 0 ]; then
+      extra=$((mdc_count - src_count))
+      if [ "$extra" -gt 0 ]; then
+        check_pass "Cursor rules: $src_count kit files up to date (+$extra from other tools)"
+      else
+        check_pass "Cursor rules: $mdc_count files, all up to date"
+      fi
+    else
+      issues=""
+      [ $missing -gt 0 ] && issues="$missing missing"
+      [ $stale -gt 0 ] && { [ -n "$issues" ] && issues="$issues, "; issues="${issues}$stale stale"; }
+      check_fail "Cursor rules: $issues (of $src_count expected)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format cursor"
+      cursor_stale=1
+    fi
+  fi
+else
+  if ! $CORE_TIER; then
+    check_warn "No Cursor rules (.cursor/rules/ not found)"
+  fi
+fi
+
+if [ -d "$claude_rules" ]; then
+  has_claude=true
+  md_count=$(ls -1 "$claude_rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  if $CORE_TIER; then
+    if [ "$md_count" -gt 0 ]; then
+      check_pass "Claude rules: $md_count files present (core tier — full-kit drift check skipped)"
+    else
+      check_warn "Claude rules directory exists but is empty"
+    fi
+  elif [ "$md_count" -eq 0 ]; then
+    check_fail "Claude rules directory exists but is empty" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
+    claude_stale=1
+  else
+    claude_src="$KIT_ROOT/claude/rules"
+    claude_src_count=$(ls -1 "$claude_src/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$md_count" -eq "$claude_src_count" ]; then
+      claude_stale=0
+      for f in "$claude_src/"*.md; do
+        base="$(basename "$f")"
+        if [ -f "$claude_rules/$base" ]; then
+          if ! diff -q "$f" "$claude_rules/$base" > /dev/null 2>&1; then
+            claude_stale=$((claude_stale + 1))
+          fi
+        else
+          claude_stale=$((claude_stale + 1))
+        fi
+      done
+      if [ $claude_stale -eq 0 ]; then
+        check_pass "Claude rules: $md_count files, all up to date"
+      else
+        check_fail "Claude rules: $claude_stale of $md_count are stale" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
+      fi
+    else
+      check_fail "Claude rules: $md_count files (expected $claude_src_count)" "bash \"$KIT_ROOT/scripts/house-rules\" sync --format claude"
+      claude_stale=1
+    fi
+  fi
+fi
+
+if ! $has_cursor && ! $has_claude; then
+  if $CORE_TIER; then
+    # Plugin installs leave no local rules dirs — not bootstrap_needed.
+    check_pass "No local rules dirs — N/A for core tier (plugin-delivered ok)"
+  else
+    check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
+    bootstrap_missing=1
+  fi
+fi
+
+# Warn if rules directories are gitignored (skip for the kit repo itself,
+# where .cursor/* is intentionally gitignored since cursor/rules/ is the source)
+is_kit_repo=false
+[[ "$(cd "$PROJECT_ROOT" && pwd)" == "$(cd "$KIT_ROOT" && pwd)" ]] && is_kit_repo=true
+
+if ! $is_kit_repo; then
+  if $has_claude && git -C "$PROJECT_ROOT" check-ignore -q ".claude/rules/test.md" 2>/dev/null; then
+    check_warn ".claude/rules/ appears to be gitignored — rules won't be committed"
+  fi
+  if $has_cursor && git -C "$PROJECT_ROOT" check-ignore -q ".cursor/rules/test.mdc" 2>/dev/null; then
+    check_warn ".cursor/rules/ appears to be gitignored — rules won't be committed"
+  fi
+  # Text-only advisory (never affects SUMMARY or exit codes): the overlay
+  # is the project-editable surface; its absence just means skills run on
+  # their documented defaults. Ownership boundary: skills/README.md
+  # § Overlay Convention.
+  if { $has_cursor || $has_claude; } && [ ! -f "$PROJECT_ROOT/.agents/overlay.md" ]; then
+    check_warn "No .agents/overlay.md — skills run on documented defaults (optional per-project parameters; project-editable, unlike the kit-owned profiles/conventions.toml)"
+  fi
+fi
+
+echo ""
+
+# ---------- Distributed CLIs (manifest-driven) ----------
+#
+# Every kit CLI registered in scripts/distributed-clis.list is kit-managed:
+# init.sh copies it with cp -f (same semantics as rules), so each
+# drift-checks against the kit copy the same way rules do. The tdd-ledger
+# CI workflow (.github/workflows/tdd-ledger-verify.yml) is NOT drift-checked
+# — init treats it as not-overwriting, so target repos may legitimately
+# customize it; we only note its absence when that CLI is present.
+
+clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
+
+if [ ! -f "$clis_manifest" ]; then
+  echo "Distributed CLIs:"
+  check_warn "Manifest missing at $clis_manifest — cannot drift-check kit CLIs"
+  echo ""
+else
+  while IFS='|' read -r cli_name cli_key cli_header cli_note _label _detail; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    echo "$cli_header:"
+    cli_src="$KIT_ROOT/scripts/$cli_name"
+    cli_dest="$PROJECT_ROOT/scripts/$cli_name"
+    if [ ! -f "$cli_src" ]; then
+      check_warn "Kit copy missing at $cli_src — cannot drift-check $cli_name"
+    elif [ ! -f "$cli_dest" ]; then
+      # Informational, not a failure: the repo may predate the CLI or not use it.
+      echo "  – $cli_name not distributed here (optional — re-run init.sh to add it)"
+    else
+      if diff -q "$cli_src" "$cli_dest" > /dev/null 2>&1; then
+        check_pass "$cli_name CLI matches the kit copy"
+      else
+        check_fail "$cli_name CLI is stale vs the kit copy — $cli_note" \
+          "cp -f \"$cli_src\" \"$cli_dest\" && chmod +x \"$cli_dest\""
+        cli_stale_keys="$cli_stale_keys $cli_key"
+      fi
+      if [ "$cli_name" = "tdd-ledger" ]; then
+        if ! $is_kit_repo && [ ! -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+          check_warn "tdd-ledger CLI present but no CI gate — copy templates/tdd-ledger-verify.yml → .github/workflows/"
+        fi
+        # Last-mile reminder: the workflow only actually gates merges if branch
+        # protection marks it required — a state on the forge that no local tool
+        # can inspect, so this is a reminder line rather than a check.
+        if [ -f "$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml" ]; then
+          echo "  – Reminder: the CI workflow only blocks merges if 'tdd-ledger verify' is a required status check in branch protection (cannot be verified locally)"
+        fi
+      fi
+    fi
+    # Registration self-check: the human-facing dispatch table in
+    # global-safety-net/agent-protocol.md is the one site the manifest
+    # cannot generate — this warn is how a missing row gets caught
+    # (the gap that shipped twice before the manifest existed).
+    if [ -f "$KIT_ROOT/global-safety-net/agent-protocol.md" ] && \
+       ! grep -qF "\`$cli_key\`" "$KIT_ROOT/global-safety-net/agent-protocol.md"; then
+      check_warn "SUMMARY key $cli_key is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
+    fi
+    echo ""
+  done < "$clis_manifest"
+fi
+
+# ---------- Conventions profile (data-shaped convention source) ----------
+#
+# The data file the distributed checkers read; ships verbatim via
+# house-rules init and byte-drift-checks here. Ownership and skew rules:
+# docs/operations.md. Must run AFTER the CLI loop — the skew warn below
+# reads cli_stale_keys.
+# defer: hand-written parallel block instead of generalizing the manifest to
+# data files. ceiling: re-implements the CLI loop's four states + the
+# registration self-check per file. upgrade when: a second data-shaped file
+# distributes.
+echo "Conventions profile:"
+profile_src="$KIT_ROOT/profiles/conventions.toml"
+profile_dest="$PROJECT_ROOT/profiles/conventions.toml"
+profile_present=false
+if [ ! -f "$profile_src" ]; then
+  check_warn "Kit copy missing at $profile_src — cannot drift-check the profile"
+elif [ ! -f "$profile_dest" ]; then
+  # Informational, not a failure: the repo may predate the profile or not use it.
+  echo "  – profiles/conventions.toml not distributed here (optional — re-run init.sh to add it)"
+else
+  profile_present=true
+  if diff -q "$profile_src" "$profile_dest" > /dev/null 2>&1; then
+    check_pass "profiles/conventions.toml matches the kit copy"
+  else
+    check_fail "profiles/conventions.toml is stale vs the kit copy — checker verdicts and rule fragments may have diverged" \
+      "cp -f \"$profile_src\" \"$profile_dest\""
+    profile_stale=1
+  fi
+fi
+# Version-skew guard: a stale PROFILE-READING checker can mis-scan the current
+# profile (e.g. a pre-token-catalog scanner self-flags on a profile that now
+# carries the token list). tdd-ledger never reads the profile, so ledger_drift
+# alone must not fire this. Keys hardcoded: extend this list when a new
+# profile-reading CLI joins the manifest.
+case "$cli_stale_keys" in
+  *defer_lint_drift*|*close_reason_lint_drift*|*banned_token_scan_drift*)
+    if $profile_present; then
+      check_warn "Conventions profile present but a profile-reading checker is stale — re-copy the stale checker(s) and the profile together (or re-run init.sh); a stale checker may mis-scan the current profile"
+    fi ;;
+esac
+# Registration self-check: profile_drift is a manifest-external SUMMARY key,
+# so nothing generates its documentation sites — the dispatch-table row in
+# global-safety-net/agent-protocol.md (guarded here, same as the CLIs) and
+# the hand-extended enumerations in this script's header/--help and init's
+# rendered AGENTS.md section (not guarded; update by hand with any new key).
+if [ -f "$KIT_ROOT/global-safety-net/agent-protocol.md" ] && \
+   ! grep -qF "\`profile_drift\`" "$KIT_ROOT/global-safety-net/agent-protocol.md"; then
+  check_warn "SUMMARY key profile_drift is not documented in global-safety-net/agent-protocol.md — add a dispatch-table row"
+fi
+echo ""
+
+# ---------- Kit-resident references ----------
+#
+# Distributed rules cite skills/<name> and templates/<file> paths under the
+# resolution law in operating-model.mdc: in-project copy → machine-global
+# skills dir → kit clone. A pointer that resolves nowhere is a setup gap.
+# Warn-only: the rules themselves instruct agents to note-don't-skip.
+
+echo "Kit-resident references:"
+
+ref_total=0
+ref_unresolved=0
+refs="$(grep -rhoE '(skills|templates)/[A-Za-z0-9._-]+' \
+          "$PROJECT_ROOT/.cursor/rules" "$PROJECT_ROOT/.claude/rules" 2>/dev/null \
+        | sed 's/\.$//' | sort -u)"
+if [ -z "$refs" ]; then
+  echo "  – No kit-resident references cited by distributed rules (or no rules present)"
+else
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    ref_total=$((ref_total + 1))
+    ref_kind="${ref%%/*}"
+    ref_name="${ref#*/}"
+    resolved=false
+    if [ "$ref_kind" = "skills" ]; then
+      for cand in "$PROJECT_ROOT/.cursor/skills/$ref_name" \
+                  "$PROJECT_ROOT/.claude/skills/$ref_name" \
+                  "$PROJECT_ROOT/skills/$ref_name" \
+                  "$HOME/.cursor/skills/$ref_name" \
+                  "$HOME/.claude/skills/$ref_name" \
+                  "$KIT_ROOT/skills/$ref_name"; do
+        [ -e "$cand" ] && resolved=true && break
+      done
+    else
+      for cand in "$PROJECT_ROOT/templates/$ref_name" \
+                  "$KIT_ROOT/templates/$ref_name"; do
+        [ -e "$cand" ] && resolved=true && break
+      done
+    fi
+    if ! $resolved; then
+      ref_unresolved=$((ref_unresolved + 1))
+      check_warn "$ref cited by distributed rules resolves nowhere (project → global → kit clone)"
+    fi
+  done <<< "$refs"
+  if [ $ref_unresolved -eq 0 ]; then
+    check_pass "All $ref_total kit-resident references cited by rules resolve"
+  fi
+fi
+
+echo ""
+
+# ---------- AGENTS.md house-rules section ----------
+#
+# init.sh stamps the AGENTS.md house-rules section with a
+# machine-parseable version marker (<!-- house-rules:version X.Y.Z -->)
+# sourced from the kit's VERSION file. A stale stamp means the section's
+# doctor/sync instructions and exit-code contract may describe an older kit.
+# (Legacy predecessor-prefix marker recognition was sunset 2026-08-06,
+# process-kit-26b, after a field sweep showed zero old-marker artifacts.)
+#
+# Deliberately text-only (warn — no exit 3 / SUMMARY key): the section is
+# discovery documentation, not executable machinery like rules or the
+# tdd-ledger, so a stale stamp cannot break agent behavior mid-task. Keeping
+# it out of the SUMMARY enum also keeps the agent-protocol dispatch table
+# stable for existing agents.
+
+echo "AGENTS.md:"
+
+agents_md="$PROJECT_ROOT/AGENTS.md"
+agents_marker="<!-- BEGIN house-rules:agents-md -->"
+kit_version=""
+[ -f "$KIT_ROOT/VERSION" ] && kit_version="$(tr -d '[:space:]' < "$KIT_ROOT/VERSION")"
+
+if $is_kit_repo; then
+  echo "  – kit repo itself: AGENTS.md is authored, not generated (stamp check skipped)"
+elif [ ! -f "$agents_md" ] || ! grep -qF "$agents_marker" "$agents_md" 2>/dev/null; then
+  # Informational, not a failure: pre-AGENTS.md bootstraps are legitimate.
+  echo "  – No house-rules section in AGENTS.md (re-run init.sh to add it)"
+elif [ -z "$kit_version" ]; then
+  check_warn "Kit VERSION file missing at $KIT_ROOT/VERSION — cannot check the AGENTS.md section stamp"
+else
+  begin_count="$(grep -cF "$agents_marker" "$agents_md" 2>/dev/null || true)"
+  begin_count="${begin_count:-0}"
+  if [ "$begin_count" -gt 1 ]; then
+    check_warn "AGENTS.md has $begin_count house-rules sections — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (collapses to one current section)"
+  else
+    agents_end="<!-- END house-rules:agents-md -->"
+    target_version="$(awk -v b="$agents_marker" -v e="$agents_end" '
+      $0 == b { f = 1; next }
+      $0 == e { exit }
+      f && /<!-- house-rules:version / {
+        sub(/.*<!-- house-rules:version /, "")
+        sub(/ -->.*/, "")
+        print
+        exit
+      }
+    ' "$agents_md")"
+    if [ "$target_version" = "$kit_version" ]; then
+      check_pass "AGENTS.md house-rules section current (v$kit_version)"
+    else
+      check_warn "AGENTS.md house-rules section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (refreshes the section in place)"
+    fi
+  fi
+fi
+
+echo ""
+
+# ---------- Beads ----------
+
+echo "Beads:"
+
+if $CORE_TIER; then
+  check_pass "Beads / task tracking — N/A for core tier"
+elif [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
+  check_pass "Beads directory exists"
+  if command -v bd &>/dev/null; then
+    if bd ping > /dev/null 2>&1; then
+      check_pass "bd ping ok (database reachable)"
+      if bd list --status=open > /dev/null 2>&1; then
+        check_pass "bd list works (database healthy)"
+      else
+        check_fail "bd list failed (database may be corrupted)" "bd doctor --agent"
+      fi
+      hooks_list_out=$(bd hooks list 2>/dev/null || true)
+      if echo "$hooks_list_out" | grep -q '✓ pre-commit' \
+        && echo "$hooks_list_out" | grep -q '✓ post-merge' \
+        && echo "$hooks_list_out" | grep -q '✓ pre-push'; then
+        check_pass "Beads git hooks: pre-commit, post-merge, pre-push installed"
+      else
+        check_warn "Beads git hooks missing or incomplete (bd recommends pre-commit, post-merge, pre-push) — fix: bd hooks install"
+      fi
+    else
+      check_fail "bd ping failed (database unreachable)" "bd doctor --agent"
+    fi
+  fi
+else
+  check_fail "Beads not initialized" "bd init (or bd init --stealth for personal repos)"
+fi
+
+echo ""
+
+# ---------- Scratchpad ----------
+
+echo "Scratchpad:"
+
+if $CORE_TIER; then
+  check_pass "Scratchpad — N/A for core tier"
+else
+  scratchpad=""
+  if [ -f "$PROJECT_ROOT/.cursor/scratchpad.md" ]; then
+    scratchpad="$PROJECT_ROOT/.cursor/scratchpad.md"
+  elif [ -f "$PROJECT_ROOT/scratchpad.md" ]; then
+    scratchpad="$PROJECT_ROOT/scratchpad.md"
+  fi
+
+  if [ -n "$scratchpad" ]; then
+    check_pass "Scratchpad found at $(basename "$(dirname "$scratchpad")")/$(basename "$scratchpad")"
+    missing_sections=0
+    for section in "Background and Motivation" "Key Challenges and Analysis" "High-level Task Breakdown" "Current Status / Progress Tracking" "Executor's Feedback or Assistance Requests" "Lessons"; do
+      if ! grep -qF "$section" "$scratchpad" 2>/dev/null; then
+        missing_sections=$((missing_sections + 1))
+      fi
+    done
+    if [ $missing_sections -eq 0 ]; then
+      check_pass "All 6 required sections present"
+    else
+      check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
+    fi
+  else
+    check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (creates it automatically)"
+  fi
+fi
+
+echo ""
+
+# ---------- Sync targets ----------
+
+echo "Sync targets:"
+
+TARGETS_FILE="$HOME/.house-rules-sync-targets"
+has_beads=false
+[ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
+
+if $CORE_TIER; then
+  check_pass "Sync targets — N/A for core tier (core installs are not sync targets)"
+elif $is_kit_repo; then
+  # The kit is the sync SOURCE — registration as a target is inapplicable.
+  echo "  – kit repo itself: sync source, not a target (registration check skipped)"
+elif [ -f "$TARGETS_FILE" ]; then
+  if grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+    check_pass "Project is in ~/.house-rules-sync-targets"
+  elif $has_beads; then
+    check_fail "Beads project not in ~/.house-rules-sync-targets — rules will drift silently" \
+      "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
+  else
+    check_fail "Project not in ~/.house-rules-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.house-rules-sync-targets"
+  fi
+else
+  check_fail "\$HOME/.house-rules-sync-targets doesn't exist" "echo \"$PROJECT_ROOT\" >> \$HOME/.house-rules-sync-targets"
+fi
+
+echo ""
+
+# ---------- Governance ----------
+
+echo "Governance:"
+
+if [ -f "$PROJECT_ROOT/CODE_OF_CONDUCT.md" ]; then
+  if grep -qF "Agentic Covenant" "$PROJECT_ROOT/CODE_OF_CONDUCT.md" 2>/dev/null; then
+    check_pass "CODE_OF_CONDUCT.md present (Agentic Covenant)"
+  else
+    check_warn "CODE_OF_CONDUCT.md exists but may not be the Agentic Covenant"
+  fi
+else
+  check_warn "No CODE_OF_CONDUCT.md — consider adopting the Agentic Covenant"
+fi
+
+echo ""
+
+# ---------- Global safety net (per-machine) ----------
+
+echo "Global safety net:"
+
+installer="$KIT_ROOT/scripts/install-global-safety-net.sh"
+if [ -x "$installer" ]; then
+  status_output="$(bash "$installer" --check 2>&1)"
+  status_code=$?
+  # The installer's --check always emits ✗/⚠ on nonzero exit, so the
+  # branching collapses to: ok / out-of-date / not-installed.
+  if [ $status_code -eq 0 ]; then
+    check_pass "Global safety net blocks installed in ~/CLAUDE.md"
+  elif printf '%s\n' "$status_output" | grep -qF "out of date"; then
+    check_warn "Global safety net present in ~/CLAUDE.md but out of date — re-run: bash $installer"
+  else
+    check_warn "Global safety net not installed — optional but recommended for new repos: bash $installer"
+  fi
+else
+  check_warn "Global safety net installer not found at $installer"
+fi
+
+# Explicitly unverifiable channel: Cursor either auto-imports ~/CLAUDE.md as
+# an always-applied rule (settings toggle "Include Third-Party Plugins,
+# Skills, and Other Configs" — undocumented behavior, toggle state not
+# readable from disk) or needs the manual user-rules paste. Neither is
+# verifiable by tooling. Reminder line only (never pass/fail).
+echo "  – Cursor channel not verifiable by tooling — check Settings → Rules for the auto-imported CLAUDE rule (tracks ~/CLAUDE.md on restart); only if it's absent, paste manually: bash $installer --print-cursor-snippet"
+
+echo ""
+
+# ---------- Worktree hook ----------
+
+echo "Worktree support:"
+
+if [ -f "$PROJECT_ROOT/.cursor/worktrees.json" ]; then
+  check_pass "Worktree hook present (.cursor/worktrees.json)"
+else
+  wt_count=$(git -C "$PROJECT_ROOT" worktree list --porcelain 2>/dev/null | grep -c '^worktree ')
+  [ -z "$wt_count" ] && wt_count=0
+  if [ "$wt_count" -gt 1 ]; then
+    check_warn "Repo has $wt_count worktrees but no .cursor/worktrees.json hook"
+  else
+    check_pass "No worktrees (hook not needed yet)"
+  fi
+fi
+
+echo ""
+
+# ---------- Summary ----------
+
+total=$((pass + fail + warn))
+echo "=== Results: $pass passed, $fail failed, $warn warnings (of $total checks) ==="
+
+# --- Agent-mode structured summary + exit ---
+#
+# Priority: bootstrap_needed > rules_drift > profile_drift > per-CLI drift
+# keys in manifest line order (scripts/distributed-clis.list) > error > ok.
+# The SUMMARY line is a stable contract; do not emit user-controlled paths
+# or free-form strings — only the fixed rules keys and the manifest's
+# registered per-CLI keys.
+#
+# rules_drift is split tri-state so the agent contract maps directly to a
+# specific sync-rules.sh --format flag. Without this, an agent following
+# the agent-protocol's "bash sync-rules.sh" recommendation on a Claude-only
+# project would default to --format cursor (the script's default) and
+# silently create unwanted .cursor/rules/ files in the target.
+#
+# Per-CLI drift keys reuse exit 3 (drift class) with their own SUMMARY
+# keys rather than new exit codes, so the agent-protocol exit table stays
+# stable. Rules drift wins the SUMMARY when several drift (existing agents
+# already dispatch on rules_drift_*); among stale CLIs the first in
+# manifest order wins; the losing findings are still in the text output.
+cli_first_stale="${cli_stale_keys# }"
+cli_first_stale="${cli_first_stale%% *}"
+if $AGENT_MODE; then
+  if [ $bootstrap_missing -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: bootstrap_needed"
+    exit 2
+  # -ge, not -eq: claude_stale is a per-file counter (the Claude rules
+  # check counts stale files), so two stale rules used to skip every
+  # rules_drift_* branch and fall through to SUMMARY: error.
+  elif [ $cursor_stale -ge 1 ] && [ $claude_stale -ge 1 ]; then
+    echo ""
+    echo "SUMMARY: rules_drift_both"
+    exit 3
+  elif [ $cursor_stale -ge 1 ]; then
+    echo ""
+    echo "SUMMARY: rules_drift_cursor"
+    exit 3
+  elif [ $claude_stale -ge 1 ]; then
+    echo ""
+    echo "SUMMARY: rules_drift_claude"
+    exit 3
+  elif [ $profile_stale -eq 1 ]; then
+    echo ""
+    echo "SUMMARY: profile_drift"
+    exit 3
+  elif [ -n "$cli_first_stale" ]; then
+    echo ""
+    echo "SUMMARY: $cli_first_stale"
+    exit 3
+  elif [ $fail -gt 0 ]; then
+    echo ""
+    echo "SUMMARY: error"
+    exit 1
+  else
+    echo ""
+    echo "SUMMARY: ok"
+    exit 0
+  fi
+fi
+
+if [ $fail -gt 0 ]; then
+  echo ""
+  echo "Run 'bash \"$KIT_ROOT/scripts/house-rules\" init' to fix most issues automatically."
+  exit 1
+else
+  if [ $warn -gt 0 ]; then
+    echo "All critical checks passed. Warnings are informational."
+  else
+    echo "Everything looks good!"
+  fi
+  exit 0
+fi
+```
+
+### scripts/init.sh
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# One-command project setup for house-rules.
+# Replaces the 7+ manual steps in QUICKSTART.md with a single invocation.
+#
+# Usage:
+#   ./scripts/init.sh                    # Interactive — asks for tool choice
+#   ./scripts/init.sh --tool cursor      # Set up for Cursor
+#   ./scripts/init.sh --tool claude       # Set up for Claude Code
+#   ./scripts/init.sh --tool both         # Set up for both tools
+#   ./scripts/init.sh --tier core        # Core-tier stamp only (no beads/scratchpad/sync)
+#   ./scripts/init.sh --tier full        # Full bootstrap (default)
+#   ./scripts/init.sh --stealth           # Use bd init --stealth (personal repos)
+#   ./scripts/init.sh --no-hooks          # Skip bd hooks install (default: install)
+#   ./scripts/init.sh --skills            # Copy skills into .cursor/skills/
+#   ./scripts/init.sh --help
+
+KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL=""
+TIER="full"
+STEALTH=false
+NO_HOOKS=false
+SKILLS=false
+PROJECT_ROOT="$(pwd)"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tool)    TOOL="$2"; shift 2 ;;
+    --tier)    TIER="$2"; shift 2 ;;
+    --stealth) STEALTH=true; shift ;;
+    --no-hooks) NO_HOOKS=true; shift ;;
+    --skills) SKILLS=true; shift ;;
+    --help|-h)
+      cat <<'EOF'
+One-command project setup for house-rules.
+
+Usage: init.sh [options]
+
+Options:
+  --tool <cursor|claude|both> Which tool to set up for (default: ask)
+  --tier <core|full>          Install tier (default: full). core writes
+                              .house-rules-tier only — no beads init,
+                              scratchpad, or sync-target registration.
+                              Pair with a plugin install for rules.
+  --stealth                   Use bd init --stealth (for personal repos)
+  --no-hooks                  Skip bd hooks install (default: install beads git hooks)
+  --skills                    Copy skill directories from the kit into .cursor/skills/
+  --help                      Show this help
+
+Run from the root of the project you want to set up.
+EOF
+      exit 0
+      ;;
+    *) echo "Unknown option: $1 (use --help)" >&2; exit 1 ;;
+  esac
+done
+
+case "$TIER" in
+  core|full) ;;
+  *)
+    echo "Invalid --tier: ${TIER} (use core or full)" >&2
+    exit 1
+    ;;
+esac
+
+# ---------- Concurrency lock (mkdir is atomic on all filesystems) ----------
+
+LOCKDIR="$PROJECT_ROOT/.house-rules-init.lock"
+# Clean stale locks older than 10 minutes
+if [ -d "$LOCKDIR" ]; then
+  lock_age=$(( $(date +%s) - $(stat -f %m "$LOCKDIR" 2>/dev/null || stat -c %Y "$LOCKDIR" 2>/dev/null || echo 0) ))
+  if [ "$lock_age" -gt 600 ]; then
+    rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR"
+    echo "  Removed stale lock (age: ${lock_age}s)"
+  fi
+fi
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  echo "Another house-rules init is running for this project. Exiting."
+  exit 1
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
+
+echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
+echo "  tier: $TIER"
+echo ""
+
+# ---------- Prerequisites ----------
+
+errors=0
+
+if ! command -v git &>/dev/null; then
+  echo "✗ git is not installed"
+  errors=$((errors + 1))
+else
+  echo "✓ git $(git --version | awk '{print $3}')"
+fi
+
+# bd is required for the full playbook (task tracking). Core tier is the
+# zero-dependency wedge — plugin-delivered rules, no task-tracking init.
+if [[ "$TIER" == "full" ]]; then
+  if ! command -v bd &>/dev/null; then
+    echo "✗ bd (beads) is not on PATH"
+    if command -v brew &>/dev/null; then
+      echo "  Fix: brew install beads"
+    else
+      echo "  Fix: See https://github.com/steveyegge/beads for install instructions"
+    fi
+    errors=$((errors + 1))
+  else
+    echo "✓ bd $(bd --version 2>/dev/null || echo '(version unknown)')"
+  fi
+else
+  echo "– bd not required (core tier)"
+fi
+
+if ! { [ -d "$PROJECT_ROOT/.git" ] || [ -f "$PROJECT_ROOT/.git" ]; }; then
+  echo "✗ Not a git repository: $PROJECT_ROOT"
+  echo "  Fix: Run from the root of a git repo, or run 'git init' first"
+  errors=$((errors + 1))
+else
+  echo "✓ Git repository detected"
+fi
+
+if [ ! -d "$KIT_ROOT/cursor/rules" ]; then
+  echo "✗ Kit repo not found at $KIT_ROOT"
+  echo "  Fix: git clone https://github.com/kevglynn/house-rules ~/process-kit"
+  errors=$((errors + 1))
+else
+  echo "✓ Kit repo at $KIT_ROOT"
+fi
+
+if [ $errors -gt 0 ]; then
+  echo ""
+  echo "Fix the $errors issue(s) above and re-run."
+  exit 1
+fi
+
+# ---------- Tier stamp (written early so partial runs still leave a stamp) ----------
+
+printf '%s\n' "$TIER" > "$PROJECT_ROOT/.house-rules-tier"
+echo "✓ Wrote .house-rules-tier ($TIER)"
+
+# ---------- Core stamp-only path ----------
+#
+# Plugin installs deliver rules; this path only records the tier so doctor
+# and sync-target logic know not to nag. Optional --tool still copies local
+# rules below (same as full), but beads/scratchpad/sync stay skipped.
+
+if [[ "$TIER" == "core" && -z "$TOOL" ]]; then
+  echo ""
+  echo "=== Core tier stamped ==="
+  echo ""
+  echo "What's ready:"
+  echo "  • .house-rules-tier = core"
+  echo "  • Skipped task-tracking init, scratchpad, sync-target registration"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Install the house-rules-core plugin (marketplace / Cursor plugin)"
+  echo "  2. Or re-run with --tier core --tool cursor (or --tool claude / --tool both) to copy local rules"
+  echo "  3. Verify: bash \"$KIT_ROOT/scripts/house-rules\" doctor"
+  echo ""
+  exit 0
+fi
+
+# ---------- Tool choice ----------
+#
+# Security gate: refuse non-interactive invocation without an explicit
+# --tool flag. Prevents prompt-injected agents from silently bootstrapping
+# a repo behind the user's back — if there's no TTY, the flag must be
+# passed explicitly (which means the agent had to declare the choice to
+# the user before running).
+
+if [ -z "$TOOL" ]; then
+  if [ ! -t 0 ]; then
+    echo "Error: --tool flag is required when stdin is not a terminal." >&2
+    echo "" >&2
+    echo "This script refuses non-interactive invocation without an" >&2
+    echo "explicit tool choice to prevent silent bootstrapping." >&2
+    echo "" >&2
+    echo "Run with one of:" >&2
+    echo "  --tool cursor   # Set up for Cursor" >&2
+    echo "  --tool claude   # Set up for Claude Code" >&2
+    echo "  --tool both     # Set up for both" >&2
+    echo "  --tier core     # Stamp core tier only (no --tool needed)" >&2
+    exit 1
+  fi
+  echo ""
+  echo "Which tool are you setting up for?"
+  echo "  1) Cursor"
+  echo "  2) Claude Code"
+  echo "  3) Both"
+  read -rp "Choice [1/2/3]: " choice
+  case "$choice" in
+    1) TOOL="cursor" ;;
+    2) TOOL="claude" ;;
+    3) TOOL="both" ;;
+    *) echo "Invalid choice. Use 1, 2, or 3."; exit 1 ;;
+  esac
+fi
+
+case "$TOOL" in
+  cursor|claude|both) ;;
+  *)
+    echo "Invalid --tool: ${TOOL:-<empty>} (use cursor, claude, or both)" >&2
+    exit 1
+    ;;
+esac
+
+echo ""
+
+# ---------- Copy rules ----------
+
+if [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]]; then
+  dest="$PROJECT_ROOT/.cursor/rules"
+  mkdir -p "$dest"
+  # Guard cp explicitly: set -e + an empty source glob or read-only
+  # destination would otherwise abort the script mid-bootstrap with no
+  # diagnostic and a misleading "0 rules" summary.
+  if ! cp "$KIT_ROOT/cursor/rules/"*.mdc "$dest/" 2>/tmp/house-rules-init.cp.err; then
+    echo "✗ Failed to copy Cursor rules → $dest"
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/house-rules-init.cp.err
+  count=$(ls -1 "$dest/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+  echo "✓ Copied $count Cursor rules → .cursor/rules/"
+fi
+
+if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
+  dest="$PROJECT_ROOT/.claude/rules"
+  mkdir -p "$dest"
+  if ! cp "$KIT_ROOT/claude/rules/"*.md "$dest/" 2>/tmp/house-rules-init.cp.err; then
+    echo "✗ Failed to copy Claude rules → $dest"
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/house-rules-init.cp.err
+  count=$(ls -1 "$dest/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "✓ Copied $count Claude Code rules → .claude/rules/"
+fi
+
+# ---------- Copy skills (opt-in) ----------
+
+if $SKILLS; then
+  skills_src="$KIT_ROOT/skills"
+  # Tool-aware destinations: Claude Code reads .claude/skills/, Cursor reads
+  # .cursor/skills/. A single hardcoded .cursor/skills/ dest previously left
+  # --tool claude bootstraps with zero Claude-readable skills.
+  skills_dests=""
+  [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]] && skills_dests=".cursor/skills"
+  [[ "$TOOL" == "claude" || "$TOOL" == "both" ]] && skills_dests="$skills_dests .claude/skills"
+  if [ -d "$skills_src" ]; then
+    for skills_rel in $skills_dests; do
+      skills_dest="$PROJECT_ROOT/$skills_rel"
+      mkdir -p "$skills_dest"
+      skills_count=0
+      for skill_dir in "$skills_src"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_name="$(basename "$skill_dir")"
+        cp -rf "$skill_dir" "$skills_dest/"
+        echo "  ↳ $skill_name"
+        skills_count=$((skills_count + 1))
+      done
+      if [ "$skills_count" -gt 0 ]; then
+        echo "✓ Copied $skills_count skill(s) → $skills_rel/"
+      else
+        echo "  (no skill directories found in $skills_src)"
+      fi
+    done
+  else
+    echo "  (no skills/ directory in the kit — skipping)"
+  fi
+fi
+
+# ---------- Distributed CLIs (manifest-driven) ----------
+#
+# Every kit CLI that must live in the target repo is registered once in
+# scripts/distributed-clis.list; this loop distributes each entry and
+# doctor.sh drift-checks the same manifest. Per-script rationale
+# and the field layout live in the manifest's header comments.
+
+clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
+
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r cli_name _cli_rest; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    cli_src="$KIT_ROOT/scripts/$cli_name"
+    cli_dest="$PROJECT_ROOT/scripts/$cli_name"
+    [ -f "$cli_src" ] || continue
+    mkdir -p "$PROJECT_ROOT/scripts"
+    if ! cp -f "$cli_src" "$cli_dest" 2>/tmp/house-rules-init.cp.err; then
+      echo "✗ Failed to copy $cli_name → scripts/"
+      sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+      rm -f /tmp/house-rules-init.cp.err
+      exit 1
+    fi
+    rm -f /tmp/house-rules-init.cp.err
+    chmod +x "$cli_dest"
+    echo "✓ Copied $cli_name CLI → scripts/$cli_name"
+  done < "$clis_manifest"
+else
+  echo "⚠ Distributed-CLI manifest missing at $clis_manifest — no kit CLIs distributed"
+fi
+
+# ---------- Conventions profile (data-shaped convention source) ----------
+#
+# The data file the distributed checkers read; ships verbatim (byte-drift-
+# checked by house-rules doctor, SUMMARY key profile_drift). Ownership, skew,
+# and inert-key rules: docs/operations.md.
+# defer: hand-written parallel block instead of generalizing the manifest to
+# data files. ceiling: duplicates the CLI-loop copy idiom per file. upgrade
+# when: a second data-shaped file distributes.
+profile_src="$KIT_ROOT/profiles/conventions.toml"
+if [ -f "$profile_src" ]; then
+  mkdir -p "$PROJECT_ROOT/profiles"
+  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>/tmp/house-rules-init.cp.err; then
+    echo "✗ Failed to copy profiles/conventions.toml"
+    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
+    rm -f /tmp/house-rules-init.cp.err
+    exit 1
+  fi
+  rm -f /tmp/house-rules-init.cp.err
+  echo "✓ Copied conventions profile → profiles/conventions.toml"
+else
+  echo "⚠ Conventions profile missing at $profile_src — distributed checkers will fall back to built-in grammars"
+fi
+
+# The CI gate that makes the ledger non-bypassable (not-overwriting, like
+# the PR template — target repos may have customized it).
+ledger_wf_src="$KIT_ROOT/templates/tdd-ledger-verify.yml"
+ledger_wf_dest="$PROJECT_ROOT/.github/workflows/tdd-ledger-verify.yml"
+
+if [ -f "$ledger_wf_src" ] && [ -f "$PROJECT_ROOT/scripts/tdd-ledger" ]; then
+  if [ -f "$ledger_wf_dest" ]; then
+    echo "✓ tdd-ledger CI workflow already exists (not overwriting)"
+  else
+    mkdir -p "$PROJECT_ROOT/.github/workflows"
+    cp -f "$ledger_wf_src" "$ledger_wf_dest"
+    echo "✓ Copied tdd-ledger CI workflow → .github/workflows/"
+  fi
+fi
+
+# ---------- Beads init ----------
+
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped task-tracking init (core tier)"
+elif [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; then
+  echo "✓ Beads already initialized (skipping bd init)"
+else
+  if $STEALTH; then
+    BD_OUTPUT=$(echo N | bd init --stealth 2>&1) && echo "✓ Beads initialized (stealth mode)" || echo "  ✗ Beads init failed: $BD_OUTPUT"
+  else
+    BD_OUTPUT=$(echo N | bd init 2>&1) && echo "✓ Beads initialized" || echo "  ✗ Beads init failed: $BD_OUTPUT"
+  fi
+fi
+
+# Bead-quality validation at creation time (the bead-authoring skill's
+# validation phase prescribes this; without it the prescription is a silent
+# no-op in fresh repos).
+if [[ "$TIER" == "full" ]] && command -v bd &>/dev/null && { [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ]; }; then
+  if bd config set validation.on-create warn >/dev/null 2>&1; then
+    echo "✓ Set validation.on-create = warn"
+  else
+    echo "  (could not set validation.on-create — set manually: bd config set validation.on-create warn)"
+  fi
+fi
+
+# ---------- Beads setup ----------
+
+# Note: we skip 'bd setup cursor/claude' here because the kit's rules
+# already provide beads workflow guidance with more depth than bd's built-in
+# integration rule. Running bd setup would add a redundant beads.mdc.
+
+# ---------- Beads git hooks (default-on) ----------
+#
+# Installs pre-commit / post-merge / pre-push (and related) shims so beads
+# auto-exports and syncs across clones. See: bd hooks --help
+
+HOOKS_INSTALLED=false
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped bd hooks install (core tier)"
+elif $NO_HOOKS; then
+  echo "✓ Skipping bd hooks install (--no-hooks)"
+elif ! command -v bd &>/dev/null; then
+  echo "  (bd not on PATH — skip bd hooks install)"
+elif [ ! -d "$PROJECT_ROOT/.beads" ] && [ ! -d "$PROJECT_ROOT/.dolt" ]; then
+  echo "  (no .beads — skip bd hooks install)"
+else
+  hooks_status=$(bd hooks list 2>/dev/null || true)
+  if echo "$hooks_status" | grep -q '✓ pre-commit' \
+    && echo "$hooks_status" | grep -q '✓ post-merge' \
+    && echo "$hooks_status" | grep -q '✓ pre-push'; then
+    echo "✓ Beads git hooks already installed (skipping bd hooks install)"
+    HOOKS_INSTALLED=true
+  elif BD_OUT=$(bd hooks install 2>&1); then
+    echo "$BD_OUT"
+    echo "✓ Installed beads git hooks"
+    HOOKS_INSTALLED=true
+  else
+    echo "  ⚠ bd hooks install failed:"
+    echo "$BD_OUT" | sed 's/^/    /'
+    echo "    Fix manually from repo root: bd hooks install"
+  fi
+fi
+
+# ---------- Scratchpad ----------
+
+create_scratchpad() {
+  local sp="$1"
+  if [ ! -f "$sp" ]; then
+    mkdir -p "$(dirname "$sp")"
+    cat > "$sp" <<'SCRATCHPAD'
+# Agent Scratchpad
+
+## Background and Motivation
+
+## Key Challenges and Analysis
+
+## High-level Task Breakdown
+
+## Current Status / Progress Tracking
+
+## Executor's Feedback or Assistance Requests
+
+## Lessons
+SCRATCHPAD
+    echo "✓ Created scratchpad at $(basename "$(dirname "$sp")")/$(basename "$sp")"
+  else
+    echo "✓ Scratchpad already exists at $(basename "$(dirname "$sp")")/$(basename "$sp") (not overwriting)"
+  fi
+}
+
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped scratchpad (core tier)"
+elif [[ "$TOOL" == "both" ]]; then
+  create_scratchpad "$PROJECT_ROOT/.cursor/scratchpad.md"
+  create_scratchpad "$PROJECT_ROOT/scratchpad.md"
+elif [[ "$TOOL" == "cursor" ]]; then
+  create_scratchpad "$PROJECT_ROOT/.cursor/scratchpad.md"
+elif [[ "$TOOL" == "claude" ]]; then
+  create_scratchpad "$PROJECT_ROOT/scratchpad.md"
+fi
+
+# ---------- Governance ----------
+
+coc_src="$KIT_ROOT/CODE_OF_CONDUCT.md"
+coc_dest="$PROJECT_ROOT/CODE_OF_CONDUCT.md"
+
+if [ -f "$coc_src" ]; then
+  if [ -f "$coc_dest" ]; then
+    echo "✓ CODE_OF_CONDUCT.md already exists (not overwriting)"
+  else
+    cp -f "$coc_src" "$coc_dest"
+    echo "✓ Copied CODE_OF_CONDUCT.md (Agentic Covenant)"
+  fi
+fi
+
+# Canonical source is the kit's own .github/ copy (single source: GitHub
+# reads it live on the kit repo, and init distributes the same file).
+pr_template_src="$KIT_ROOT/.github/pull_request_template.md"
+pr_template_dest="$PROJECT_ROOT/.github/pull_request_template.md"
+
+if [ -f "$pr_template_src" ]; then
+  if [ -f "$pr_template_dest" ]; then
+    echo "✓ PR template already exists (not overwriting)"
+  else
+    mkdir -p "$PROJECT_ROOT/.github"
+    cp -f "$pr_template_src" "$pr_template_dest"
+    echo "✓ Copied PR template with Assisted-by disclosure"
+  fi
+fi
+
+# ---------- AGENTS.md (per-repo agent discovery) ----------
+#
+# AGENTS.md is a de-facto 2026 convention read by Cursor, Claude Code,
+# Codex, Copilot, and future agents. `bd init` also writes an AGENTS.md
+# about beads, so we cannot assume the file is ours — we append a
+# marker-delimited house-rules section, idempotent, respecting whatever
+# content is already there.
+
+agents_md="$PROJECT_ROOT/AGENTS.md"
+# Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
+# Recognition of the predecessor playbook's legacy marker prefix was
+# sunset 2026-08-06 (process-kit-26b) after a field sweep across every sync
+# target and HOME artifact showed zero old-marker sections remaining.
+agents_begin="<!-- BEGIN house-rules:agents-md -->"
+agents_end="<!-- END house-rules:agents-md -->"
+
+# Version stamp: sourced from the kit's VERSION file (single source of truth).
+# Rendered as a machine-parseable marker line inside the section so
+# doctor.sh can compare the target's stamp against the kit version.
+kit_version="unknown"
+kit_version_label="unknown"
+if [ -f "$KIT_ROOT/VERSION" ]; then
+  kit_version="$(tr -d '[:space:]' < "$KIT_ROOT/VERSION")"
+  kit_version_label="v$kit_version"
+fi
+generated_on="$(date -u +%Y-%m-%d)"
+
+# Drift-key enumeration for the section text, generated from the manifest so
+# the AGENTS.md contract can never lag a newly registered CLI. Manifest-
+# external SUMMARY keys (profile_drift) are hand-listed in the heredoc —
+# extend that line whenever such a key is added.
+cli_drift_keys_md=""
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r _cli_name cli_key _rest; do
+    case "$_cli_name" in ""|\#*) continue ;; esac
+    cli_drift_keys_md="${cli_drift_keys_md:+$cli_drift_keys_md | }\`$cli_key\`"
+  done < "$clis_manifest"
+fi
+
+render_agents_section() {
+  cat <<AGENTS_SECTION
+$agents_begin
+## house-rules
+
+This project follows [house-rules](https://github.com/kevglynn/house-rules) — rules, skills, and scripts for working with coding agents.
+
+**Rules location:** \`.cursor/rules/*.mdc\` (Cursor) and/or \`.claude/rules/*.md\` (Claude Code). Synced from \`\${PROCESS_KIT:-\$HOME/process-kit}\`. Do not edit in place.
+
+**Ownership boundary:** \`.agents/overlay.md\` is project-editable (optional per-skill parameters; create it as needed). \`profiles/conventions.toml\`, when present, is kit-owned and drift-checked byte-for-byte — do not edit it here; change it in the kit and sync.
+
+**Diagnose setup (human-readable):**
+\`\`\`bash
+bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/house-rules" doctor
+\`\`\`
+
+**Diagnose (agent-consumable; structured exit codes + \`SUMMARY:\` line):**
+\`\`\`bash
+bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/house-rules" doctor --agent
+\`\`\`
+
+Exit: \`0\`=ok, \`2\`=bootstrap_needed, \`3\`=drift, \`1\`=error. On exit 3 the SUMMARY key names what drifted: \`rules_drift_cursor\` | \`rules_drift_claude\` | \`rules_drift_both\` for stale rules, \`profile_drift\` for a stale \`profiles/conventions.toml\`, or ${cli_drift_keys_md:-a per-CLI drift key} for a stale distributed CLI (fix: re-copy the named file from the kit). See the \`agent-protocol\` block in \`~/CLAUDE.md\` for the full dispatch table.
+
+**Sync rules with upstream:**
+\`\`\`bash
+bash "\${PROCESS_KIT:-\$HOME/process-kit}/scripts/house-rules" sync
+\`\`\`
+
+**Install the kit on a new machine:**
+\`\`\`bash
+git clone https://github.com/kevglynn/house-rules ~/process-kit
+bash ~/process-kit/scripts/install-global-safety-net.sh   # per-machine, once
+\`\`\`
+
+Generated by \`house-rules init\` on ${generated_on} from house-rules ${kit_version_label}.
+<!-- house-rules:version ${kit_version} -->
+$agents_end
+AGENTS_SECTION
+}
+
+# Replace the existing marker-delimited block in place (atomic tmp+mv), used
+# when the section is present but its version stamp is stale or missing.
+# Emits exactly one fresh section even if the file somehow carries several.
+# Returns the shared writer contract (0 = written, 1 = I/O failure,
+# 2 = malformed markers, warn-and-skip) — same codes as the block writers
+# in install-aliases.sh and install-global-safety-net.sh, whose scan loop
+# this mirrors (defer/extraction trigger noted at rewrite_block there).
+refresh_agents_section() {
+  local tmp in_block=0 emitted=0 malformed=0
+  tmp="$(mktemp "${agents_md}.tmp.XXXXXX")" || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$agents_begin" ]; then
+        in_block=1
+        if [ $emitted -eq 0 ]; then
+          render_agents_section
+          emitted=1
+        fi
+        continue
+      fi
+      if [ "$line" = "$agents_end" ]; then
+        malformed=1
+        break
+      fi
+      printf '%s\n' "$line"
+      continue
+    fi
+    if [ "$line" = "$agents_end" ]; then
+      in_block=0
+      continue
+    fi
+    # Any other HTML house-rules marker while open (cross-ID / nested /
+    # near-miss) would discard user bytes — refuse before mv.
+    case "$line" in
+      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
+        malformed=1
+        break
+        ;;
+    esac
+    continue
+  done < "$agents_md" > "$tmp"
+  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
+  # (in_block still open at EOF), nested/cross-ID/near-miss markers, an
+  # orphan END, or a scan that consumed no BEGIN (emitted=0).
+  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ] || [ $malformed -eq 1 ]; then
+    rm -f "$tmp"
+    echo "⚠ $agents_md: house-rules section markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    return 2
+  fi
+  mv "$tmp" "$agents_md" || { rm -f "$tmp"; return 1; }
+}
+
+# Structural currency: exactly one well-formed section containing the live
+# version stamp. Stamp-anywhere grep was wrong — a later stale duplicate
+# (or an orphan carrying the stamp text) could hide forever.
+agents_section_is_current() {
+  local in_block=0 count=0 stamp_ok=0
+  local stamp="<!-- house-rules:version ${kit_version} -->"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$agents_begin" ]; then
+        in_block=1
+        count=$((count + 1))
+        if [ "$count" -gt 1 ]; then
+          return 1
+        fi
+        continue
+      fi
+      if [ "$line" = "$agents_end" ]; then
+        return 1
+      fi
+      continue
+    fi
+    if [ "$line" = "$agents_end" ]; then
+      in_block=0
+      continue
+    fi
+    case "$line" in
+      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
+        return 1
+        ;;
+    esac
+    if [ "$line" = "$stamp" ]; then
+      stamp_ok=1
+    fi
+  done < "$agents_md"
+  [ $in_block -eq 0 ] && [ "$count" -eq 1 ] && [ "$stamp_ok" -eq 1 ]
+}
+
+agents_refresh_failed=0
+if [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
+  if agents_section_is_current; then
+    echo "✓ AGENTS.md house-rules section current (${kit_version_label})"
+  elif refresh_agents_section; then
+    echo "✓ Refreshed AGENTS.md house-rules section → ${kit_version_label} (stamp was stale or missing)"
+  else
+    # Guard refusal (or write failure): warned on stderr above. The rest
+    # of the bootstrap is still worth finishing, but the exit code must
+    # not claim a clean setup while the section is stale.
+    agents_refresh_failed=1
+    echo "✗ AGENTS.md house-rules section is stale but was NOT refreshed — repair the marker lines and re-run init" >&2
+  fi
+elif [ -f "$agents_md" ]; then
+  # Atomic write: stage to mktemp, then mv. A partial multi-line append
+  # via { ... } >> would otherwise leave AGENTS.md with an orphan BEGIN
+  # marker — and the next-run idempotency check (grep -qF "$agents_begin")
+  # would falsely report "already present" without repairing the partial
+  # block.
+  agents_tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
+  {
+    cat "$agents_md"
+    [ -n "$(tail -c1 "$agents_md" 2>/dev/null)" ] && printf '\n'
+    printf '\n'
+    render_agents_section
+  } > "$agents_tmp"
+  mv "$agents_tmp" "$agents_md"
+  echo "✓ Appended house-rules section to existing AGENTS.md"
+else
+  agents_tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
+  {
+    printf '# AGENTS.md\n\n'
+    printf 'Any agent landing in this repo: start here.\n\n'
+    render_agents_section
+  } > "$agents_tmp"
+  mv "$agents_tmp" "$agents_md"
+  echo "✓ Created AGENTS.md with house-rules section"
+fi
+
+# ---------- Sync targets ----------
+
+# Throwaway bootstraps (test/verification runs under /tmp or $TMPDIR) must
+# not register: dead entries surface as 'target does not exist' warnings on
+# every later sync-rules.sh run until removed by hand.
+# Core-tier installs must never register — they are not kit-sync consumers
+# (rules arrive via plugin; registering would invite full-rule sync wipes).
+TARGETS_FILE="$HOME/.house-rules-sync-targets"
+tmp_root="${TMPDIR:-/tmp}"
+if [[ "$TIER" == "core" ]]; then
+  echo "– Skipped ~/.house-rules-sync-targets registration (core tier)"
+else
+  case "$PROJECT_ROOT/" in
+    "${tmp_root%/}/"* | /tmp/*)
+      echo "– Skipped ~/.house-rules-sync-targets registration (throwaway path under ${tmp_root%/})"
+      ;;
+    *)
+      if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+        echo "✓ Already in ~/.house-rules-sync-targets"
+      else
+        echo "$PROJECT_ROOT" >> "$TARGETS_FILE"
+        echo "✓ Added to ~/.house-rules-sync-targets"
+      fi
+      ;;
+  esac
+fi
+
+# ---------- Summary ----------
+
+echo ""
+echo "=== Setup complete ==="
+echo ""
+echo "What's ready:"
+echo "  • $(ls -1 "$PROJECT_ROOT/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') Cursor rules" 2>/dev/null || true
+echo "  • $(ls -1 "$PROJECT_ROOT/.claude/rules/"*.md 2>/dev/null | wc -l | tr -d ' ') Claude rules" 2>/dev/null || true
+if $SKILLS; then
+  for skills_rel in ${skills_dests:-}; do
+    echo "  • $(ls -1d "$PROJECT_ROOT/$skills_rel/"*/ 2>/dev/null | wc -l | tr -d ' ') skills ($skills_rel/)" 2>/dev/null || true
+  done
+fi
+echo "  • Beads task tracking (bd list, bd ready, bd create)"
+if $HOOKS_INSTALLED; then
+  echo "  • Beads git hooks (bd hooks install — auto-export / sync on commit & push)"
+fi
+if $NO_HOOKS; then
+  echo "  • Beads git hooks skipped — run bd hooks install when ready"
+fi
+echo "  • Scratchpad for cross-session context"
+[ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
+if [ -f "$clis_manifest" ]; then
+  while IFS='|' read -r cli_name _key _header _note cli_label cli_detail; do
+    case "$cli_name" in ""|\#*) continue ;; esac
+    [ -f "$PROJECT_ROOT/scripts/$cli_name" ] && \
+      echo "  • $cli_label (scripts/$cli_name — $cli_detail)"
+  done < "$clis_manifest"
+fi
+[ -f "$PROJECT_ROOT/profiles/conventions.toml" ] && \
+  echo "  • Conventions profile (profiles/conventions.toml — data source the checkers read; kit-owned, drift-checked)"
+[ -f "$ledger_wf_dest" ] && echo "  • TDD ledger CI gate (.github/workflows/tdd-ledger-verify.yml)"
+[ -f "$pr_template_dest" ] && echo "  • PR template with Assisted-by disclosure (.github/pull_request_template.md)"
+echo ""
+echo "Next steps:"
+echo "  1. Open this project in your editor"
+echo '  2. Say "Planner mode" to break down a feature into tasks'
+echo '  3. Say "Executor mode" to start implementing'
+echo "  4. Run: bd prime (agent does this automatically at session start)"
+echo "  5. ⚠ Rules take effect on next session start — restart your editor/CLI"
+echo ""
+echo "Verify setup: bash \"$KIT_ROOT/scripts/house-rules\" doctor"
+if [ "$agents_refresh_failed" -eq 1 ]; then
+  exit 1
+fi
+```
+
+### scripts/tests/test_tier_mechanics.sh
+
+```bash
+#!/usr/bin/env bash
+# Fixture tests for tier stamp, tier-aware doctor, sync-target exclusion,
+# and the core upgrade-offer rule (process-kit-12q).
+#
+# Harness style matches test_profile_distribution.sh: mktemp repo + throwaway
+# HOME; never touches the invoking user's HOME.
+#   bash scripts/tests/test_tier_mechanics.sh
+set -u
+
+KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+INIT="$KIT_ROOT/scripts/init.sh"
+DOCTOR="$KIT_ROOT/scripts/doctor.sh"
+UPGRADE_RULE="$KIT_ROOT/cursor/rules/core-upgrade-offer.mdc"
+
+PASS=0
+FAIL=0
+CLEANUP=()
+cleanup() {
+  local d
+  for d in "${CLEANUP[@]:-}"; do
+    [ -n "$d" ] && rm -rf "$d"
+  done
+}
+trap cleanup EXIT
+
+new_home() {
+  local h
+  h="$(mktemp -d)"
+  CLEANUP+=("$h")
+  printf '%s' "$h"
+}
+
+# bd shim: core-tier path must not require beads; full-tier fixtures still
+# need the init preflight to pass on CI runners without bd installed.
+BD_SHIM_DIR="$(mktemp -d)"
+CLEANUP+=("$BD_SHIM_DIR")
+printf '#!/bin/sh\nexit 0\n' > "$BD_SHIM_DIR/bd"
+chmod +x "$BD_SHIM_DIR/bd"
+export PATH="$BD_SHIM_DIR:$PATH"
+
+check() {
+  local name="$1"; shift
+  if "$@"; then
+    echo "ok - $name"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL - $name"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+out_has()   { grep -qF -- "$2" <<< "$1"; }
+out_lacks() { ! grep -qF -- "$2" <<< "$1"; }
+out_has_re() { grep -qE -- "$2" <<< "$1"; }
+
+# ---------------------------------------------------------------------------
+# AC1: core-only install writes stamp; doctor healthy w.r.t. beads /
+#      scratchpad / sync-targets (no check_fail on those sections).
+# ---------------------------------------------------------------------------
+h="$(new_home)"
+# Place under throwaway HOME (not /tmp) so sync-exclusion is tested —
+# init always skips registration for paths under /tmp.
+core_repo="$h/core-project"
+mkdir -p "$core_repo"
+git -C "$core_repo" init -q
+
+init_out="$(cd "$core_repo" && HOME="$h" bash "$INIT" --tier core 2>&1)"
+init_rc=$?
+check "init --tier core exits 0" test "$init_rc" = "0"
+check "init --tier core writes .house-rules-tier=core" \
+  test "$(tr -d '[:space:]' < "$core_repo/.house-rules-tier" 2>/dev/null)" = "core"
+check "init --tier core does not create task-tracking store" \
+  bash -c "! test -d '$core_repo/.beads' && ! test -d '$core_repo/.dolt'"
+check "init --tier core does not create scratchpad" \
+  bash -c "! test -f '$core_repo/.cursor/scratchpad.md' && ! test -f '$core_repo/scratchpad.md'"
+
+# Doctor on core stamp alone (no local rules — plugin-delivered is fine).
+doc_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" 2>&1)" || true
+doc_rc=$?
+check "core doctor: no Beads-not-initialized failure" \
+  out_lacks "$doc_out" "Beads not initialized"
+check "core doctor: no scratchpad failure" \
+  out_lacks "$doc_out" "No scratchpad found"
+check "core doctor: no sync-targets failure" \
+  bash -c "! grep -qE 'not in ~/.house-rules-sync-targets|sync-targets doesn.t exist' <<< \"\$1\"" _ "$doc_out"
+check "core doctor: beads section N/A for core" \
+  out_has_re "$doc_out" "N/A for core tier"
+# Agent SUMMARY must not be bootstrap_needed solely because beads/rules
+# dirs are absent when stamp is core.
+agent_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" --agent 2>&1)" || true
+agent_rc=$?
+check "core doctor --agent: not SUMMARY bootstrap_needed" \
+  out_lacks "$agent_out" "SUMMARY: bootstrap_needed"
+summary_line="$(printf '%s\n' "$agent_out" | tail -1)"
+check "core doctor --agent: SUMMARY ok (exit 0)" \
+  bash -c "test \"$agent_rc\" = 0 && test \"$summary_line\" = 'SUMMARY: ok'"
+
+# ---------------------------------------------------------------------------
+# AC2: core-only repos are NOT registered in ~/.house-rules-sync-targets
+# ---------------------------------------------------------------------------
+check "init --tier core does not create sync-targets file" \
+  bash -c "! test -f '$h/.house-rules-sync-targets'"
+# Even if the file already exists, core must not append.
+printf '%s\n' "$h/other-project" > "$h/.house-rules-sync-targets"
+core2="$h/core-project-2"
+mkdir -p "$core2"
+git -C "$core2" init -q
+(cd "$core2" && HOME="$h" bash "$INIT" --tier core > /dev/null 2>&1)
+check "init --tier core does not append to existing sync-targets" \
+  bash -c "! grep -qxF '$core2' '$h/.house-rules-sync-targets'"
+
+# Full tier still registers when the project is outside /tmp (init always
+# skips throwaway paths under TMPDIR|/tmp — place this fixture in-kit).
+full_home="$(mktemp -d "${KIT_ROOT}/.tier-fixture-XXXXXX")"
+CLEANUP+=("$full_home")
+full_repo="$full_home/full-project"
+mkdir -p "$full_repo"
+git -C "$full_repo" init -q
+(cd "$full_repo" && HOME="$full_home" bash "$INIT" --tool cursor --tier full --no-hooks > /dev/null 2>&1)
+check "init --tier full writes .house-rules-tier=full" \
+  test "$(tr -d '[:space:]' < "$full_repo/.house-rules-tier" 2>/dev/null)" = "full"
+check "init --tier full registers sync-targets" \
+  grep -qxF "$full_repo" "$full_home/.house-rules-sync-targets"
+
+# Absent stamp treated as full: doctor still fails missing sync on a
+# non-core fixture (regression pin).
+absent="$h/absent-stamp"
+mkdir -p "$absent/.cursor/rules"
+# Minimal rule file so bootstrap_needed doesn't win SUMMARY.
+cp "$KIT_ROOT/cursor/rules/agent-identity.mdc" "$absent/.cursor/rules/"
+git -C "$absent" init -q
+absent_out="$(HOME="$h" bash "$DOCTOR" "$absent" 2>&1)" || true
+check "absent stamp (=full): doctor still flags missing sync-targets" \
+  out_has "$absent_out" "not in ~/.house-rules-sync-targets"
+
+# ---------------------------------------------------------------------------
+# AC3: core plugin carries upgrade trigger — offer once with consent;
+#      scripted session simulation (Claude UI not required).
+# ---------------------------------------------------------------------------
+check "upgrade rule file exists" test -f "$UPGRADE_RULE"
+rule_text="$(cat "$UPGRADE_RULE" 2>/dev/null || true)"
+check "upgrade rule mentions full playbook / full install offer" \
+  out_has_re "$rule_text" "full (playbook|install)|house-rules init"
+check "upgrade rule requires consent" \
+  out_has_re "$rule_text" "[Cc]onsent|ask the user|Which\\?"
+check "upgrade rule persists offered marker" \
+  out_has "$rule_text" ".house-rules-upgrade-offered"
+check "upgrade rule is bd/beads-clean (no workflow words)" \
+  bash -c "! grep -qiE '\\bbd\\b|\\bbeads?\\b' '$UPGRADE_RULE'"
+
+# Scripted session simulation: a core-stamped repo with no task tracking
+# and no offered marker should be in the "offer eligible" state per the
+# rule; after touching the marker, re-offer must be suppressed.
+sim="$h/upgrade-sim"
+mkdir -p "$sim"
+git -C "$sim" init -q
+echo core > "$sim/.house-rules-tier"
+# Eligible: marker absent.
+check "upgrade sim: eligible when marker absent" \
+  bash -c "! test -f '$sim/.house-rules-upgrade-offered'"
+# Simulate agent recording the offer (rule's persist step).
+: > "$sim/.house-rules-upgrade-offered"
+check "upgrade sim: marker suppresses re-offer" \
+  test -f "$sim/.house-rules-upgrade-offered"
+# Rule must say: if marker exists, do not re-ask.
+check "upgrade rule: do not re-offer when marker present" \
+  out_has_re "$rule_text" "already offered|do not (re-)?(ask|offer|prompt)|marker"
+
+# Manifest membership (core-manifest lists the rule).
+check "core-manifest lists core-upgrade-offer" \
+  grep -qF 'rule|cursor/rules/core-upgrade-offer.mdc' \
+    "$KIT_ROOT/profiles/core-manifest.list"
+
+echo ""
+echo "passed: $PASS  failed: $FAIL"
+[ $FAIL -eq 0 ]
+```
+
+### .github/workflows/kit-ci.yml
+
+```yaml
+# Kit self-enforcement — the kit runs the checks its doctrine prescribes.
+# Nine gates: (1) the claude/rules projection must match the cursor/rules
+# canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
+# must match their render from profiles/conventions.toml (conventions
+# render-rule --check), (3) all shell scripts pass shellcheck at warning
+# severity, (4) the installer marker-rewrite loops keep their fixture
+# guarantees (idempotency, malformed-marker refusal),
+# (5) the standalone checker suites hold their drift guards (fallback
+# parity pins, verbatim plumbing pins, exclusion contract, posture tests),
+# (6) profile distribution and the profile_drift SUMMARY contract hold
+# (byte-identical copy, exact key string, precedence, optional branch),
+# (7) shell commands fenced in the user-facing docs reference script
+# paths that exist in the tree (docs-path-lint), (8) the core-tier
+# manifest stays valid and its listed files stay bd/beads-clean
+# (test_core_manifest, in checker-suites), (9) the plugin manifests on
+# the three distribution surfaces stay schema-valid, path-resolvable,
+# and derived from the core manifest (test_plugin_manifests, in
+# checker-suites), (10) tier stamp / tier-aware doctor / sync exclusion /
+# upgrade-offer fixtures (test_tier_mechanics.sh).
+
+name: kit ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  projection-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude projection matches cursor canon
+        run: ./scripts/sync-rules.sh --format claude --check --local
+      - name: Gate self-test — seeded drift must fail the check
+        run: |
+          echo "# seeded drift" >> claude/rules/pragmatic-tdd.md
+          if ./scripts/sync-rules.sh --format claude --check --local; then
+            echo "seeded projection drift did NOT fail the gate" >&2
+            exit 1
+          fi
+          git checkout -- claude/rules/pragmatic-tdd.md
+          echo "gate correctly rejects seeded drift"
+
+  fragment-regen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run conventions test suite
+        run: python3 scripts/tests/test_conventions.py
+      - name: Rule fragments match profile render
+        run: python3 scripts/conventions render-rule --check
+      - name: Gate self-test — seeded fragment drift must fail the check
+        run: |
+          # grep precondition: if the seed string ever changes, fail as
+          # "seed missing" instead of misreporting a healthy gate as broken.
+          grep -q 'summaries under 72 characters' cursor/rules/operating-model.mdc
+          sed -i 's/summaries under 72 characters/summaries under 720 characters/' cursor/rules/operating-model.mdc
+          if python3 scripts/conventions render-rule --check; then
+            echo "seeded fragment drift did NOT fail the gate" >&2
+            exit 1
+          fi
+          git checkout -- cursor/rules/operating-model.mdc
+          echo "gate correctly rejects seeded drift"
+
+  checker-suites:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checker test suites (defer-lint, close-reason-lint, banned-token-scan, docs-path-lint, core-manifest, plugin-manifests)
+        # The profile-driven checkers' drift guards — fallback parity pins,
+        # verbatim plumbing pins, exclusion-contract fixtures, resolution-
+        # posture tests — must die in kit CI, not in a target repo (8dx
+        # Tier 1 architect I2). test_core_manifest guards the core-tier
+        # content list and its bd-cleanliness. test_conventions runs in
+        # fragment-regen; test_tdd_ledger runs in tdd-ledger-verify.yml.
+        working-directory: scripts/tests
+        run: python3 -m unittest test_defer_lint test_close_reason_lint test_banned_token_scan test_docs_path_lint test_core_manifest test_plugin_manifests
+
+  docs-path-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fenced doc commands reference real script paths
+        # The playbook-init.sh 404: during a rename wave, active docs
+        # taught a script name that no longer existed in the tree. This
+        # gate makes doc/script drift mechanical instead of a manual
+        # sweep. Existence check only — nothing is executed; the suite in
+        # checker-suites guards the checker itself.
+        run: python3 scripts/docs-path-lint --root .
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts/*.sh + the house-rules dispatcher
+        # -S warning: fail on warnings and errors; info/style stay advisory.
+        run: shellcheck -S warning scripts/*.sh scripts/house-rules
+
+  marker-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer marker fixture tests
+        # Throwaway HOME per case; guards fresh-install idempotency and the
+        # malformed-marker refusal paths in the three installers (shellcheck
+        # is blind to logic regressions here).
+        run: bash scripts/tests/test_marker_migration.sh
+
+  profile-distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Profile distribution + profile_drift SUMMARY contract fixtures
+        # Throwaway HOME + mktemp repo; pins the byte-identical copy, the
+        # exact SUMMARY key string agents dispatch on, its precedence over
+        # CLI drift keys, and the absent-profile optional branch (the one
+        # mode where the doctor could lie healthy).
+        run: bash scripts/tests/test_profile_distribution.sh
+
+  tier-mechanics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tier stamp, tier-aware doctor, sync exclusion, upgrade offer
+        # Throwaway HOME + mktemp repo; pins .house-rules-tier write,
+        # core doctor N/A for beads/scratchpad/sync-targets, core never
+        # registers sync-targets, and the core-upgrade-offer rule contract.
+        run: bash scripts/tests/test_tier_mechanics.sh
+```
+
+## Report format
+
+For each finding: severity (Critical / Important / Minor), file + location, what, why it matters, suggested fix. List rejected candidate findings with the reason for rejection. End with an overall verdict.
