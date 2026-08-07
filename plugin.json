@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "house-rules",
+  "description": "Versioned engineering playbook for AI coding agents: skills for code review, over-engineering audits, prose voice, planning, and TDD discipline.",
+  "author": { "name": "Kevin Glynn", "url": "https://github.com/kevglynn" },
+  "homepage": "https://github.com/kevglynn/house-rules",
+  "repository": "https://github.com/kevglynn/house-rules",
+  "license": "Apache-2.0",
+  "keywords": ["rules", "skills", "code-review", "workflow", "tdd"]
+}

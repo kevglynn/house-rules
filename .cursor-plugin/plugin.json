@@ -1,0 +1,23 @@
+{
+  "name": "house-rules-core",
+  "description": "Zero-dependency core tier of the house-rules playbook: standalone rules, the graybeard skill family, prose-voice, and checker CLIs carried at scripts/defer-lint and scripts/banned-token-scan.",
+  "author": { "name": "Kevin Glynn" },
+  "homepage": "https://github.com/kevglynn/house-rules",
+  "repository": "https://github.com/kevglynn/house-rules",
+  "license": "Apache-2.0",
+  "keywords": ["rules", "code-review", "over-engineering", "prose-voice", "checkers"],
+  "rules": [
+    "./cursor/rules/agent-identity.mdc",
+    "./cursor/rules/defer-convention.mdc",
+    "./cursor/rules/prose-voice.mdc",
+    "./cursor/rules/parallel-subagent-safety.mdc",
+    "./cursor/rules/graybeard-playbook.mdc"
+  ],
+  "skills": [
+    "./skills/graybeard-review",
+    "./skills/graybeard-audit",
+    "./skills/graybeard-debt",
+    "./skills/graybeard-help",
+    "./skills/prose-voice"
+  ]
+}
