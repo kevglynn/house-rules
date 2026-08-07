@@ -6,7 +6,9 @@
 # severity, (4) the installer marker-migration loops keep their fixture
 # guarantees (idempotency, legacy migration, malformed-marker refusal),
 # (5) the standalone checker suites hold their drift guards (fallback
-# parity pins, verbatim plumbing pins, exclusion contract, posture tests).
+# parity pins, verbatim plumbing pins, exclusion contract, posture tests),
+# (6) profile distribution and the profile_drift SUMMARY contract hold
+# (byte-identical copy, exact key string, precedence, optional branch).
 
 name: kit ci
 
@@ -82,3 +84,14 @@ jobs:
         # house-rules migration loops for the whole legacy-recognition
         # window (shellcheck is blind to logic regressions here).
         run: bash scripts/tests/test_marker_migration.sh
+
+  profile-distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Profile distribution + profile_drift SUMMARY contract fixtures
+        # Throwaway HOME + mktemp repo; pins the byte-identical copy, the
+        # exact SUMMARY key string agents dispatch on, its precedence over
+        # CLI drift keys, and the absent-profile optional branch (the one
+        # mode where the doctor could lie healthy).
+        run: bash scripts/tests/test_profile_distribution.sh
