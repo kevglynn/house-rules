@@ -3,8 +3,8 @@
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
-# severity, (4) the installer marker-migration loops keep their fixture
-# guarantees (idempotency, legacy migration, malformed-marker refusal),
+# severity, (4) the installer marker-rewrite loops keep their fixture
+# guarantees (idempotency, malformed-marker refusal),
 # (5) the standalone checker suites hold their drift guards (fallback
 # parity pins, verbatim plumbing pins, exclusion contract, posture tests),
 # (6) profile distribution and the profile_drift SUMMARY contract hold
@@ -79,10 +79,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Installer marker-migration fixture tests
-        # Throwaway HOME per case; guards the legacy ai-dev-playbook ->
-        # house-rules migration loops for the whole legacy-recognition
-        # window (shellcheck is blind to logic regressions here).
+      - name: Installer marker fixture tests
+        # Throwaway HOME per case; guards fresh-install idempotency and the
+        # malformed-marker refusal paths in the three installers (shellcheck
+        # is blind to logic regressions here).
         run: bash scripts/tests/test_marker_migration.sh
 
   profile-distribution:

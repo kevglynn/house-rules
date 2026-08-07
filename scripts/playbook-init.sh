@@ -417,16 +417,12 @@ fi
 # content is already there.
 
 agents_md="$PROJECT_ROOT/AGENTS.md"
-# Marker prefix is "house-rules:" (final kit name, decision 0001 A1). Target
-# repos bootstrapped by the predecessor playbook carry the legacy
-# "ai-dev-playbook:" prefix in AGENTS.md, so the section scan below recognizes
-# BOTH prefixes: a legacy-marked section is rewritten in place under the new
-# markers, never duplicated. Keep the legacy recognition until no target repo
-# still carries an old-marker section.
+# Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
+# Recognition of the predecessor playbook's legacy marker prefix was
+# sunset 2026-08-06 (process-kit-26b) after a field sweep across every sync
+# target and HOME artifact showed zero old-marker sections remaining.
 agents_begin="<!-- BEGIN house-rules:agents-md -->"
 agents_end="<!-- END house-rules:agents-md -->"
-agents_begin_legacy="<!-- BEGIN ai-dev-playbook:agents-md -->"
-agents_end_legacy="<!-- END ai-dev-playbook:agents-md -->"
 
 # Version stamp: sourced from the kit's VERSION file (single source of truth).
 # Rendered as a machine-parseable marker line inside the section so
@@ -492,14 +488,13 @@ AGENTS_SECTION
 }
 
 # Replace the existing marker-delimited block in place (atomic tmp+mv), used
-# when the section is present but its version stamp is stale or missing, or
-# when it carries legacy markers. Recognizes both marker prefixes and emits
-# exactly one fresh section even if the file somehow carries several.
+# when the section is present but its version stamp is stale or missing.
+# Emits exactly one fresh section even if the file somehow carries several.
 refresh_playbook_agents_section() {
   local tmp in_block=0 emitted=0
   tmp="$(mktemp "${agents_md}.tmp.XXXXXX")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && { [ "$line" = "$agents_begin" ] || [ "$line" = "$agents_begin_legacy" ]; }; then
+    if [ $in_block -eq 0 ] && [ "$line" = "$agents_begin" ]; then
       in_block=1
       if [ $emitted -eq 0 ]; then
         render_playbook_agents_section
@@ -508,7 +503,7 @@ refresh_playbook_agents_section() {
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$agents_end" ] || [ "$line" = "$agents_end_legacy" ]; then
+      if [ "$line" = "$agents_end" ]; then
         in_block=0
       fi
       continue
@@ -529,13 +524,7 @@ refresh_playbook_agents_section() {
   mv "$tmp" "$agents_md"
 }
 
-# Legacy check comes first: a legacy (or mixed) file is always rewritten in
-# place, migrating the section to the current markers.
-if [ -f "$agents_md" ] && grep -qF "$agents_begin_legacy" "$agents_md"; then
-  if refresh_playbook_agents_section; then
-    echo "✓ Migrated legacy-marked AGENTS.md playbook section to house-rules markers (${playbook_version_label})"
-  fi
-elif [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
+if [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
   if grep -qF "<!-- house-rules:version ${playbook_version} -->" "$agents_md"; then
     echo "✓ AGENTS.md playbook section current (${playbook_version_label})"
   elif refresh_playbook_agents_section; then

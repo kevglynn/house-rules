@@ -19,7 +19,7 @@ This is **house-rules** (incubated under the working name process-kit) — the c
 
 - The kit name (**house-rules**), license (Apache-2.0), and publication posture (public, history as-is) were decided 2026-08-05 — recorded with rationale in `docs/decisions/0001-naming-license-publication.md`.
 - Skill and rule content must stay **project-neutral**: no project names, people, or project/user-specific parameters in the generic core. Project specifics belong in per-project overlay files in consuming repos; per-user parameters belong in the machine-global overlay (`~/.agents/overlay.md`) — both scopes documented in `skills/README.md`.
-- Marker strings in installers use the `house-rules:` prefix (final name, 0001 A1). The installers still recognize the legacy `ai-dev-playbook:` markers written by the predecessor repo and rewrite those blocks in place under the new prefix on their next run — a one-shot migration, no duplicate blocks. Do not remove the legacy-recognition patterns while any machine or target repo still carries old-marker artifacts.
+- Marker strings in installers use the `house-rules:` prefix (final name, 0001 A1). Recognition of the predecessor's legacy `ai-dev-playbook:` markers was sunset 2026-08-06 (process-kit-26b) after a field sweep across every sync target and HOME artifact showed zero old-marker artifacts remaining; the malformed-marker guards stayed — they protect current-marker files too.
 
 ## For bootstrapping target repos
 

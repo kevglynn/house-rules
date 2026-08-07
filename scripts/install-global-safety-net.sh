@@ -75,15 +75,11 @@ done
 # --- Block rendering ---
 
 # Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
-# ~/CLAUDE.md blocks installed by the predecessor playbook carry the legacy
-# "ai-dev-playbook:" prefix, so every block-boundary scan below recognizes
-# BOTH prefixes: a legacy (or mixed) file is rewritten in place under the new
-# markers, never duplicated. Keep the legacy recognition until no machine
-# still carries old-marker blocks.
+# Recognition of the predecessor playbook's legacy marker prefix was
+# sunset 2026-08-06 (process-kit-26b) after a field sweep showed zero
+# old-marker blocks remaining on this machine's artifacts.
 marker_begin() { printf '<!-- BEGIN house-rules:%s -->' "$1"; }
 marker_end()   { printf '<!-- END house-rules:%s -->' "$1"; }
-legacy_marker_begin() { printf '<!-- BEGIN ai-dev-playbook:%s -->' "$1"; }
-legacy_marker_end()   { printf '<!-- END ai-dev-playbook:%s -->' "$1"; }
 
 block_source_path() { printf '%s/%s.md' "$SAFETY_NET_DIR" "$1"; }
 
@@ -108,27 +104,19 @@ render_block() {
 has_block() {
   local id="$1"
   [ -f "$CLAUDE_MD" ] || return 1
-  grep -qF "$(marker_begin "$id")" "$CLAUDE_MD" \
-    || grep -qF "$(legacy_marker_begin "$id")" "$CLAUDE_MD"
-}
-
-has_legacy_block() {
-  local id="$1"
-  [ -f "$CLAUDE_MD" ] && grep -qF "$(legacy_marker_begin "$id")" "$CLAUDE_MD"
+  grep -qF "$(marker_begin "$id")" "$CLAUDE_MD"
 }
 
 current_block_content() {
   local id="$1"
   [ -f "$CLAUDE_MD" ] || return 1
-  local begin end lbegin lend in_block=0
+  local begin end in_block=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
-  lbegin="$(legacy_marker_begin "$id")"
-  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; then in_block=1; fi
+    if [ "$line" = "$begin" ]; then in_block=1; fi
     [ $in_block -eq 1 ] && printf '%s\n' "$line"
-    if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then in_block=0; fi
+    if [ "$line" = "$end" ]; then in_block=0; fi
   done < "$CLAUDE_MD"
 }
 
@@ -169,13 +157,11 @@ replace_block() {
   local id="$1"
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end lbegin lend in_block=0 emitted=0
+  local begin end in_block=0 emitted=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
-  lbegin="$(legacy_marker_begin "$id")"
-  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && { [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; }; then
+    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
       in_block=1
       if [ $emitted -eq 0 ]; then
         render_block "$id"
@@ -184,7 +170,7 @@ replace_block() {
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then
+      if [ "$line" = "$end" ]; then
         in_block=0
       fi
       continue
@@ -211,19 +197,17 @@ remove_block() {
   has_block "$id" || return 0
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end lbegin lend in_block=0 consumed=0
+  local begin end in_block=0 consumed=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
-  lbegin="$(legacy_marker_begin "$id")"
-  lend="$(legacy_marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && { [ "$line" = "$begin" ] || [ "$line" = "$lbegin" ]; }; then
+    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
       in_block=1
       consumed=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$end" ] || [ "$line" = "$lend" ]; then
+      if [ "$line" = "$end" ]; then
         in_block=0
       fi
       continue
@@ -394,16 +378,6 @@ case "$MODE" in
           echo "✗ Failed to write block '$id' to $CLAUDE_MD (write error — check permissions)" >&2
           failed=$((failed + 1))
         fi
-      elif has_legacy_block "$id"; then
-        replace_block "$id"
-        case $? in
-          0) echo "✓ Migrated block '$id' in $CLAUDE_MD to house-rules markers" ;;
-          2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
-          *)
-            echo "✗ Failed to rewrite block '$id' in $CLAUDE_MD (write error — check permissions)" >&2
-            failed=$((failed + 1))
-            ;;
-        esac
       elif block_is_current "$id"; then
         echo "✓ Block '$id' is already current (no changes)"
       else

@@ -19,16 +19,12 @@ set -uo pipefail
 
 PLAYBOOK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ALIASES_FILE="$HOME/.playbook-aliases.sh"
-# Marker prefix is "house-rules:" (final kit name, decision 0001 A1). Rc
-# files on machines set up by the predecessor playbook carry the legacy
-# "ai-dev-playbook:" prefix, so the block scans below recognize BOTH prefixes:
-# a legacy block is rewritten in place under the new markers, never
-# duplicated. Keep the legacy recognition until no machine still carries an
-# old-marker rc block.
+# Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
+# Recognition of the predecessor playbook's legacy marker prefix was
+# sunset 2026-08-06 (process-kit-26b) after a field sweep showed zero
+# old-marker rc blocks remaining.
 SOURCE_BEGIN="# BEGIN house-rules:aliases"
 SOURCE_END="# END house-rules:aliases"
-LEGACY_SOURCE_BEGIN="# BEGIN ai-dev-playbook:aliases"
-LEGACY_SOURCE_END="# END ai-dev-playbook:aliases"
 MODE="install"
 SHELL_OVERRIDE=""
 
@@ -153,12 +149,7 @@ BLOCK
 rc_has_block() {
   local rc="$1"
   [ -f "$rc" ] || return 1
-  grep -qF "$SOURCE_BEGIN" "$rc" || grep -qF "$LEGACY_SOURCE_BEGIN" "$rc"
-}
-
-rc_has_legacy_block() {
-  local rc="$1"
-  [ -f "$rc" ] && grep -qF "$LEGACY_SOURCE_BEGIN" "$rc"
+  grep -qF "$SOURCE_BEGIN" "$rc"
 }
 
 rc_append_block() {
@@ -186,26 +177,20 @@ rc_append_block() {
   mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
 }
 
-# One scanner for both rewrites: strips every managed block (either marker
-# generation); with `emit`, re-emits the current-generation block at the
-# first BEGIN — in place, because the aliases-file header documents
-# source-order precedence, so block position is load-bearing.
+# Strips every managed block from the rc file (used by uninstall).
 rc_rewrite_block() {
-  local rc="$1" emit="${2:-}"
+  local rc="$1"
   local tmp
   tmp="$(mktemp "${rc}.tmp.XXXXXX")" || return 1
   local in_block=0 consumed=0
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && { [ "$line" = "$SOURCE_BEGIN" ] || [ "$line" = "$LEGACY_SOURCE_BEGIN" ]; }; then
+    if [ $in_block -eq 0 ] && [ "$line" = "$SOURCE_BEGIN" ]; then
       in_block=1
-      if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
-        rc_block
-      fi
       consumed=1
       continue
     fi
     if [ $in_block -eq 1 ]; then
-      if [ "$line" = "$SOURCE_END" ] || [ "$line" = "$LEGACY_SOURCE_END" ]; then
+      if [ "$line" = "$SOURCE_END" ]; then
         in_block=0
       fi
       continue
@@ -232,13 +217,6 @@ rc_remove_block() {
   rc_has_block "$rc" || return 0
   rc_rewrite_block "$rc"
 }
-
-# Rewrite a legacy-marked block (and any duplicate managed block) in place
-# under the current markers — one block out, regardless of what was in.
-rc_migrate_block() {
-  rc_rewrite_block "$1" emit
-}
-
 # --- Dispatch ---
 
 shell_kind="$(detect_shell)"
@@ -276,9 +254,6 @@ case "$MODE" in
     fi
     if ! rc_has_block "$rc_file"; then
       echo "✗ Source line not present in $rc_file"
-      missing=1
-    elif rc_has_legacy_block "$rc_file"; then
-      echo "⚠ Alias block in $rc_file carries legacy ai-dev-playbook markers (out of date — re-run installer to migrate)"
       missing=1
     else
       echo "✓ Source line present in $rc_file"
@@ -341,17 +316,7 @@ case "$MODE" in
       failed=$((failed + 1))
     fi
 
-    if rc_has_legacy_block "$rc_file"; then
-      rc_migrate_block "$rc_file"
-      case $? in
-        0) echo "✓ Migrated alias block in $rc_file to house-rules markers" ;;
-        2) : ;;  # malformed markers: warned on stderr, file untouched (0em contract)
-        *)
-          echo "✗ Failed to rewrite the alias block in $rc_file (write error — check permissions)" >&2
-          failed=$((failed + 1))
-          ;;
-      esac
-    elif rc_has_block "$rc_file"; then
+    if rc_has_block "$rc_file"; then
       echo "✓ Source line already present in $rc_file"
     else
       if rc_append_block "$rc_file"; then
