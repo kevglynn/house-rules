@@ -1,5 +1,7 @@
 # Welcome — From Returning Coder to Agent-Native Builder
 
+> **Side door for returning coders.** The default front door is [README.md](README.md) (try-it demo → core plugin). This page is the agent-driven onboarding path if you used to code, have been away, and want a sequenced intake instead.
+
 You used to ship code. You've been away. You don't have time to relearn everything from scratch — you want a sensei that accelerates the rate of learning by orders of magnitude.
 
 That's what this is. **This doc is the intake. Your agent is the sensei.** The repo's rules and skills have already taught the agent how to teach you. Your job is to show up and follow the order.
