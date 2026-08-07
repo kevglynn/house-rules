@@ -7,7 +7,9 @@ ask the user **once per session**:
 
 > This project isn't bootstrapped with house-rules. Options:
 >
-> 1. Run `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool cursor|claude|both` to bootstrap
+> 1. Confirm tool choice (cursor / claude / both), then run
+>    `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool <choice>`
+>    e.g. `--tool cursor`
 > 2. Skip for this session
 > 3. Add this repo to `~/.house-rules-ignore` to silence this prompt permanently
 >

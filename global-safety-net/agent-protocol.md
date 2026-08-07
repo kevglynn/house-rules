@@ -10,7 +10,7 @@ If the user invokes the kit ("use house-rules", "bootstrap this repo",
    | Exit | SUMMARY key | Meaning | Proposed action |
    |------|-------------|---------|-----------------|
    | `0` | `ok` | Healthy | Report status; no action |
-   | `2` | `bootstrap_needed` | No rules in this repo | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool cursor\|claude\|both` |
+   | `2` | `bootstrap_needed` | No rules in this repo | Ask which tool, then `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" init --tool cursor` (or `--tool claude` / `--tool both`) |
    | `3` | `rules_drift_cursor` | Cursor rules stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" sync --format cursor` |
    | `3` | `rules_drift_claude` | Claude rules stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" sync --format claude` |
    | `3` | `rules_drift_both` | Both stale | `bash "${PROCESS_KIT:-$HOME/process-kit}/scripts/house-rules" sync --format all` |

@@ -34,7 +34,7 @@ One-command project setup for house-rules.
 Usage: init.sh [options]
 
 Options:
-  --tool cursor|claude|both   Which tool to set up for (default: ask)
+  --tool <cursor|claude|both> Which tool to set up for (default: ask)
   --stealth                   Use bd init --stealth (for personal repos)
   --no-hooks                  Skip bd hooks install (default: install beads git hooks)
   --skills                    Copy skill directories from the kit into .cursor/skills/
@@ -147,6 +147,14 @@ if [ -z "$TOOL" ]; then
     *) echo "Invalid choice. Use 1, 2, or 3."; exit 1 ;;
   esac
 fi
+
+case "$TOOL" in
+  cursor|claude|both) ;;
+  *)
+    echo "Invalid --tool: ${TOOL:-<empty>} (use cursor, claude, or both)" >&2
+    exit 1
+    ;;
+esac
 
 echo ""
 
@@ -495,47 +503,90 @@ AGENTS_SECTION
 # in install-aliases.sh and install-global-safety-net.sh, whose scan loop
 # this mirrors (defer/extraction trigger noted at rewrite_block there).
 refresh_agents_section() {
-  local tmp in_block=0 emitted=0
+  local tmp in_block=0 emitted=0 malformed=0
   tmp="$(mktemp "${agents_md}.tmp.XXXXXX")" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$agents_begin" ]; then
-      in_block=1
-      if [ $emitted -eq 0 ]; then
-        render_agents_section
-        emitted=1
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$agents_begin" ]; then
+        in_block=1
+        if [ $emitted -eq 0 ]; then
+          render_agents_section
+          emitted=1
+        fi
+        continue
       fi
-      continue
-    fi
-    if [ $in_block -eq 1 ]; then
       if [ "$line" = "$agents_end" ]; then
-        in_block=0
-      elif [ "$line" = "$agents_begin" ]; then
-        # A BEGIN while a block is already open means the earlier BEGIN
-        # lost its END and the scan is swallowing a real section plus any
-        # user lines between them — stop here so the guard below refuses.
+        malformed=1
         break
       fi
+      printf '%s\n' "$line"
       continue
     fi
-    printf '%s\n' "$line"
+    if [ "$line" = "$agents_end" ]; then
+      in_block=0
+      continue
+    fi
+    # Any other HTML house-rules marker while open (cross-ID / nested /
+    # near-miss) would discard user bytes — refuse before mv.
+    case "$line" in
+      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
+        malformed=1
+        break
+        ;;
+    esac
+    continue
   done < "$agents_md" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF, or a nested BEGIN hit above) would have
-  # swallowed user content into the tmp file — silently deleting it on
-  # mv; a scan that consumed no BEGIN at all (emitted=0, e.g. CRLF or
-  # indented marker lines that match the substring grep but not the
-  # whole-line test) would claim success while rewriting nothing.
-  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ]; then
+  # (in_block still open at EOF), nested/cross-ID/near-miss markers, an
+  # orphan END, or a scan that consumed no BEGIN (emitted=0).
+  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ] || [ $malformed -eq 1 ]; then
     rm -f "$tmp"
-    echo "⚠ $agents_md: house-rules section markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    echo "⚠ $agents_md: house-rules section markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
     return 2
   fi
   mv "$tmp" "$agents_md" || { rm -f "$tmp"; return 1; }
 }
 
+# Structural currency: exactly one well-formed section containing the live
+# version stamp. Stamp-anywhere grep was wrong — a later stale duplicate
+# (or an orphan carrying the stamp text) could hide forever.
+agents_section_is_current() {
+  local in_block=0 count=0 stamp_ok=0
+  local stamp="<!-- house-rules:version ${kit_version} -->"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$agents_begin" ]; then
+        in_block=1
+        count=$((count + 1))
+        if [ "$count" -gt 1 ]; then
+          return 1
+        fi
+        continue
+      fi
+      if [ "$line" = "$agents_end" ]; then
+        return 1
+      fi
+      continue
+    fi
+    if [ "$line" = "$agents_end" ]; then
+      in_block=0
+      continue
+    fi
+    case "$line" in
+      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
+        return 1
+        ;;
+    esac
+    if [ "$line" = "$stamp" ]; then
+      stamp_ok=1
+    fi
+  done < "$agents_md"
+  [ $in_block -eq 0 ] && [ "$count" -eq 1 ] && [ "$stamp_ok" -eq 1 ]
+}
+
 agents_refresh_failed=0
 if [ -f "$agents_md" ] && grep -qF "$agents_begin" "$agents_md"; then
-  if grep -qF "<!-- house-rules:version ${kit_version} -->" "$agents_md"; then
+  if agents_section_is_current; then
     echo "✓ AGENTS.md house-rules section current (${kit_version_label})"
   elif refresh_agents_section; then
     echo "✓ Refreshed AGENTS.md house-rules section → ${kit_version_label} (stamp was stale or missing)"
@@ -584,7 +635,7 @@ case "$PROJECT_ROOT/" in
     echo "– Skipped ~/.house-rules-sync-targets registration (throwaway path under ${tmp_root%/})"
     ;;
   *)
-    if [ -f "$TARGETS_FILE" ] && grep -qF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+    if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
       echo "✓ Already in ~/.house-rules-sync-targets"
     else
       echo "$PROJECT_ROOT" >> "$TARGETS_FILE"

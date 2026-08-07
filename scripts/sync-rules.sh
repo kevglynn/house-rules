@@ -239,11 +239,15 @@ safe_backup() {
       local ts bak
       ts="$(date +%Y%m%d%H%M%S)"
       bak="${dest_file}.${ts}.bak"
-      cp "$dest_file" "$bak"
+      if ! cp "$dest_file" "$bak"; then
+        echo "✗ Failed to back up $(basename "$dest_file") before overwrite — refusing to sync this file" >&2
+        return 1
+      fi
       echo "    ↳ backed up $(basename "$dest_file") → $(basename "$bak")"
       safe_backup_count=$((safe_backup_count + 1))
     fi
   fi
+  return 0
 }
 
 sync_cursor_to() {
@@ -252,10 +256,10 @@ sync_cursor_to() {
     echo "    [dry-run] Would copy ${#MDC_FILES[@]} .mdc files → $dest"
     return 0
   fi
-  mkdir -p "$dest"
+  mkdir -p "$dest" || return 1
   for f in "${MDC_FILES[@]}"; do
-    safe_backup "$SRC/$f" "$dest/$f"
-    cp "$SRC/$f" "$dest/$f"
+    safe_backup "$SRC/$f" "$dest/$f" || return 1
+    cp "$SRC/$f" "$dest/$f" || return 1
   done
   cleanup_stale_cursor "$dest"
 }
@@ -266,7 +270,7 @@ sync_claude_to() {
     echo "    [dry-run] Would generate ${#MDC_FILES[@]} .md files → $dest"
     return 0
   fi
-  mkdir -p "$dest"
+  mkdir -p "$dest" || return 1
   for f in "${MDC_FILES[@]}"; do
     local md_name="${f%.mdc}.md"
     if $SAFE_MODE && [ -f "$dest/$md_name" ]; then
@@ -279,12 +283,15 @@ sync_claude_to() {
         local ts bak_name
         ts="$(date +%Y%m%d%H%M%S)"
         bak_name="${md_name}.${ts}.bak"
-        cp "$dest/$md_name" "$dest/$bak_name"
+        if ! cp "$dest/$md_name" "$dest/$bak_name"; then
+          echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
+          return 1
+        fi
         echo "    ↳ backed up $md_name → $bak_name"
         safe_backup_count=$((safe_backup_count + 1))
       fi
     fi
-    strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g' > "$dest/$md_name"
+    strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g' > "$dest/$md_name" || return 1
   done
   cleanup_stale_claude "$dest"
 }
@@ -409,7 +416,7 @@ sync_repo() {
       echo "Checking ($label): $repo_root"
       check_cursor_in "$cursor_dest" || return 1
     else
-      sync_cursor_to "$cursor_dest"
+      sync_cursor_to "$cursor_dest" || return 1
       if ! $DRY_RUN; then echo "Synced ($label) → $repo_root"; fi
     fi
   elif [[ "$fmt" == "claude" ]]; then
@@ -418,7 +425,7 @@ sync_repo() {
       echo "Checking ($label): $repo_root"
       check_claude_in "$claude_dest" || return 1
     else
-      sync_claude_to "$claude_dest"
+      sync_claude_to "$claude_dest" || return 1
       if ! $DRY_RUN; then echo "Synced ($label) → $repo_root"; fi
 
       # Warn if .claude/rules/ is gitignored
@@ -479,7 +486,12 @@ for target in "${TARGETS[@]}"; do
 
   for fmt in "${FORMATS_TO_RUN[@]}"; do
     if ! sync_repo "$repo_root" "$fmt"; then
-      stale_count=$((stale_count + 1))
+      if $CHECK_MODE; then
+        stale_count=$((stale_count + 1))
+      else
+        error_count=$((error_count + 1))
+        errors_summary+=("$repo_root ($fmt): sync failed")
+      fi
     fi
     sync_worktrees "$repo_root" "$fmt"
   done
@@ -525,7 +537,7 @@ fi
 if $CHECK_MODE && [ $stale_count -gt 0 ]; then
   exit 1
 fi
-if [ $error_count -gt 0 ] && [ $repo_count -eq 0 ]; then
+if [ $error_count -gt 0 ]; then
   exit 1
 fi
 exit 0

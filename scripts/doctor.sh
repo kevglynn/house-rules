@@ -224,7 +224,7 @@ if [ -d "$claude_rules" ]; then
 fi
 
 if ! $has_cursor && ! $has_claude; then
-  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both"
+  check_fail "No rules found (neither .cursor/rules/ nor .claude/rules/)" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
   bootstrap_missing=1
 fi
 
@@ -440,11 +440,27 @@ elif [ ! -f "$agents_md" ] || ! grep -qF "$agents_marker" "$agents_md" 2>/dev/nu
 elif [ -z "$kit_version" ]; then
   check_warn "Kit VERSION file missing at $KIT_ROOT/VERSION — cannot check the AGENTS.md section stamp"
 else
-  target_version="$(sed -nE 's/.*<!-- house-rules:version ([^ ]*) -->.*/\1/p' "$agents_md" | head -n1)"
-  if [ "$target_version" = "$kit_version" ]; then
-    check_pass "AGENTS.md house-rules section current (v$kit_version)"
+  begin_count="$(grep -cF "$agents_marker" "$agents_md" 2>/dev/null || true)"
+  begin_count="${begin_count:-0}"
+  if [ "$begin_count" -gt 1 ]; then
+    check_warn "AGENTS.md has $begin_count house-rules sections — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (collapses to one current section)"
   else
-    check_warn "AGENTS.md house-rules section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both (refreshes the section in place)"
+    agents_end="<!-- END house-rules:agents-md -->"
+    target_version="$(awk -v b="$agents_marker" -v e="$agents_end" '
+      $0 == b { f = 1; next }
+      $0 == e { exit }
+      f && /<!-- house-rules:version / {
+        sub(/.*<!-- house-rules:version /, "")
+        sub(/ -->.*/, "")
+        print
+        exit
+      }
+    ' "$agents_md")"
+    if [ "$target_version" = "$kit_version" ]; then
+      check_pass "AGENTS.md house-rules section current (v$kit_version)"
+    else
+      check_warn "AGENTS.md house-rules section is stamped ${target_version:-<no stamp — pre-versioning init>} but the kit is v$kit_version — re-run: bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (refreshes the section in place)"
+    fi
   fi
 fi
 
@@ -507,7 +523,7 @@ if [ -n "$scratchpad" ]; then
     check_warn "$missing_sections section(s) missing — see operating-model.mdc for the required titles"
   fi
 else
-  check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both (creates it automatically)"
+  check_fail "No scratchpad found" "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both) (creates it automatically)"
 fi
 
 echo ""
@@ -524,11 +540,11 @@ if $is_kit_repo; then
   # The kit is the sync SOURCE — registration as a target is inapplicable.
   echo "  – kit repo itself: sync source, not a target (registration check skipped)"
 elif [ -f "$TARGETS_FILE" ]; then
-  if grep -qF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+  if grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
     check_pass "Project is in ~/.house-rules-sync-targets"
   elif $has_beads; then
     check_fail "Beads project not in ~/.house-rules-sync-targets — rules will drift silently" \
-      "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor|claude|both"
+      "bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)"
   else
     check_fail "Project not in ~/.house-rules-sync-targets" "echo \"$PROJECT_ROOT\" >> ~/.house-rules-sync-targets"
   fi
@@ -565,7 +581,7 @@ if [ -x "$installer" ]; then
   # The installer's --check always emits ✗/⚠ on nonzero exit, so the
   # branching collapses to: ok / out-of-date / not-installed.
   if [ $status_code -eq 0 ]; then
-    check_pass "Global agent-identity block installed in ~/CLAUDE.md"
+    check_pass "Global safety net blocks installed in ~/CLAUDE.md"
   elif printf '%s\n' "$status_output" | grep -qF "out of date"; then
     check_warn "Global safety net present in ~/CLAUDE.md but out of date — re-run: bash $installer"
   else

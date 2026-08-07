@@ -108,6 +108,39 @@ check "absent profile: no profile_drift SUMMARY emitted" \
 check "absent profile: no stale-profile failure reported" \
   out_lacks "$agent_out" "profiles/conventions.toml is stale"
 
+# --- 5. Sync-target registration uses exact line match (not substring): a
+#        longer sibling path must not make doctor/init treat the shorter
+#        path as already registered. init skips /tmp registration, so this
+#        pins doctor + the grep contract directly. ---
+h2="$(new_home)"
+mkdir -p "$h2/project-foo" "$h2/project"
+echo "$h2/project-foo" > "$h2/.house-rules-sync-targets"
+git -C "$h2/project" init -q
+(cd "$h2/project" && HOME="$h2" bash "$INIT" --tool cursor --no-hooks > /dev/null 2>&1)
+check "sync-targets prefix: qxF rejects substring sibling" \
+  bash -c "! grep -qxF '$h2/project' '$h2/.house-rules-sync-targets'"
+doc_out="$(HOME="$h2" bash "$DOCTOR" "$h2/project" 2>&1)" || true
+check "sync-targets prefix: doctor does not false-positive on sibling" \
+  out_lacks "$doc_out" "Project is in ~/.house-rules-sync-targets"
+check "sync-targets prefix: doctor reports missing exact registration" \
+  out_has "$doc_out" "not in ~/.house-rules-sync-targets"
+
+# --- 6. sync-rules exits nonzero when any listed target fails validation,
+#        even if another target syncs successfully. ---
+SYNC="$KIT_ROOT/scripts/sync-rules.sh"
+h3="$(new_home)"
+good="$(mktemp -d)"
+CLEANUP+=("$good")
+git -C "$good" init -q
+(cd "$good" && HOME="$h3" bash "$INIT" --tool cursor --no-hooks > /dev/null 2>&1)
+printf '%s\n' "$good" "/no/such/sync/target-$$" > "$h3/.house-rules-sync-targets"
+out="$(HOME="$h3" bash "$SYNC" --format cursor 2>&1)"
+rc_sync=$?
+check "sync partial target failure: exits nonzero" \
+  test "$rc_sync" -ne 0
+check "sync partial target failure: reports skipped target" \
+  out_has "$out" "skipped due to errors"
+
 echo ""
 echo "passed: $PASS  failed: $FAIL"
 [ $FAIL -eq 0 ]

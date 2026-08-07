@@ -128,6 +128,47 @@ block_is_current() {
   [ -n "$have" ] && [ "${have%$'\n'}" = "${want%$'\n'}" ]
 }
 
+# Whole-file house-rules marker grammar check. Per-block rewrite_block can
+# refuse its own id, but install/uninstall walks BLOCKS independently — a
+# later id's rewrite would still destroy user bytes nested under an earlier
+# malformed block. Refuse any mutation when the stream is not a flat
+# sequence of well-formed, non-overlapping HTML house-rules marker pairs.
+claude_md_markers_ok() {
+  [ -f "$CLAUDE_MD" ] || return 0
+  local in_block_id="" line id
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '<!-- BEGIN house-rules:'*)
+        id="${line#<!-- BEGIN house-rules:}"
+        id="${id%% -->*}"
+        if [ -n "$in_block_id" ]; then
+          return 1
+        fi
+        if [ "$line" != "$(marker_begin "$id")" ]; then
+          return 1
+        fi
+        in_block_id="$id"
+        ;;
+      '<!-- END house-rules:'*)
+        id="${line#<!-- END house-rules:}"
+        id="${id%% -->*}"
+        if [ -z "$in_block_id" ] || [ "$id" != "$in_block_id" ]; then
+          return 1
+        fi
+        if [ "$line" != "$(marker_end "$id")" ]; then
+          return 1
+        fi
+        in_block_id=""
+        ;;
+    esac
+  done < "$CLAUDE_MD"
+  [ -z "$in_block_id" ]
+}
+
+claude_md_refuse_malformed() {
+  echo "⚠ $CLAUDE_MD: house-rules markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+}
+
 # --- Single-block write operations (multi-pass: one file rewrite per block) ---
 
 # Writer return codes (shared by the block writers): 0 = written,
@@ -163,43 +204,57 @@ append_block_new() {
 # file. ceiling: a scan or guard fix must be hand-propagated to all three
 # copies. upgrade when: a fourth copy appears, or a scan-behavior fix has
 # to land in every copy — extract a sourced scripts/lib helper then.
+# (Tier 2 process-kit-anq hand-propagated cross-ID / orphan-END / near-miss
+# guards again; extraction trigger remains open.)
 rewrite_block() {
   local id="$1" emit="${2:-}"
   local tmp
   tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end in_block=0 consumed=0
+  local begin end in_block=0 consumed=0 malformed=0
   begin="$(marker_begin "$id")"
   end="$(marker_end "$id")"
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$begin" ]; then
-      in_block=1
-      if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
-        render_block "$id"
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$begin" ]; then
+        in_block=1
+        if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
+          render_block "$id"
+        fi
+        consumed=1
+        continue
       fi
-      consumed=1
-      continue
-    fi
-    if [ $in_block -eq 1 ]; then
+      # Orphan END for this id is malformed grammar — refuse rather than
+      # copy it through and claim a clean rewrite.
       if [ "$line" = "$end" ]; then
-        in_block=0
-      elif [ "$line" = "$begin" ]; then
-        # A BEGIN while a block is already open means the earlier BEGIN
-        # lost its END and the scan is swallowing a real block plus any
-        # user lines between them — stop here so the guard below refuses.
+        malformed=1
         break
       fi
+      printf '%s\n' "$line"
       continue
     fi
-    printf '%s\n' "$line"
+    # in_block=1: only the exact END for this id closes cleanly. Any other
+    # HTML house-rules marker (cross-ID BEGIN/END, same-ID nested BEGIN,
+    # near-miss END with trailing whitespace) means the scan would discard
+    # user bytes between markers — refuse before mv.
+    if [ "$line" = "$end" ]; then
+      in_block=0
+      continue
+    fi
+    case "$line" in
+      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
+        malformed=1
+        break
+        ;;
+    esac
+    continue
   done < "$CLAUDE_MD" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF, or a nested BEGIN hit above) would have
-  # swallowed user content on mv; a scan that consumed no BEGIN (e.g.
-  # CRLF or indented marker lines that match the substring grep but not
-  # the whole-line test) would claim success while rewriting nothing.
-  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
+  # (in_block still open at EOF), a nested/cross-ID/near-miss marker, an
+  # orphan END, or a scan that consumed no BEGIN (e.g. CRLF markers that
+  # match substring grep but not the whole-line test).
+  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ] || [ $malformed -eq 1 ]; then
     rm -f "$tmp"
-    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
     return 2
   fi
   mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
@@ -296,6 +351,10 @@ done
 
 case "$MODE" in
   check)
+    if ! claude_md_markers_ok; then
+      claude_md_refuse_malformed
+      exit 1
+    fi
     missing=0
     stale=0
     for id in "${BLOCKS[@]}"; do
@@ -318,6 +377,10 @@ case "$MODE" in
     ;;
 
   uninstall)
+    if ! claude_md_markers_ok; then
+      claude_md_refuse_malformed
+      exit 1
+    fi
     removed=0
     failed=0
     refused=0
@@ -365,6 +428,11 @@ case "$MODE" in
   install)
     echo "=== Installing global safety net ==="
     echo ""
+
+    if ! claude_md_markers_ok; then
+      claude_md_refuse_malformed
+      exit 1
+    fi
 
     failed=0
     refused=0

@@ -197,37 +197,47 @@ rc_rewrite_block() {
   local rc="$1" emit="${2:-}"
   local tmp
   tmp="$(mktemp "${rc}.tmp.XXXXXX")" || return 1
-  local in_block=0 consumed=0
+  local in_block=0 consumed=0 malformed=0
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ] && [ "$line" = "$SOURCE_BEGIN" ]; then
-      in_block=1
-      if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
-        rc_block
+    if [ $in_block -eq 0 ]; then
+      if [ "$line" = "$SOURCE_BEGIN" ]; then
+        in_block=1
+        if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
+          rc_block
+        fi
+        consumed=1
+        continue
       fi
-      consumed=1
-      continue
-    fi
-    if [ $in_block -eq 1 ]; then
+      # Orphan END is malformed grammar — refuse rather than copy it
+      # through and claim a clean rewrite.
       if [ "$line" = "$SOURCE_END" ]; then
-        in_block=0
-      elif [ "$line" = "$SOURCE_BEGIN" ]; then
-        # A BEGIN while a block is already open means the earlier BEGIN
-        # lost its END and the scan is swallowing a real block plus any
-        # user lines between them — stop here so the guard below refuses.
+        malformed=1
         break
       fi
+      printf '%s\n' "$line"
       continue
     fi
-    printf '%s\n' "$line"
+    # in_block=1: only the exact END closes cleanly. Any other rc
+    # house-rules marker (nested BEGIN, near-miss END with trailing
+    # whitespace) means the scan would discard user bytes — refuse.
+    if [ "$line" = "$SOURCE_END" ]; then
+      in_block=0
+      continue
+    fi
+    case "$line" in
+      '# BEGIN house-rules:'*|'# END house-rules:'*)
+        malformed=1
+        break
+        ;;
+    esac
+    continue
   done < "$rc" > "$tmp"
   # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF, or a nested BEGIN hit above) would have
-  # swallowed user content on mv; a scan that consumed no BEGIN (e.g.
-  # CRLF or indented marker lines that match the substring grep but not
-  # the whole-line test) would report a rewrite that never happened.
-  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ]; then
+  # (in_block still open at EOF), a nested/near-miss marker, an orphan
+  # END, or a scan that consumed no BEGIN (e.g. CRLF markers).
+  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ] || [ $malformed -eq 1 ]; then
     rm -f "$tmp"
-    echo "⚠ $rc: alias block markers are malformed (unpaired BEGIN or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
+    echo "⚠ $rc: alias block markers are malformed (unpaired/nested BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
     return 2
   fi
   mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
@@ -379,23 +389,27 @@ case "$MODE" in
     fi
 
     echo ""
-    echo "=== Done ==="
+    if [ $((failed + refused)) -eq 0 ]; then
+      echo "=== Done ==="
+      echo ""
+      echo "Activate now: source \"$rc_file\"   (or open a new terminal)"
+      echo ""
+      echo "Installed aliases:"
+      echo "  hr             The house-rules dispatcher (init | doctor | sync)"
+      echo "  house-rules    Same dispatcher, full name"
+      echo "  PROCESS_KIT → $KIT_ROOT"
+      echo ""
+      echo "Verify: bash $(cd "$(dirname "$0")" && pwd)/install-aliases.sh --check"
+      exit 0
+    fi
+    echo "=== Incomplete ==="
     echo ""
-    echo "Activate now: source \"$rc_file\"   (or open a new terminal)"
-    echo ""
-    echo "Installed aliases:"
-    echo "  hr             The house-rules dispatcher (init | doctor | sync)"
-    echo "  house-rules    Same dispatcher, full name"
-    echo "  PROCESS_KIT → $KIT_ROOT"
-    echo ""
-    echo "Verify: bash $(cd "$(dirname "$0")" && pwd)/install-aliases.sh --check"
     if [ $refused -gt 0 ]; then
       echo "⚠ The rc source block was NOT refreshed (malformed markers — see warning above); the aliases are not active until the marker lines in $rc_file are repaired and the installer re-run" >&2
     fi
     if [ $failed -gt 0 ]; then
       echo "✗ $failed write failure(s) above — the ✗-marked items were NOT installed" >&2
     fi
-    [ $((failed + refused)) -gt 0 ] && exit 1
-    exit 0
+    exit 1
     ;;
 esac

@@ -21,7 +21,8 @@ Most teams adopt all five parts. If you want to adopt incrementally, start with 
 If you haven't already:
 
 ```bash
-bash ~/process-kit/scripts/house-rules init --tool cursor|claude|both
+bash ~/process-kit/scripts/house-rules init --tool cursor
+# (or --tool claude / --tool both)
 ```
 
 This copies `CODE_OF_CONDUCT.md` into your project automatically, along with a `.github/pull_request_template.md` that includes the `Assisted-by` disclosure convention.

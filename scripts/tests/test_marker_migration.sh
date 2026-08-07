@@ -356,6 +356,124 @@ check "rc crlf block: warns malformed" \
 check "rc crlf block: exits nonzero" \
   test "$rc9" -ne 0
 
+# --- 10. Cross-ID nested markers in CLAUDE.md: a different managed BEGIN
+#         inside an open block must refuse (Tier 1 only caught same-ID). ---
+h="$(new_home)"
+cat > "$h/CLAUDE.md" <<'EOF'
+# preamble
+<!-- BEGIN house-rules:agent-identity -->
+stale A
+<!-- BEGIN house-rules:session-start -->
+## CROSS ID SENTINEL
+<!-- END house-rules:session-start -->
+<!-- END house-rules:agent-identity -->
+# trailer
+EOF
+sha1="$(sha256sum "$h/CLAUDE.md")"
+out="$(HOME="$h" bash "$SAFETY_NET" 2>&1)"
+rc10=$?
+sha2="$(sha256sum "$h/CLAUDE.md")"
+check "claude-md cross-ID nest: user sentinel survives" \
+  file_has "$h/CLAUDE.md" "## CROSS ID SENTINEL"
+check "claude-md cross-ID nest: file left byte-identical" \
+  test "$sha1" = "$sha2"
+check "claude-md cross-ID nest: warns malformed" \
+  out_has "$out" "malformed"
+check "claude-md cross-ID nest: does not claim Updated" \
+  out_lacks "$out" "Updated block"
+check "claude-md cross-ID nest: does not claim Added" \
+  out_lacks "$out" "Added block"
+check "claude-md cross-ID nest: exits nonzero" \
+  test "$rc10" -ne 0
+
+# --- 11. Near-miss END (trailing space) then real END: must refuse, never
+#         discard the user lines between the near-miss and the exact END. ---
+h="$(new_home)"
+{
+  echo 'export USER_ABOVE=1'
+  echo '# BEGIN house-rules:aliases'
+  echo 'old body'
+  printf '%s\n' '# END house-rules:aliases '
+  echo 'export NEAR_MISS_SENTINEL=1'
+  echo '# END house-rules:aliases'
+  echo 'export USER_BELOW=1'
+} > "$h/.bashrc"
+sha1="$(sha256sum "$h/.bashrc")"
+out="$(HOME="$h" bash "$ALIASES" --shell bash 2>&1)"
+rc11=$?
+sha2="$(sha256sum "$h/.bashrc")"
+check "rc near-miss END: sentinel survives" \
+  file_has "$h/.bashrc" "export NEAR_MISS_SENTINEL=1"
+check "rc near-miss END: rc left byte-identical" \
+  test "$sha1" = "$sha2"
+check "rc near-miss END: warns malformed" \
+  out_has "$out" "malformed"
+check "rc near-miss END: exits nonzero" \
+  test "$rc11" -ne 0
+check "rc near-miss END: does not claim Installed aliases" \
+  out_lacks "$out" "Installed aliases:"
+
+# --- 12. Orphan END before a well-formed block: refuse, leave byte-identical. ---
+h="$(new_home)"
+cat > "$h/CLAUDE.md" <<'EOF'
+<!-- END house-rules:agent-identity -->
+<!-- BEGIN house-rules:agent-identity -->
+stale
+<!-- END house-rules:agent-identity -->
+EOF
+sha1="$(sha256sum "$h/CLAUDE.md")"
+out="$(HOME="$h" bash "$SAFETY_NET" 2>&1)"
+rc12=$?
+sha2="$(sha256sum "$h/CLAUDE.md")"
+check "claude-md orphan END: file left byte-identical" \
+  test "$sha1" = "$sha2"
+check "claude-md orphan END: warns malformed" \
+  out_has "$out" "malformed"
+check "claude-md orphan END: exits nonzero" \
+  test "$rc12" -ne 0
+
+# --- 13. AGENTS.md current first + stale duplicate: must refresh/collapse,
+#         never claim current while leaving the duplicate. ---
+h="$(new_home)"
+repo="$(mktemp -d)"
+CLEANUP+=("$repo")
+git -C "$repo" init -q
+ver="$(tr -d '[:space:]' < "$KIT_ROOT/VERSION")"
+cat > "$repo/AGENTS.md" <<EOF
+<!-- BEGIN house-rules:agents-md -->
+current first
+<!-- house-rules:version ${ver} -->
+<!-- END house-rules:agents-md -->
+
+<!-- BEGIN house-rules:agents-md -->
+stale duplicate
+<!-- house-rules:version 0.0.1 -->
+<!-- END house-rules:agents-md -->
+EOF
+out="$(cd "$repo" && HOME="$h" bash "$INIT" --tool cursor --no-hooks 2>&1)"
+check "agents-md current+stale dup: reports refresh" \
+  out_has "$out" "Refreshed AGENTS.md"
+check "agents-md current+stale dup: exactly one section after" \
+  count_is "$repo/AGENTS.md" "<!-- BEGIN house-rules:agents-md -->" 1
+check "agents-md current+stale dup: stale body gone" \
+  bash -c "! grep -qF 'stale duplicate' '$repo/AGENTS.md'"
+
+# --- 14. Invalid explicit --tool value: refuse before claiming Setup complete. ---
+h="$(new_home)"
+repo="$(mktemp -d)"
+CLEANUP+=("$repo")
+git -C "$repo" init -q
+out="$(cd "$repo" && HOME="$h" bash "$INIT" --tool bananas --no-hooks 2>&1)"
+rc14=$?
+check "init invalid --tool: exits nonzero" \
+  test "$rc14" -ne 0
+check "init invalid --tool: does not claim Setup complete" \
+  out_lacks "$out" "Setup complete"
+check "init invalid --tool: names the bad value" \
+  out_has "$out" "bananas"
+check "init invalid --tool: did not create .cursor/rules" \
+  bash -c "[ ! -d '$repo/.cursor/rules' ]"
+
 echo ""
 echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

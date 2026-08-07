@@ -25,7 +25,8 @@ This is **house-rules** (incubated under the working name process-kit) — the c
 
 ```bash
 # One-command setup for a target project
-bash ~/process-kit/scripts/house-rules init --tool cursor|claude|both
+bash ~/process-kit/scripts/house-rules init --tool cursor
+# (or --tool claude / --tool both)
 
 # Verify setup
 bash ~/process-kit/scripts/house-rules doctor
