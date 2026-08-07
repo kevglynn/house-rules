@@ -21,6 +21,7 @@ Reference material for the kit. If you're new, read in this order:
 | [Rule Effectiveness Scorecard](rule-effectiveness-scorecard.md) | Measuring whether rule changes improve agent behavior. |
 | [Refinement Concepts](refinement/concepts.md) | The refinement control loop, trigger/findings taxonomies, magnitude × transformation classification, operating-surface model. |
 | [Refinement Proposal Template](refinement/proposal-template.md) | The package format a refinement produces; proposal becomes plan revision only after approval. |
+| [Blog draft: Checker-led anchor](blog-anchor-checker-led.md) | Funnel-top draft: leads with `banned-token-scan`, then dogfood transcripts (publication candidate). |
 | [Blog draft: Agentic Covenant](blog-agentic-covenant.md) | Draft post on why open source needs the Covenant (publication candidate). |
 
 ## Directory index
