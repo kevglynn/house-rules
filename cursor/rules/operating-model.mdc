@@ -45,7 +45,7 @@ On build/test failure: stop, diagnose, fix; if the fix is outside the current be
 - **Beads (`bd`) is the single source of truth for task state**; the scratchpad is narrative context only (background, analysis, decisions, lessons, feedback). IDE-native task tools are prohibited — see `session-lifecycle.mdc` § Prohibited task tracking tools.
 - `bd prime` (session start or after compaction) injects the live workflow context; it and `bd --help` are the command catalog.
 - On new projects without `.beads/`, ask before running `bd init` (or `bd init --stealth` for personal repos). Do not run `bd setup <tool>` on kit-initialized projects — the kit's rules already cover the workflow; `bd setup` is only for beads-without-kit projects.
-- When Jawnt MCP is available, use it for cross-project reads — one MCP call, not a `bd` loop across directories; **all writes go through local `bd`** (the MCP tools are read-only).
+- When a cross-project read tool is available (an MCP server or similar aggregator over several repos' task state), prefer it for cross-project reads — one call, not a `bd` loop across directories. **All writes go through local `bd`**: treat the aggregator as read-only even where it offers write tools.
 
 ## Scratchpad Conventions
 
