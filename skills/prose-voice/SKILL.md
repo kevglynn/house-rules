@@ -176,6 +176,9 @@ a vibes check:
    Do not get there by trimming the surviving sentences into fragments.
 8. **Scan punctuation against the user's fingerprint** (P9); P9 carries
    the overlay → principal's-writing → restrained-default ladder.
+9. **Scan for compressed-metaphor shorthand** (P10). Three or more in a
+   document → unpack them into plain statements; zero budget when the
+   user's overlay says so.
 
 If you catch the pattern mid-draft, fix it inline and keep going. The
 reader never sees the first draft.
@@ -317,6 +320,53 @@ catalog's own explanatory text and agent-to-agent output are exempt (the
 skill-wide skip list already covers them), but the worked good-examples
 above follow the restrained default.
 
+## P10 — Compressed-metaphor shorthand
+
+Technical facts compressed into slick metaphorical verbs and noun
+phrases: "the stack *speaks* standard interfaces," "velocity *paid for
+in* lock-in," "exit *is a data move*," "credits *burn on* anything,"
+"the SDK *bakes* base URLs in," "*one clock*" for a single deadline,
+"*stacks free*" for a program that costs nothing and combines with
+another. Each is compact and reads as fluent tech-industry register,
+which is exactly the problem: it is marketing cadence, not how smart
+people explain things to smart people, and readers increasingly flag it
+as an AI tell.
+
+This pattern is the sibling of P8's "do not compress the survivors."
+Lexical economy means fewer items, never metaphor compression — a
+sentence that got shorter by trading its plain verb for a metaphor did
+not get more economical, it got harder to trust. Unpack each instance
+into the fact it was compressing, even when the plain version runs a
+few words longer:
+
+| Compressed | Plain |
+|---|---|
+| speaks standard interfaces | uses standard interfaces |
+| exit is a data move and a config repoint | leaving means moving the data and repointing the config |
+| credits burn on anything | credits apply to any spend |
+| the SDK bakes base URLs in | the SDK hardcodes base URLs |
+| paid for in code-level lock-in | but means code-level lock-in |
+| one clock | one deadline |
+| stacks free with either | is free and combines with either |
+
+**Budget: treat as a watch list, like P4.** Three or more in a document
+is a rewrite pass. A single vivid metaphor that clarifies a genuinely
+hard idea is still fine (the scope boundary on metaphors stands); the
+failure mode is shorthand-as-register, several per paragraph. A user
+overlay may set this to zero budget for prose in that user's voice.
+
+Before:
+> What we provisioned already speaks standard interfaces, so exit is a
+> data move and a config repoint. Credits burn on anything, Inception
+> stacks free, and there's one clock: the domain decision before the
+> SDK bakes base URLs in.
+
+After:
+> Everything provisioned uses standard interfaces, so leaving means
+> moving the data and repointing the config. Credits apply to any
+> spend, Inception is free and combines with either tier, and there is
+> one deadline: the domain decision before the SDK hardcodes base URLs.
+
 ## User Overlay
 
 Voice parameters are per-user, not per-project: they follow the
@@ -331,6 +381,7 @@ key both define. Keys this skill reads:
 |---|---|---|
 | `reader_personas` | Named recipients whose artifacts always count as human-facing prose; project-overlay personas add to (never replace) the user's | None — the generic "When to Use" triggers govern |
 | `punctuation_fingerprint` | Banned marks and their replacements; register rules for native connectors (P9) | Learn from the principal's own writing; else the restrained default |
+| `lexical_register` | Phrasing habits banned in this user's voice, with named examples; may set P10 to zero budget | The generic P10 watch-list budget |
 
 The skill behaves sensibly with no overlay file and no section: every
 pattern above is generic law and applies as written.
