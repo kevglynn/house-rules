@@ -316,6 +316,21 @@ check "--local still generates the real projection" \
 check "pruning leaves no .bak inside the generated directory" \
   no_backups_in "$FAKE_KIT/claude/rules"
 
+# The overwrite path, not the deletion path: the routine kit loop is "edit a
+# cursor rule, re-sync", which lands on an existing .md whose bytes differ
+# from the new render. Backing that up drops a .bak into the same tracked
+# directory the next --check --local is required to find empty, so the
+# documented loop leaves the tree in a state the kit's own gate rejects.
+printf '# stale hand-edit\n' >> "$FAKE_KIT/claude/rules/operating-model.md"
+OUT="$(bash "$FAKE_KIT/scripts/sync-rules.sh" --format claude --local 2>&1)"
+check "regenerating over a changed projection leaves no .bak" \
+  no_backups_in "$FAKE_KIT/claude/rules"
+check "regenerating over a changed projection restores the real render" \
+  bash -c '! grep -qF "# stale hand-edit" "$1"' _ "$FAKE_KIT/claude/rules/operating-model.md"
+OUT="$(bash "$FAKE_KIT/scripts/sync-rules.sh" --format claude --check --local 2>&1)"; RC=$?
+check "the check immediately after a local sync passes" \
+  test "$RC" -eq 0
+
 printf '# orphaned build artifact\n' > "$FAKE_KIT/claude/rules/some-renamed-rule.md"
 OUT="$(bash "$FAKE_KIT/scripts/sync-rules.sh" --format claude --check --local 2>&1)"; RC=$?
 check "--check --local reports the orphan" \

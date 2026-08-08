@@ -482,7 +482,13 @@ sync_claude_to() {
     # cmp, not a string compare of two command substitutions: those strip
     # trailing newlines, so a file differing only in trailing newlines
     # compared equal and was overwritten with no backup at all.
-    if $SAFE_MODE && [ -f "$dest/$md_name" ] && ! cmp -s "$rendered" "$dest/$md_name"; then
+    #
+    # No backup under --local, for the same reason the deletion path skips it:
+    # the kit's own claude/rules/ is generated in full and tracked in git, so
+    # git is the backup, while a .bak dropped here breaks the exactness the
+    # next --check --local enforces — the documented edit-then-sync loop would
+    # leave the tree in a state the kit's own gate rejects.
+    if ! $LOCAL_ONLY && $SAFE_MODE && [ -f "$dest/$md_name" ] && ! cmp -s "$rendered" "$dest/$md_name"; then
       if ! backup_file "$dest/$md_name"; then
         echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
         rm -f "$rendered"
