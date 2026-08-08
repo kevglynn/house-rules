@@ -156,15 +156,39 @@ fi
 # cleanup pass may delete from a target. A missing or empty list is
 # deliberately fail-safe: nothing gets removed, everything unrecognized is
 # reported as unmanaged.
-RETIRED_STEMS=()
+RETIRED_STEMS=""
 RETIRED_LIST="$KIT_ROOT/profiles/retired-rules.list"
 if [ -f "$RETIRED_LIST" ]; then
-  while IFS= read -r line; do
-    line="${line%%#*}"
-    line="$(printf '%s' "$line" | tr -d '[:space:]')"
-    [ -n "$line" ] && RETIRED_STEMS+=("$line")
+  # `read -r stem _` (default IFS) trims surrounding whitespace and takes
+  # the first field; `|| [ -n "$stem" ]` keeps a final line that has no
+  # trailing newline, which would otherwise be dropped silently — and with
+  # a one-entry list, dropping it no-ops the whole feature.
+  while read -r stem _ || [ -n "$stem" ]; do
+    case "$stem" in ""|\#*) continue ;; esac
+    RETIRED_STEMS="$RETIRED_STEMS $stem"
   done < "$RETIRED_LIST"
 fi
+
+# Stems the kit is delivering on THIS run (honors --version pinning).
+DELIVERED_STEMS=""
+for f in "${MDC_FILES[@]}"; do
+  DELIVERED_STEMS="$DELIVERED_STEMS ${f%.mdc}"
+done
+
+# Every stem the kit has ever owned: what the working tree ships today,
+# plus what it has retired. Read from the working tree even under
+# --version, so a downgrade still recognizes newer rules as kit artifacts
+# and removes them rather than mistaking them for project content.
+KIT_KNOWN_STEMS="$RETIRED_STEMS"
+for f in "$KIT_ROOT/cursor/rules"/*.mdc; do
+  [ -f "$f" ] || continue
+  b="$(basename "$f")"
+  KIT_KNOWN_STEMS="$KIT_KNOWN_STEMS ${b%.mdc}"
+done
+
+# Counted here rather than in the sync loop: --local runs the cleanup pass
+# without entering that loop, and `set -u` would abort on an unset counter.
+unmanaged_count=0
 
 # --- Frontmatter stripping (for claude format) ---
 
@@ -199,84 +223,94 @@ strip_frontmatter() {
 
 # --- Stale file cleanup ---
 #
-# Deletes any rule file in a target's rules dir that isn't in the kit's
-# MDC_FILES list. Deliberate consequence: kit-synced repos cannot carry
-# workspace-local rules — a local .mdc/.md placed in .cursor/rules/ or
-# .claude/rules/ is silently removed on the next sync. Repo-local always-on
-# guidance in a synced repo belongs in that repo's own AGENTS.md/CLAUDE.md
-# sections (or a skill), never in the synced rules directories.
-# Verified 2026-08-04 (foreclosed a planned workspace rule in a consuming repo);
-# also documented in README § "What syncs automatically".
+# Three outcomes per unrecognized file in a rules directory:
+#   kit rule we are delivering  → overwritten by the sync loop, .bak first
+#   kit rule we are not         → removed, .bak first ("retired")
+#   anything else               → LEFT IN PLACE and reported ("unmanaged")
+#
+# The third case is the point. This pass used to delete whatever it did not
+# recognize, which destroyed project-authored rules that were never
+# committed and therefore unrecoverable (process-kit-2d6). A project may
+# keep its own rules in .cursor/rules/ or .claude/rules/; the kit will not
+# update or remove them. Operator-facing contract: docs/operations.md
+# § "What syncs automatically vs. what you copy manually".
+#
+# "Kit rule we are not delivering" covers two cases, both genuine kit
+# artifacts rather than project content: a stem on the retired list (a rule
+# the kit renamed or dropped), and — under --version — a rule newer than
+# the pinned tag, which must go for the downgrade to produce the rule set
+# the tag describes.
 
-is_retired_stem() {
-  local stem="$1" r
-  for r in "${RETIRED_STEMS[@]:-}"; do
-    [[ "$r" == "$stem" ]] && return 0
-  done
-  return 1
+in_stem_set() { # in_stem_set <stem> <space-delimited set>
+  [[ " $2 " == *" $1 "* ]]
 }
 
-# Remove a rule the kit itself retired, or leave an unrecognized file
-# alone. Deleting whatever we don't recognize destroys project-authored
-# rules, which is not recoverable when the project never committed them
-# (process-kit-2d6). Retirement is an explicit, auditable list; everything
-# else is reported so the operator learns the file is unmanaged.
+# Timestamped backup, shared by every destructive path so the convention
+# (name shape, operator message, counter) has one owner. Returns 1 if the
+# copy fails; each caller decides what that means for its own flow.
+backup_file() {
+  local path="$1" ts bak n=0
+  ts="$(date +%Y%m%d%H%M%S)"
+  bak="${path}.${ts}.bak"
+  # One-second timestamp granularity: two syncs in the same second would
+  # otherwise clobber the first backup, and on the deletion path that
+  # backup is the only remaining copy.
+  while [ -e "$bak" ]; do
+    n=$((n + 1))
+    bak="${path}.${ts}-${n}.bak"
+  done
+  if ! cp "$path" "$bak"; then
+    return 1
+  fi
+  echo "    ↳ backed up $(basename "$path") → $(basename "$bak")"
+  safe_backup_count=$((safe_backup_count + 1))
+  return 0
+}
+
 retire_or_keep() {
   local existing="$1" base="$2" stem="$3"
-  if ! is_retired_stem "$stem"; then
+
+  # A generated projection directory (--local writes the kit's own
+  # claude/rules/) has no project-authored content by construction, so an
+  # unrecognized file there is an orphaned build artifact, not someone's
+  # rule. Keeping it would leave a retired rule loaded in the kit and ship
+  # it to every new adopter via init's wholesale copy.
+  if ! $LOCAL_ONLY && ! in_stem_set "$stem" "$KIT_KNOWN_STEMS"; then
     echo "  ⚠ Unmanaged rule left in place: $base (not a kit rule — the kit will not update or remove it)"
+    unmanaged_count=$((unmanaged_count + 1))
     return 0
   fi
+
   if $DRY_RUN; then
     echo "    [dry-run] Would remove retired: $base"
     return 0
   fi
-  # Deletion is destructive, so it honors safe mode exactly as the
-  # overwrite path does — same timestamped .bak convention.
-  if $SAFE_MODE; then
-    local ts bak
-    ts="$(date +%Y%m%d%H%M%S)"
-    bak="${existing}.${ts}.bak"
-    if ! cp "$existing" "$bak"; then
-      echo "✗ Failed to back up $base before removal — leaving it in place" >&2
-      return 0
-    fi
-    echo "    ↳ backed up $base → $(basename "$bak")"
-    safe_backup_count=$((safe_backup_count + 1))
+
+  if $SAFE_MODE && ! backup_file "$existing"; then
+    echo "✗ Failed to back up $base before removal — leaving it in place" >&2
+    return 1
   fi
-  rm "$existing"
+  if ! rm "$existing"; then
+    echo "✗ Failed to remove retired rule $base" >&2
+    return 1
+  fi
   echo "    Removed retired: $base"
 }
 
-cleanup_stale_cursor() {
-  local dest="$1"
+# One pass over both formats: a file is kit-managed iff its stem is in the
+# set being delivered, whichever extension it wears.
+cleanup_stale() { # cleanup_stale <dest> <ext>
+  local dest="$1" ext="$2" rc=0
   [ -d "$dest" ] || return 0
-  for existing in "$dest"/*.mdc; do
+  for existing in "$dest"/*."$ext"; do
     [ -f "$existing" ] || continue
-    local base
+    local base stem
     base="$(basename "$existing")"
-    local found=false
-    for f in "${MDC_FILES[@]}"; do
-      if [[ "$f" == "$base" ]]; then found=true; break; fi
-    done
-    $found || retire_or_keep "$existing" "$base" "${base%.mdc}"
+    stem="${base%.$ext}"
+    in_stem_set "$stem" "$DELIVERED_STEMS" && continue
+    retire_or_keep "$existing" "$base" "$stem" || rc=1
   done
-}
-
-cleanup_stale_claude() {
-  local dest="$1"
-  [ -d "$dest" ] || return 0
-  for existing in "$dest"/*.md; do
-    [ -f "$existing" ] || continue
-    local base
-    base="$(basename "$existing")"
-    local expected_mdc="${base%.md}.mdc"
-    local found=false
-    for f in "${MDC_FILES[@]}"; do
-      if [[ "$f" == "$expected_mdc" ]]; then found=true; break; fi
-    done
-    $found || retire_or_keep "$existing" "$base" "${base%.md}"
-  done
+  return $rc
 }
 
 # --- Format-specific sync/check functions ---
@@ -285,17 +319,10 @@ safe_backup() {
   local src_file="$1" dest_file="$2"
   if $SAFE_MODE && [ -f "$dest_file" ]; then
     if ! diff -q "$src_file" "$dest_file" > /dev/null 2>&1; then
-      # Timestamped .bak so two consecutive safe-mode syncs with local edits
-      # between them don't silently destroy the user's first backup.
-      local ts bak
-      ts="$(date +%Y%m%d%H%M%S)"
-      bak="${dest_file}.${ts}.bak"
-      if ! cp "$dest_file" "$bak"; then
+      if ! backup_file "$dest_file"; then
         echo "✗ Failed to back up $(basename "$dest_file") before overwrite — refusing to sync this file" >&2
         return 1
       fi
-      echo "    ↳ backed up $(basename "$dest_file") → $(basename "$bak")"
-      safe_backup_count=$((safe_backup_count + 1))
     fi
   fi
   return 0
@@ -305,6 +332,9 @@ sync_cursor_to() {
   local dest="$1"
   if $DRY_RUN; then
     echo "    [dry-run] Would copy ${#MDC_FILES[@]} .mdc files → $dest"
+    # Report-only: the cleanup pass is the destructive half, so a preview
+    # that omits it hides exactly what an operator runs --dry-run to see.
+    cleanup_stale "$dest" mdc
     return 0
   fi
   mkdir -p "$dest" || return 1
@@ -312,13 +342,14 @@ sync_cursor_to() {
     safe_backup "$SRC/$f" "$dest/$f" || return 1
     cp "$SRC/$f" "$dest/$f" || return 1
   done
-  cleanup_stale_cursor "$dest"
+  cleanup_stale "$dest" mdc
 }
 
 sync_claude_to() {
   local dest="$1"
   if $DRY_RUN; then
     echo "    [dry-run] Would generate ${#MDC_FILES[@]} .md files → $dest"
+    cleanup_stale "$dest" md
     return 0
   fi
   mkdir -p "$dest" || return 1
@@ -330,21 +361,37 @@ sync_claude_to() {
       local actual
       actual="$(cat "$dest/$md_name")"
       if [[ "$expected" != "$actual" ]]; then
-        # Timestamped .bak (see safe_backup() rationale).
-        local ts bak_name
-        ts="$(date +%Y%m%d%H%M%S)"
-        bak_name="${md_name}.${ts}.bak"
-        if ! cp "$dest/$md_name" "$dest/$bak_name"; then
+        if ! backup_file "$dest/$md_name"; then
           echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
           return 1
         fi
-        echo "    ↳ backed up $md_name → $bak_name"
-        safe_backup_count=$((safe_backup_count + 1))
       fi
     fi
     strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g' > "$dest/$md_name" || return 1
   done
-  cleanup_stale_claude "$dest"
+  cleanup_stale "$dest" md
+}
+
+# A generated projection directory should contain nothing but the
+# projection. In a target repo an extra file is a project's own rule and
+# none of our business, so this only fires under --local — otherwise CI's
+# `--check --local` stays green while an orphaned rule sits committed in
+# claude/rules/, gets loaded alongside its replacement, and ships to every
+# new adopter through init's wholesale copy.
+check_no_orphans() { # check_no_orphans <dest> <ext>
+  local dest="$1" ext="$2" orphan=0
+  $LOCAL_ONLY || return 0
+  [ -d "$dest" ] || return 0
+  for existing in "$dest"/*."$ext"; do
+    [ -f "$existing" ] || continue
+    local base stem
+    base="$(basename "$existing")"
+    stem="${base%.$ext}"
+    in_stem_set "$stem" "$DELIVERED_STEMS" && continue
+    echo "  ✗ $base — orphaned projection (no matching cursor/rules/$stem.mdc)"
+    orphan=1
+  done
+  return $orphan
 }
 
 check_cursor_in() {
@@ -384,6 +431,7 @@ check_claude_in() {
       fi
     fi
   done
+  check_no_orphans "$dest" md || stale=1
   if [ $stale -eq 0 ]; then
     echo "  ✓ all ${#MDC_FILES[@]} claude rules up to date"
   fi
@@ -584,8 +632,14 @@ elif $CHECK_MODE; then
 else
   echo "Done. ${#MDC_FILES[@]} rules ($fmt_label$ver_label) → $repo_count repos + $wt_count worktrees."
   if $SAFE_MODE && [ $safe_backup_count -gt 0 ]; then
-    echo "$safe_backup_count file(s) had local changes — .bak copies preserved."
+    echo "$safe_backup_count file(s) backed up before overwrite or removal — .bak copies preserved."
   fi
+fi
+
+if [ $unmanaged_count -gt 0 ]; then
+  echo ""
+  echo "⚠ $unmanaged_count unmanaged rule file(s) left in place across all targets."
+  echo "  These are not kit rules. The kit will not update or remove them."
 fi
 
 if [ $error_count -gt 0 ]; then

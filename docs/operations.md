@@ -49,7 +49,11 @@ Reports which targets have stale or missing rules without modifying anything.
 
 **Rules** (`cursor/rules/*.mdc`) sync automatically via `house-rules sync`. Add a target repo to `~/.house-rules-sync-targets` and run the script: rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
 
-The sync's stale cleanup deletes any rule file it doesn't recognize, so on kit-synced repos the rules directories are **kit-exclusive**: a workspace-local rule placed in `.cursor/rules/` or `.claude/rules/` is removed on the next sync — no prompt, no backup. That includes rule files other tools put there: the doctor tolerates extras between syncs, but the sync removes them. Two safety valves exist. `--dry-run` previews every write and deletion, and local edits to *kit-recognized* files are backed up to a timestamped `.bak` before overwrite (safe mode, on by default; `--unsafe` disables it). Unrecognized files get neither. For repo-local always-on guidance in a synced repo, use the repo's own `AGENTS.md`/`CLAUDE.md` sections or a skill instead.
+The sync **only touches files the kit owns**. A rule your project wrote and put in `.cursor/rules/` or `.claude/rules/` survives every sync; the run reports it as unmanaged so you know the kit will neither update nor remove it. The cleanup pass deletes exactly one class of file: a rule the kit itself used to ship and no longer does, listed by stem in [`profiles/retired-rules.list`](../profiles/retired-rules.list). Under `--version`, rules newer than the pinned tag also count as kit-owned and are removed, so a downgrade produces the rule set that tag describes.
+
+Destructive operations are backed up. Both an overwrite of a locally-edited kit rule and a retirement deletion write a timestamped `.bak` first (safe mode, on by default; `--unsafe` disables backups for both). `--dry-run` previews the writes *and* the cleanup pass, including the unmanaged-file warnings. Deletion is skipped rather than forced if its backup fails, and the run exits non-zero so automation can see it.
+
+Note that a project rule sharing a filename with a live kit rule is still overwritten — that is the ordinary sync path, not cleanup, and it does write a `.bak`. Name project rules distinctly.
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 

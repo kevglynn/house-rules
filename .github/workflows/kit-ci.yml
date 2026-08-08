@@ -1,5 +1,5 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Nine gates: (1) the claude/rules projection must match the cursor/rules
+# Eleven gates: (1) the claude/rules projection must match the cursor/rules
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
@@ -16,7 +16,9 @@
 # the three distribution surfaces stay schema-valid, path-resolvable,
 # and derived from the core manifest (test_plugin_manifests, in
 # checker-suites), (10) tier stamp / tier-aware doctor / sync exclusion /
-# upgrade-offer fixtures (test_tier_mechanics.sh).
+# upgrade-offer fixtures (test_tier_mechanics.sh), (11) the sync's cleanup
+# pass keeps project-authored rules and still retires kit rules
+# (test_sync_cleanup.sh).
 
 name: kit ci
 
@@ -123,6 +125,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The --version downgrade case resolves a release tag; the
+          # default shallow checkout has no tags and the case would skip
+          # itself into a silently green gate.
+          fetch-depth: 0
       - name: Sync stale-rule cleanup fixtures (project rules must survive)
         # Throwaway HOME + mktemp target; pins the retired-rules allowlist
         # so the cleanup pass can retire a renamed kit rule without

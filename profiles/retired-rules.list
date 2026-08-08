@@ -10,6 +10,9 @@
 # Cursor .mdc and the Claude .md projection. Add an entry ONLY when the
 # kit itself drops or renames a rule, and say what it became.
 #
+# Kit-internal: read from the kit clone by sync-rules.sh, never copied
+# into a target repo. Maintainer obligation is declared in AGENTS.md.
+#
 # ponytail-playbook: renamed to graybeard-playbook during the kit rename
 # wave. Verified as the only rule rename in kit history:
 #   git log --diff-filter=R --name-status -- 'cursor/rules/*'
