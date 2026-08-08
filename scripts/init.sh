@@ -28,8 +28,19 @@ PROJECT_ROOT="$(pwd)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --tool)    TOOL="$2"; shift 2 ;;
-    --tier)    TIER="$2"; shift 2 ;;
+    --tool)
+      # Guard before "$2": set -u otherwise aborts with raw "unbound variable".
+      if [ $# -lt 2 ]; then
+        echo "Error: --tool requires an argument (cursor|claude|both). See --help." >&2
+        exit 1
+      fi
+      TOOL="$2"; shift 2 ;;
+    --tier)
+      if [ $# -lt 2 ]; then
+        echo "Error: --tier requires an argument (core|full). See --help." >&2
+        exit 1
+      fi
+      TIER="$2"; shift 2 ;;
     --stealth) STEALTH=true; shift ;;
     --no-hooks) NO_HOOKS=true; shift ;;
     --skills) SKILLS=true; shift ;;
@@ -69,19 +80,40 @@ esac
 # ---------- Concurrency lock (mkdir is atomic on all filesystems) ----------
 
 LOCKDIR="$PROJECT_ROOT/.house-rules-init.lock"
-# Clean stale locks older than 10 minutes
-if [ -d "$LOCKDIR" ]; then
-  lock_age=$(( $(date +%s) - $(stat -f %m "$LOCKDIR" 2>/dev/null || stat -c %Y "$LOCKDIR" 2>/dev/null || echo 0) ))
-  if [ "$lock_age" -gt 600 ]; then
-    rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR"
-    echo "  Removed stale lock (age: ${lock_age}s)"
+# Acquire via mkdir. Stale locks (>10 min) are renamed aside atomically
+# before mkdir — never rmdir-then-mkdir, which races when two concurrent
+# inits both judge the lock stale and the second rmdir removes the first's
+# fresh lock (process-kit-020).
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  if [ -d "$LOCKDIR" ]; then
+    lock_age=$(( $(date +%s) - $(stat -f %m "$LOCKDIR" 2>/dev/null || stat -c %Y "$LOCKDIR" 2>/dev/null || echo 0) ))
+    if [ "$lock_age" -gt 600 ]; then
+      stale_victim="${LOCKDIR}.stale.$$"
+      if mv "$LOCKDIR" "$stale_victim" 2>/dev/null; then
+        rmdir "$stale_victim" 2>/dev/null || rm -rf "$stale_victim"
+        echo "  Removed stale lock (age: ${lock_age}s)"
+      fi
+      if ! mkdir "$LOCKDIR" 2>/dev/null; then
+        echo "Another house-rules init is running for this project. Exiting."
+        exit 1
+      fi
+    else
+      echo "Another house-rules init is running for this project. Exiting."
+      exit 1
+    fi
+  else
+    echo "Another house-rules init is running for this project. Exiting."
+    exit 1
   fi
 fi
-if ! mkdir "$LOCKDIR" 2>/dev/null; then
-  echo "Another house-rules init is running for this project. Exiting."
-  exit 1
-fi
-trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
+# Per-run stderr capture for cp failures — never a fixed /tmp path (concurrent
+# clobber + symlink-following write target; process-kit-020).
+CP_ERR="$(mktemp "${TMPDIR:-/tmp}/house-rules-init.cp.XXXXXX")"
+cleanup_init() {
+  rm -f "$CP_ERR"
+  rmdir "$LOCKDIR" 2>/dev/null || true
+}
+trap cleanup_init EXIT
 
 echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
 echo "  tier: $TIER"
@@ -230,13 +262,11 @@ if [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]]; then
   # Guard cp explicitly: set -e + an empty source glob or read-only
   # destination would otherwise abort the script mid-bootstrap with no
   # diagnostic and a misleading "0 rules" summary.
-  if ! cp "$KIT_ROOT/cursor/rules/"*.mdc "$dest/" 2>/tmp/house-rules-init.cp.err; then
+  if ! cp "$KIT_ROOT/cursor/rules/"*.mdc "$dest/" 2>"$CP_ERR"; then
     echo "✗ Failed to copy Cursor rules → $dest"
-    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
-    rm -f /tmp/house-rules-init.cp.err
+    sed 's/^/    /' "$CP_ERR" 2>/dev/null
     exit 1
   fi
-  rm -f /tmp/house-rules-init.cp.err
   count=$(ls -1 "$dest/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Cursor rules → .cursor/rules/"
 fi
@@ -244,13 +274,11 @@ fi
 if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.claude/rules"
   mkdir -p "$dest"
-  if ! cp "$KIT_ROOT/claude/rules/"*.md "$dest/" 2>/tmp/house-rules-init.cp.err; then
+  if ! cp "$KIT_ROOT/claude/rules/"*.md "$dest/" 2>"$CP_ERR"; then
     echo "✗ Failed to copy Claude rules → $dest"
-    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
-    rm -f /tmp/house-rules-init.cp.err
+    sed 's/^/    /' "$CP_ERR" 2>/dev/null
     exit 1
   fi
-  rm -f /tmp/house-rules-init.cp.err
   count=$(ls -1 "$dest/"*.md 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Claude Code rules → .claude/rules/"
 fi
@@ -341,13 +369,11 @@ if [ -f "$clis_manifest" ]; then
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
     [ -f "$cli_src" ] || continue
     mkdir -p "$PROJECT_ROOT/scripts"
-    if ! cp -f "$cli_src" "$cli_dest" 2>/tmp/house-rules-init.cp.err; then
+    if ! cp -f "$cli_src" "$cli_dest" 2>"$CP_ERR"; then
       echo "✗ Failed to copy $cli_name → scripts/"
-      sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
-      rm -f /tmp/house-rules-init.cp.err
+      sed 's/^/    /' "$CP_ERR" 2>/dev/null
       exit 1
     fi
-    rm -f /tmp/house-rules-init.cp.err
     chmod +x "$cli_dest"
     echo "✓ Copied $cli_name CLI → scripts/$cli_name"
   done < "$clis_manifest"
@@ -366,13 +392,11 @@ fi
 profile_src="$KIT_ROOT/profiles/conventions.toml"
 if [ -f "$profile_src" ]; then
   mkdir -p "$PROJECT_ROOT/profiles"
-  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>/tmp/house-rules-init.cp.err; then
+  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>"$CP_ERR"; then
     echo "✗ Failed to copy profiles/conventions.toml"
-    sed 's/^/    /' /tmp/house-rules-init.cp.err 2>/dev/null
-    rm -f /tmp/house-rules-init.cp.err
+    sed 's/^/    /' "$CP_ERR" 2>/dev/null
     exit 1
   fi
-  rm -f /tmp/house-rules-init.cp.err
   echo "✓ Copied conventions profile → profiles/conventions.toml"
 else
   echo "⚠ Conventions profile missing at $profile_src — distributed checkers will fall back to built-in grammars"

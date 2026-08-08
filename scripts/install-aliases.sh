@@ -34,7 +34,13 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)     MODE="check"; shift ;;
     --uninstall) MODE="uninstall"; shift ;;
-    --shell)     SHELL_OVERRIDE="$2"; shift 2 ;;
+    --shell)
+      # Guard before "$2": set -u otherwise aborts with raw "unbound variable".
+      if [ $# -lt 2 ]; then
+        echo "Error: --shell requires an argument (zsh|bash|fish). See --help." >&2
+        exit 1
+      fi
+      SHELL_OVERRIDE="$2"; shift 2 ;;
     -h|--help)
       cat <<'EOF'
 Installs minimal house-rules shell aliases.
@@ -85,13 +91,31 @@ rc_file_for() {
   case "$1" in
     zsh)  echo "$HOME/.zshrc" ;;
     bash)
-      if [ -f "$HOME/.bashrc" ]; then
+      # Pin to whichever bash rc already carries our block so a later-
+      # appearing ~/.bashrc does not retarget and strand an inert block in
+      # ~/.bash_profile (process-kit-020). Fresh install still prefers
+      # .bashrc when present, else .bash_profile.
+      if [ -f "$HOME/.bashrc" ] && grep -qF "$SOURCE_BEGIN" "$HOME/.bashrc" 2>/dev/null; then
+        echo "$HOME/.bashrc"
+      elif [ -f "$HOME/.bash_profile" ] && grep -qF "$SOURCE_BEGIN" "$HOME/.bash_profile" 2>/dev/null; then
+        echo "$HOME/.bash_profile"
+      elif [ -f "$HOME/.bashrc" ]; then
         echo "$HOME/.bashrc"
       else
         echo "$HOME/.bash_profile"
       fi
       ;;
     fish) echo "$HOME/.config/fish/config.fish" ;;
+    *) echo "" ;;
+  esac
+}
+
+# The non-target bash rc, if any — used to scrub a stranded block when the
+# pin target differs from a prior install's file.
+bash_rc_other() {
+  case "$1" in
+    "$HOME/.bashrc") echo "$HOME/.bash_profile" ;;
+    "$HOME/.bash_profile") echo "$HOME/.bashrc" ;;
     *) echo "" ;;
   esac
 }
@@ -210,6 +234,26 @@ rc_remove_block() {
   rc_rewrite_block "$rc"
 }
 
+# Scrub a stranded managed block from the non-target bash rc (the file
+# rc_file_for did not pin). Best-effort: malformed markers are left alone
+# (0em contract) and reported by the caller via return codes if needed.
+scrub_bash_rc_other() {
+  local primary="$1"
+  local other
+  [ "$shell_kind" = "bash" ] || return 0
+  other="$(bash_rc_other "$primary")"
+  [ -n "$other" ] || return 0
+  [ -f "$other" ] || return 0
+  rc_has_block "$other" || return 0
+  rc_remove_block "$other"
+  case $? in
+    0) echo "✓ Removed stranded source block from $other" ;;
+    2) echo "⚠ Stranded block in $other left untouched (malformed markers)" >&2 ;;
+    *) echo "✗ Failed to scrub stranded block from $other" >&2; return 1 ;;
+  esac
+  return 0
+}
+
 # --- Dispatch ---
 
 shell_kind="$(detect_shell)"
@@ -293,6 +337,19 @@ case "$MODE" in
           ;;
       esac
     fi
+    # Also scrub the alternate bash rc in case a prior non-pinned install
+    # left a block there.
+    if [ "$shell_kind" = "bash" ]; then
+      other="$(bash_rc_other "$rc_file")"
+      if [ -n "$other" ] && [ -f "$other" ] && rc_has_block "$other"; then
+        rc_remove_block "$other"
+        case $? in
+          0) echo "✓ Removed stranded source line from $other"; changed=1 ;;
+          2) refused=$((refused + 1)) ;;
+          *) echo "✗ Failed to rewrite $other removing the source line" >&2; failed=$((failed + 1)) ;;
+        esac
+      fi
+    fi
     if [ $changed -eq 0 ] && [ $failed -eq 0 ] && [ $refused -eq 0 ]; then
       echo "  Nothing to remove (not installed)."
     elif [ $changed -eq 1 ]; then
@@ -346,6 +403,12 @@ case "$MODE" in
         echo "✗ Failed to append the source line to $rc_file (write error — check permissions)" >&2
         failed=$((failed + 1))
       fi
+    fi
+
+    # Pin keeps targeting the file that already has the block; scrub the
+    # alternate bash rc so a prior install's stranded block does not linger.
+    if [ $((failed + refused)) -eq 0 ]; then
+      scrub_bash_rc_other "$rc_file" || failed=$((failed + 1))
     fi
 
     echo ""

@@ -7,7 +7,7 @@
 #       genuinely drifted profile — the one mode where the doctor lies healthy;
 #   (b) the SUMMARY elif chain reordering so profile_drift loses precedence
 #       or emits a different key string than agents dispatch on.
-# Harness style follows test_marker_migration.sh: mktemp repo + throwaway
+# Harness style follows test_marker_blocks.sh: mktemp repo + throwaway
 # HOME; never touches the invoking user's HOME. Run from anywhere:
 #   bash scripts/tests/test_profile_distribution.sh
 set -u

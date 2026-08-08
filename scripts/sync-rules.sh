@@ -33,12 +33,23 @@ PIN_VERSION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --format)  FORMAT="$2"; shift 2 ;;
+    --format)
+      # Guard before "$2": set -u otherwise aborts with raw "unbound variable".
+      if [ $# -lt 2 ]; then
+        echo "Error: --format requires an argument (cursor|claude|all). See --help." >&2
+        exit 1
+      fi
+      FORMAT="$2"; shift 2 ;;
     --check)   CHECK_MODE=true; shift ;;
     --local)   LOCAL_ONLY=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --unsafe)  SAFE_MODE=false; shift ;;
-    --version) PIN_VERSION="$2"; shift 2 ;;
+    --version)
+      if [ $# -lt 2 ]; then
+        echo "Error: --version requires an argument (git tag, e.g. v1.0.0). See --help." >&2
+        exit 1
+      fi
+      PIN_VERSION="$2"; shift 2 ;;
     --show-version)
       if [ -f "$KIT_ROOT/VERSION" ]; then
         echo "house-rules v$(cat "$KIT_ROOT/VERSION" | tr -d '[:space:]')"

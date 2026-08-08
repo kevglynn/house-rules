@@ -4,16 +4,18 @@
 # CRLF markers) introduced by process-kit-0em. The legacy predecessor-prefix
 # migration cases were retired with the migration machinery
 # (process-kit-26b, sunset 2026-08-06); the guards outlive the migration —
-# they protect current-marker files the same way. Heredoc fixtures +
-# throwaway HOME per case; never touches the invoking user's HOME. Run from
-# anywhere:
-#   bash scripts/tests/test_marker_migration.sh
+# they protect current-marker files the same way. Also covers process-kit-020
+# installer polish: missing option-value usage messages, bash rc pin, and
+# init mktemp err-path. Heredoc fixtures + throwaway HOME per case; never
+# touches the invoking user's HOME. Run from anywhere:
+#   bash scripts/tests/test_marker_blocks.sh
 set -u
 
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SAFETY_NET="$KIT_ROOT/scripts/install-global-safety-net.sh"
 ALIASES="$KIT_ROOT/scripts/install-aliases.sh"
 INIT="$KIT_ROOT/scripts/init.sh"
+SYNC="$KIT_ROOT/scripts/sync-rules.sh"
 
 PASS=0
 FAIL=0
@@ -473,6 +475,60 @@ check "init invalid --tool: names the bad value" \
   out_has "$out" "bananas"
 check "init invalid --tool: did not create .cursor/rules" \
   bash -c "[ ! -d '$repo/.cursor/rules' ]"
+
+# --- 15. Missing option values: usage message, not raw unbound variable
+#         (process-kit-020). ---
+out="$(bash "$ALIASES" --shell 2>&1)"; rc=$?
+check "aliases --shell missing: exits nonzero" test "$rc" -ne 0
+check "aliases --shell missing: usage names --shell" out_has "$out" "--shell requires"
+check "aliases --shell missing: no unbound variable" out_lacks "$out" "unbound variable"
+
+out="$(bash "$INIT" --tool 2>&1)"; rc=$?
+check "init --tool missing: exits nonzero" test "$rc" -ne 0
+check "init --tool missing: usage names --tool" out_has "$out" "--tool requires"
+check "init --tool missing: no unbound variable" out_lacks "$out" "unbound variable"
+
+out="$(bash "$SYNC" --format 2>&1)"; rc=$?
+check "sync --format missing: exits nonzero" test "$rc" -ne 0
+check "sync --format missing: usage names --format" out_has "$out" "--format requires"
+check "sync --format missing: no unbound variable" out_lacks "$out" "unbound variable"
+
+out="$(bash "$SYNC" --version 2>&1)"; rc=$?
+check "sync --version missing: exits nonzero" test "$rc" -ne 0
+check "sync --version missing: usage names --version" out_has "$out" "--version requires"
+check "sync --version missing: no unbound variable" out_lacks "$out" "unbound variable"
+
+# --- 16. Bash rc pin: install into .bash_profile only; later .bashrc must
+#         not retarget and strand the profile block (process-kit-020). ---
+h="$(new_home)"
+# No .bashrc yet — installer targets .bash_profile.
+cat > "$h/.bash_profile" <<'EOF'
+# profile preamble
+EOF
+HOME="$h" bash "$ALIASES" --shell bash > /dev/null 2>&1
+check "rc pin: initial install landed in bash_profile" \
+  count_is "$h/.bash_profile" "# BEGIN house-rules:aliases" 1
+# Appear later: empty .bashrc. Re-run must keep the profile block (pin),
+# not open a second block in bashrc.
+: > "$h/.bashrc"
+HOME="$h" bash "$ALIASES" --shell bash > /dev/null 2>&1
+check "rc pin: bash_profile still has exactly one block after bashrc appears" \
+  count_is "$h/.bash_profile" "# BEGIN house-rules:aliases" 1
+check "rc pin: bashrc did not gain a stranded block" \
+  bash -c "! grep -qF '# BEGIN house-rules:aliases' '$h/.bashrc'"
+
+# --- 17. init uses mktemp for cp err path — fixed /tmp name must not appear
+#         in the script body (process-kit-020). ---
+check "init.sh has no fixed /tmp/house-rules-init.cp.err path" \
+  bash -c "! grep -qF '/tmp/house-rules-init.cp.err' '$INIT'"
+check "init.sh creates CP_ERR via mktemp" \
+  grep -qF 'CP_ERR="$(mktemp' "$INIT"
+
+# --- 18. Stale-lock acquire uses atomic mv-aside, not rmdir-then-mkdir
+#         (process-kit-020 TOCTOU). Structural pin — concurrent race is not
+#         fixture-friendly. ---
+check "init.sh stale-lock uses atomic mv aside" \
+  grep -qF 'mv "$LOCKDIR" "$stale_victim"' "$INIT"
 
 echo ""
 echo "passed: $PASS  failed: $FAIL"
