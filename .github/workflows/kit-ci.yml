@@ -119,6 +119,17 @@ jobs:
         # mode where the doctor could lie healthy).
         run: bash scripts/tests/test_profile_distribution.sh
 
+  sync-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync stale-rule cleanup fixtures (project rules must survive)
+        # Throwaway HOME + mktemp target; pins the retired-rules allowlist
+        # so the cleanup pass can retire a renamed kit rule without
+        # deleting a rule the project wrote itself, and pins the .bak on
+        # the deletion path that safe mode used to skip (process-kit-2d6).
+        run: bash scripts/tests/test_sync_cleanup.sh
+
   tier-mechanics:
     runs-on: ubuntu-latest
     steps:

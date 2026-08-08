@@ -152,6 +152,20 @@ if [ ${#MDC_FILES[@]} -eq 0 ]; then
   exit 1
 fi
 
+# Rule stems the kit used to ship and no longer does — the only files the
+# cleanup pass may delete from a target. A missing or empty list is
+# deliberately fail-safe: nothing gets removed, everything unrecognized is
+# reported as unmanaged.
+RETIRED_STEMS=()
+RETIRED_LIST="$KIT_ROOT/profiles/retired-rules.list"
+if [ -f "$RETIRED_LIST" ]; then
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr -d '[:space:]')"
+    [ -n "$line" ] && RETIRED_STEMS+=("$line")
+  done < "$RETIRED_LIST"
+fi
+
 # --- Frontmatter stripping (for claude format) ---
 
 strip_frontmatter() {
@@ -194,6 +208,46 @@ strip_frontmatter() {
 # Verified 2026-08-04 (foreclosed a planned workspace rule in a consuming repo);
 # also documented in README § "What syncs automatically".
 
+is_retired_stem() {
+  local stem="$1" r
+  for r in "${RETIRED_STEMS[@]:-}"; do
+    [[ "$r" == "$stem" ]] && return 0
+  done
+  return 1
+}
+
+# Remove a rule the kit itself retired, or leave an unrecognized file
+# alone. Deleting whatever we don't recognize destroys project-authored
+# rules, which is not recoverable when the project never committed them
+# (process-kit-2d6). Retirement is an explicit, auditable list; everything
+# else is reported so the operator learns the file is unmanaged.
+retire_or_keep() {
+  local existing="$1" base="$2" stem="$3"
+  if ! is_retired_stem "$stem"; then
+    echo "  ⚠ Unmanaged rule left in place: $base (not a kit rule — the kit will not update or remove it)"
+    return 0
+  fi
+  if $DRY_RUN; then
+    echo "    [dry-run] Would remove retired: $base"
+    return 0
+  fi
+  # Deletion is destructive, so it honors safe mode exactly as the
+  # overwrite path does — same timestamped .bak convention.
+  if $SAFE_MODE; then
+    local ts bak
+    ts="$(date +%Y%m%d%H%M%S)"
+    bak="${existing}.${ts}.bak"
+    if ! cp "$existing" "$bak"; then
+      echo "✗ Failed to back up $base before removal — leaving it in place" >&2
+      return 0
+    fi
+    echo "    ↳ backed up $base → $(basename "$bak")"
+    safe_backup_count=$((safe_backup_count + 1))
+  fi
+  rm "$existing"
+  echo "    Removed retired: $base"
+}
+
 cleanup_stale_cursor() {
   local dest="$1"
   [ -d "$dest" ] || return 0
@@ -205,14 +259,7 @@ cleanup_stale_cursor() {
     for f in "${MDC_FILES[@]}"; do
       if [[ "$f" == "$base" ]]; then found=true; break; fi
     done
-    if ! $found; then
-      if $DRY_RUN; then
-        echo "    [dry-run] Would remove stale: $base"
-      else
-        rm "$existing"
-        echo "    Removed stale: $base"
-      fi
-    fi
+    $found || retire_or_keep "$existing" "$base" "${base%.mdc}"
   done
 }
 
@@ -228,14 +275,7 @@ cleanup_stale_claude() {
     for f in "${MDC_FILES[@]}"; do
       if [[ "$f" == "$expected_mdc" ]]; then found=true; break; fi
     done
-    if ! $found; then
-      if $DRY_RUN; then
-        echo "    [dry-run] Would remove stale: $base"
-      else
-        rm "$existing"
-        echo "    Removed stale: $base"
-      fi
-    fi
+    $found || retire_or_keep "$existing" "$base" "${base%.md}"
   done
 }
 

@@ -1,0 +1,16 @@
+# Rule stems the kit has shipped in the past and no longer ships.
+#
+# sync-rules.sh removes ONLY these from a target's .cursor/rules and
+# .claude/rules. Anything else it does not recognize is left in place and
+# reported as unmanaged, because the kit cannot otherwise tell a retired
+# kit rule from a rule the project wrote itself — and it has destroyed
+# real project rules by assuming the former (process-kit-2d6).
+#
+# One stem per line, no extension: the same entry retires both the
+# Cursor .mdc and the Claude .md projection. Add an entry ONLY when the
+# kit itself drops or renames a rule, and say what it became.
+#
+# ponytail-playbook: renamed to graybeard-playbook during the kit rename
+# wave. Verified as the only rule rename in kit history:
+#   git log --diff-filter=R --name-status -- 'cursor/rules/*'
+ponytail-playbook
