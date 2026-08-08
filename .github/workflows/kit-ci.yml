@@ -1,5 +1,5 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Twelve gates: (1) the claude/rules projection must match the cursor/rules
+# Thirteen gates: (1) the claude/rules projection must match the cursor/rules
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
@@ -19,7 +19,9 @@
 # upgrade-offer fixtures (test_tier_mechanics.sh), (11) the sync's cleanup
 # pass keeps project-authored rules and still retires kit rules
 # (test_sync_cleanup.sh), (12) the Tier 2 assembler names no model vendor
-# unless the caller asked for one (test_tier2_assemble, in checker-suites).
+# unless the caller asked for one (test_tier2_assemble, in checker-suites),
+# (13) the distributed surface names no vendor model, person, or private
+# tool (neutrality-scan, with a seeded-leak self-test).
 
 name: kit ci
 
@@ -94,6 +96,31 @@ jobs:
         # sweep. Existence check only — nothing is executed; the suite in
         # checker-suites guards the checker itself.
         run: python3 scripts/docs-path-lint --root .
+
+  neutrality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Distributed content names no vendor, person, or private tool
+        # AGENTS.md declares neutrality as law; before this gate it had no
+        # checker, and four violations shipped — one a private-tool directive
+        # in an always-on rule that reached every sync target. Reporter only;
+        # the suite in checker-suites guards the checker itself.
+        run: python3 scripts/neutrality-scan --root . --explain
+      - name: Gate self-test — a seeded leak must fail the scan
+        run: |
+          # Seeded into the heuristic class on purpose: it is the only class
+          # that catches an unlisted name, so it is the one whose failure
+          # would be silent. The seed name appears in no term list.
+          printf 'When Frobnitz MCP is available, prefer it.\n' \
+            > cursor/rules/seeded-leak.mdc
+          if python3 scripts/neutrality-scan --root .; then
+            echo "seeded neutrality leak did NOT fail the gate" >&2
+            exit 1
+          fi
+          rm -f cursor/rules/seeded-leak.mdc
+          python3 scripts/neutrality-scan --root .
+          echo "gate correctly rejects a seeded leak and passes once removed"
 
   shellcheck:
     runs-on: ubuntu-latest

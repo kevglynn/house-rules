@@ -1,0 +1,125 @@
+# neutrality-terms.toml — term catalog for scripts/neutrality-scan.
+#
+# Law home: AGENTS.md § Identity conventions. Rule and skill content lands
+# verbatim in other people's repos, so it must name no project, person, or
+# user-specific parameter. Specifics belong in the two overlay scopes
+# documented in skills/README.md, not in the generic core.
+#
+# Kit-internal. Deliberately NOT distributed and not listed in
+# distributed-clis.list: an adopter's repo is supposed to name its own
+# project, so running this against one would be noise.
+#
+# Self-matching: a catalog cannot assemble its own terms from parts, so the
+# catalog body below sits inside a declared-terms region and matching is
+# suppressed between the markers, whatever this file is named or where it
+# lives. Same contract as banned-token-scan's [tokens] region. The base
+# marker on this line is inert — only the ":begin"-suffixed form opens a
+# region.
+exclude_marker = "neutrality-scan:declared-terms"
+
+# The surface `house-rules init` distributes, or that an agent reads as law.
+#
+# Out of scope on purpose: docs/ holds dated records (decisions, specs,
+# reviews) that must name the problem to describe it — this checker's own
+# design spec names every term in the catalog. scripts/ holds installers that
+# legitimately hardcode the canonical repo URL. CHANGELOG.md is history.
+[scope]
+roots = [
+  "cursor/rules",
+  "claude/rules",
+  "skills",
+  "templates",
+  "global-safety-net",
+  "profiles",
+]
+
+# Skill support files count. The leak that motivated this checker was a
+# vendor lineup in a skill's .py assembler, not in its prose — a
+# markdown-only scanner would have missed it.
+suffixes = [".md", ".mdc", ".toml", ".py", ".sh", ".txt", ".list"]
+
+# neutrality-scan:declared-terms:begin
+
+# Third-party model and reviewer-lane names. Model names age faster than
+# anything else in the kit, so generic content describes reviewer archetypes
+# by capability and family instead — skills/council is the reference.
+#
+# Cursor and Claude Code are deliberately absent. They are the kit's two
+# declared host platforms and appear legitimately on nearly every page;
+# listing them would make the checker unusable and it would be switched off
+# within a day, at which point it catches nothing at all.
+[classes.vendor_model]
+remedy = """describe the lane by capability and family (as skills/council does) \
+and let whoever runs it resolve the name, or move the concrete lineup to the \
+project or machine-global overlay"""
+entries = [
+  "Grok",
+  "Gemini",
+  "GPT",
+  "Codex",
+  "Copilot",
+  "Opus",
+  "Sonnet",
+  "Fable",
+  "Llama",
+  "Mistral",
+  "DeepSeek",
+  "Qwen",
+  "Kimi",
+]
+
+# Maintainer names and handles. Provenance belongs to the decision record,
+# which is durable and impersonal; the name adds nothing the ID does not.
+[classes.personal]
+remedy = """cite the decision record (a bead ID or docs/decisions/ entry) \
+instead of the person, or move the parameter to the machine-global overlay"""
+entries = [
+  "Kevin",
+  "kevglynn",
+]
+
+# A repository URL carries its owner's handle and is load-bearing: agents
+# instruct users to clone it. Exempted by context rather than by pinning line
+# numbers that move whenever the surrounding prose is edited.
+[[classes.personal.exempt_context]]
+pattern = 'github\.com/[A-Za-z0-9._-]+/'
+reason = "the canonical clone URL is project identity, not attribution"
+
+# Named private projects and tools. A list only ever catches what someone
+# already thought of, which is why the heuristic class below exists.
+[classes.private_tool]
+remedy = """describe the capability the tool provides and move the tool's name \
+to the project overlay"""
+entries = [
+  "Jawnt",
+]
+
+# Structural, not listed: a capitalized word immediately before "MCP". This
+# is the only class that catches a leak nobody has enumerated, and it is what
+# would have caught the private-tool directive that shipped in an always-on
+# rule (process-kit-ei0).
+#
+# False positives are expected by construction — any capitalized word in that
+# position matches, including a legitimately generic example. Accept them: an
+# allowlist entry with a reason is cheap, and a leak shipping on every turn
+# is not. Lowercase carriers ("an MCP plan", "the MCP tools") and the plural
+# ("query MCPs") are generic prose about the protocol and do not match.
+[classes.private_tool_heuristic]
+remedy = """rewrite in capability terms ("when a cross-project read tool is \
+available") and name the tool in the project overlay, or allowlist it with a \
+reason if the kit documents it by name"""
+patterns = [
+  '\b[A-Z][a-z]+ MCP\b',
+]
+
+# Recorded exemptions. Each entry is a decision with a stated reason — an
+# unexplained exemption is indistinguishable from someone silencing a real
+# leak, so `reason` is required and the scanner errors without it.
+#
+# (No entries yet. Shape:
+#   [[allow]]
+#   term = "Figma MCP"
+#   reason = "first-party integration the kit documents by name"
+# )
+
+# neutrality-scan:declared-terms:end

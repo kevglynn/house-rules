@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""neutrality-scan — mechanical check for the project-neutrality law.
+
+AGENTS.md declares that rule and skill content must stay project-neutral: no
+project names, people, or project/user-specific parameters in the generic
+core, because `house-rules init` lands that content verbatim in other
+people's repos. The law had no checker, which is how four violations shipped
+— including a private-tool directive sitting in an always-on rule that
+reached every sync target.
+
+Scans the distributed surface for four term classes and reports every hit
+with its class, location, and the class's remedy. Reporter only: it never
+rewrites, and an exemption is a recorded decision in the catalog rather than
+something the tool infers.
+
+Kit-internal by design. It is not distributed to target repos and not listed
+in distributed-clis.list — an adopter's repo is *supposed* to name its own
+project, so running this there would be pure noise.
+
+The catalog (scope, classes, terms, exemptions) lives in
+profiles/neutrality-terms.toml so terms evolve without touching logic, the
+same split conventions.toml uses. Resolution: --profile flag >
+NEUTRALITY_TERMS env > the copy beside this script's repo root. There is no
+built-in fallback: unlike the distributed checkers, this one only ever runs
+inside the kit, so a missing catalog is a broken checkout and should say so
+rather than scan with a silently different catalog than the repo declares.
+
+Two false-positive controls, because false-positive load is what decides
+whether a checker like this survives:
+
+  - The kit's own host platforms (Cursor, Claude Code) are absent from the
+    vendor class. They appear legitimately on nearly every page; flagging
+    them would get the checker switched off, and a disabled checker catches
+    nothing.
+  - Per-class context exemptions suppress a match inside a larger legitimate
+    construct — a repository URL carries its owner's handle and is
+    load-bearing, so the handle is exempt there and nowhere else.
+
+Self-matching: the catalog is term-laden by construction, so lines between
+the catalog's declared-terms markers (exclude_marker with ":begin" / ":end"
+appended) are catalog DATA and matching is suppressed there, whatever the
+file is named. Same contract as banned-token-scan. This scanner's own source
+needs no such trick: scripts/ is out of scope.
+
+Exit codes: 0 clean · 1 findings · 2 usage error · 3 I/O or catalog error.
+Human-readable by default; --json for agents, --explain to print each
+class's remedy alongside its findings. Non-interactive.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+PROFILE_RELPATH = Path("profiles") / "neutrality-terms.toml"
+ENV_PROFILE = "NEUTRALITY_TERMS"
+
+EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_ERROR = 0, 1, 2, 3
+
+
+def emit_error(msg, kind, code):
+    """Errors are JSON on stderr in both output modes, so a wrapper can tell
+    a broken run from a clean one without parsing prose."""
+    sys.stderr.write(json.dumps({"error": kind, "message": msg}) + "\n")
+    raise SystemExit(code)
+
+
+# --- catalog ------------------------------------------------------------
+
+
+def resolve_profile(explicit, root):
+    """--profile > $NEUTRALITY_TERMS > the catalog in this script's repo.
+
+    Deliberately not relative to --root: fixture trees and target repos have
+    no catalog of their own, and the catalog is a property of the kit rather
+    than of whatever is being scanned.
+    """
+    if explicit:
+        return Path(explicit), "flag"
+    env = os.environ.get(ENV_PROFILE)
+    if env:
+        return Path(env), "env"
+    return Path(__file__).resolve().parent.parent / PROFILE_RELPATH, "default"
+
+
+def load_catalog(path, source):
+    if not path.is_file():
+        emit_error(f"catalog not found: {path} (resolved from {source})",
+                   "catalog", EXIT_ERROR)
+    try:
+        with path.open("rb") as fh:
+            return tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        emit_error(f"{path}: catalog is unreadable or invalid: {exc}",
+                   "catalog", EXIT_ERROR)
+
+
+def compile_literal(term, origin):
+    """A listed term matches as a whole word. The lookarounds rather than \\b
+    so a hyphenated or suffixed slug ("GPT-4o", "Grokking") does not match on
+    a boundary the author did not intend."""
+    if not isinstance(term, str) or not term.strip():
+        emit_error(f"{origin}: term entries must be non-empty strings",
+                   "catalog", EXIT_ERROR)
+    return re.compile(
+        rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])"
+    )
+
+
+def compile_pattern(pattern, origin):
+    if not isinstance(pattern, str) or not pattern.strip():
+        emit_error(f"{origin}: pattern entries must be non-empty strings",
+                   "catalog", EXIT_ERROR)
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        emit_error(f"{origin}: invalid pattern {pattern!r}: {exc}",
+                   "catalog", EXIT_ERROR)
+
+
+def build_class(name, spec, origin):
+    if not isinstance(spec, dict):
+        emit_error(f"{origin}: classes.{name} must be a table",
+                   "catalog", EXIT_ERROR)
+    matchers = []
+    for i, term in enumerate(spec.get("entries", [])):
+        matchers.append(compile_literal(term, f"{origin}: classes.{name}.entries[{i}]"))
+    for i, pattern in enumerate(spec.get("patterns", [])):
+        matchers.append(compile_pattern(pattern, f"{origin}: classes.{name}.patterns[{i}]"))
+    if not matchers:
+        emit_error(f"{origin}: classes.{name} declares no entries or patterns",
+                   "catalog", EXIT_ERROR)
+
+    exemptions = []
+    for i, item in enumerate(spec.get("exempt_context", [])):
+        where = f"{origin}: classes.{name}.exempt_context[{i}]"
+        if not isinstance(item, dict):
+            emit_error(f"{where}: must be a table with pattern and reason",
+                       "catalog", EXIT_ERROR)
+        require_reason(item, where)
+        exemptions.append(compile_pattern(item.get("pattern"), where))
+
+    return {
+        "name": name,
+        "matchers": matchers,
+        "exemptions": exemptions,
+        "remedy": " ".join(str(spec.get("remedy", "")).split()),
+    }
+
+
+def require_reason(item, where):
+    """A context exemption and an allowlist entry both carry a stated reason.
+    An unexplained exemption reads identically to someone silencing a real
+    leak, so a missing or blank reason is a catalog error, not a warning."""
+    reason = item.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        emit_error(
+            f"{where}: a non-empty 'reason' is required — an exemption is a "
+            f"recorded decision, not a mute button",
+            "catalog", EXIT_ERROR,
+        )
+
+
+def build_allowlist(catalog, origin):
+    allowed = {}
+    for i, item in enumerate(catalog.get("allow", [])):
+        where = f"{origin}: allow[{i}]"
+        if not isinstance(item, dict):
+            emit_error(f"{where}: must be a table with term and reason",
+                       "catalog", EXIT_ERROR)
+        term = item.get("term")
+        if not isinstance(term, str) or not term.strip():
+            emit_error(f"{where}: a non-empty 'term' is required",
+                       "catalog", EXIT_ERROR)
+        require_reason(item, where)
+        allowed[term] = item["reason"].strip()
+    return allowed
+
+
+def build_scope(catalog, origin):
+    scope = catalog.get("scope")
+    if not isinstance(scope, dict):
+        emit_error(f"{origin}: [scope] table is required", "catalog", EXIT_ERROR)
+    roots = scope.get("roots")
+    suffixes = scope.get("suffixes")
+    for key, value in (("roots", roots), ("suffixes", suffixes)):
+        if not isinstance(value, list) or not value or not all(
+            isinstance(v, str) and v.strip() for v in value
+        ):
+            emit_error(f"{origin}: scope.{key} must be a non-empty list of "
+                       f"strings", "catalog", EXIT_ERROR)
+    return list(roots), {s.lower() for s in suffixes}
+
+
+def build_markers(catalog, origin):
+    marker = catalog.get("exclude_marker")
+    if not isinstance(marker, str) or not marker.strip():
+        emit_error(f"{origin}: exclude_marker must be a non-empty string",
+                   "catalog", EXIT_ERROR)
+    return marker + ":begin", marker + ":end"
+
+
+# --- scanning -----------------------------------------------------------
+
+
+def target_files(root, roots, suffixes):
+    for rel in roots:
+        base = root / rel
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_file() and path.suffix.lower() in suffixes:
+                yield path
+
+
+def _marker_at(line, marker):
+    """Index where `marker` stands as a whole token, else -1. Word-ish
+    boundaries on both sides so a marker-shaped substring inside a longer
+    word cannot open or close a region."""
+    idx = line.find(marker)
+    while idx != -1:
+        end = idx + len(marker)
+        before = line[idx - 1] if idx else ""
+        after = line[end] if end < len(line) else ""
+        if not (before.isalnum() or after.isalnum()):
+            return idx
+        idx = line.find(marker, idx + 1)
+    return -1
+
+
+def exempt_spans(line, exemptions):
+    return [m.span() for pattern in exemptions for m in pattern.finditer(line)]
+
+
+def inside(span, spans):
+    return any(start <= span[0] and span[1] <= end for start, end in spans)
+
+
+def scan_file(path, relpath, classes, allowed, begin, end):
+    """Findings in one file, honoring declared-terms regions, per-class
+    context exemptions, and the allowlist."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        # A binary or unreadable file in a text-suffix tree is not a
+        # neutrality question; skipping beats failing the whole run.
+        return [], 0
+
+    findings = []
+    regions = 0
+    suppressing = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if suppressing:
+            if _marker_at(line, end) != -1:
+                suppressing = False
+            continue
+        if _marker_at(line, begin) != -1:
+            regions += 1
+            # A begin+end pair on one line is a complete one-line region.
+            suppressing = _marker_at(line, end) == -1
+            continue
+
+        candidates = []
+        for cls in classes:
+            spans = exempt_spans(line, cls["exemptions"]) if cls["exemptions"] else []
+            for matcher in cls["matchers"]:
+                for match in matcher.finditer(line):
+                    term = match.group(0)
+                    if term in allowed:
+                        continue
+                    if spans and inside(match.span(), spans):
+                        continue
+                    candidates.append((match.span(), cls["name"], term))
+
+        for span, cls_name, term in dedupe_overlaps(candidates):
+            findings.append({
+                "file": relpath,
+                "line": lineno,
+                "class": cls_name,
+                "term": term,
+                "text": line.strip(),
+            })
+    return findings, regions
+
+
+def dedupe_overlaps(candidates):
+    """One leak, one finding. A listed term often sits inside a structural
+    match of the same leak — the private-tool name inside the capitalized-
+    word-plus-MCP bigram — and reporting both says nothing the wider match
+    did not. Keep the most specific (longest) match and drop any contained
+    in one already kept; report in source order."""
+    kept = []
+    for span, cls_name, term in sorted(
+        candidates, key=lambda c: (c[0][0] - c[0][1], c[0][0])
+    ):
+        if any(start <= span[0] and span[1] <= end for (start, end), _, _ in kept):
+            continue
+        kept.append((span, cls_name, term))
+    return sorted(kept, key=lambda c: c[0][0])
+
+
+# --- output -------------------------------------------------------------
+
+
+def report_human(findings, scanned, profile, explain, classes):
+    if not findings:
+        print(f"Scanned {scanned} file(s) across the distributed surface: "
+              f"clean. [catalog: {profile}]")
+        return EXIT_CLEAN
+
+    by_class = {}
+    for f in findings:
+        by_class.setdefault(f["class"], []).append(f)
+
+    remedies = {c["name"]: c["remedy"] for c in classes}
+    for name in sorted(by_class):
+        print(f"{name}:")
+        for f in by_class[name]:
+            print(f"  {f['file']}:{f['line']}  [{f['term']}]  {f['text']}")
+        if explain and remedies.get(name):
+            print(f"  → {remedies[name]}")
+        print()
+
+    print(f"Scanned {scanned} file(s): {len(findings)} finding(s) in "
+          f"{len(by_class)} class(es). [catalog: {profile}]")
+    if not explain:
+        print("Re-run with --explain for the remedy per class.")
+    return EXIT_FINDINGS
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="neutrality-scan",
+        description="Check kit-authored content for project-neutrality "
+                    "violations (vendor model names, personal identifiers, "
+                    "private tool names).",
+        epilog="Exit: 0 clean, 1 findings, 2 usage error, 3 catalog or I/O "
+               "error. Kit-internal; not distributed to target repos.",
+    )
+    ap.add_argument("--root", default=".",
+                    help="repo root to scan (default: cwd)")
+    ap.add_argument("--profile", default=None,
+                    help="term catalog path (default: $NEUTRALITY_TERMS, then "
+                         "the catalog in this script's repo)")
+    ap.add_argument("--json", action="store_true",
+                    help="machine-readable output for agents")
+    ap.add_argument("--explain", action="store_true",
+                    help="print each class's remedy alongside its findings")
+    args = ap.parse_args()
+
+    root = Path(args.root)
+    if not root.is_dir():
+        emit_error(f"--root is not a directory: {root}", "usage", EXIT_USAGE)
+
+    profile_path, source = resolve_profile(args.profile, root)
+    catalog = load_catalog(profile_path, source)
+    origin = str(profile_path)
+
+    roots, suffixes = build_scope(catalog, origin)
+    begin, end = build_markers(catalog, origin)
+    allowed = build_allowlist(catalog, origin)
+
+    class_specs = catalog.get("classes")
+    if not isinstance(class_specs, dict) or not class_specs:
+        emit_error(f"{origin}: [classes] must be a non-empty table of named "
+                   f"class tables", "catalog", EXIT_ERROR)
+    classes = [build_class(name, spec, origin)
+               for name, spec in sorted(class_specs.items())]
+
+    findings = []
+    scanned = 0
+    regions = 0
+    for path in target_files(root, roots, suffixes):
+        scanned += 1
+        hits, region_count = scan_file(
+            path, str(path.relative_to(root)), classes, allowed, begin, end
+        )
+        findings.extend(hits)
+        regions += region_count
+
+    if args.json:
+        print(json.dumps({
+            "findings": findings,
+            "scanned": scanned,
+            "profile": origin,
+            "roots": roots,
+            "declared_term_regions": regions,
+            "allowlisted": sorted(allowed),
+        }, indent=2))
+        return EXIT_FINDINGS if findings else EXIT_CLEAN
+
+    return report_human(findings, scanned, origin, args.explain, classes)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

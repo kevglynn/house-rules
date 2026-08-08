@@ -1,8 +1,10 @@
 # Project-Neutrality Enforcement
 
 **Date:** 2026-08-08
-**Beads:** epic TBD (children: Jawnt leak, tier2 de-vendoring, distributed-text hygiene, neutrality checker)
-**Status:** Draft
+**Beads:** epic `process-kit-4wh` (children: `ei0` private-tool leak, `dmm` tier2 de-vendoring, `9mf` distributed-text hygiene, `pi6` neutrality checker)
+**Status:** Implemented as specified. All four findings remediated; the checker
+ships as `scripts/neutrality-scan` with `profiles/neutrality-terms.toml` and the
+`neutrality-gate` job in kit CI. Open questions resolved below.
 
 ## Background
 
@@ -107,18 +109,44 @@ independent and may run in parallel; the checker bead blocks on all three.
 
 ## Risks and open questions
 
-- [ ] **False-positive load is the make-or-break risk.** If the `vendor_model`
-      class is drawn too wide it fires on legitimate host-platform prose and the
-      checker gets disabled. Mitigation: narrow initial class, explicit host
-      platform exclusion, and a per-term allowlist with a required reason field.
-- [ ] **The heuristic class will have false positives** by construction (any
-      capitalized word before "MCP", including a legitimately generic example).
-      Accept them: an allowlist entry is cheap, an undetected leak shipping every
-      turn is not.
-- [ ] **Overlay-dependent behavior needs a sensible no-overlay path.** After
-      finding 2 is fixed, `assemble.py` with no overlay and no spec `models`
-      field must emit archetype language rather than either crashing or silently
-      picking vendors. Council's wording is the model to copy.
-- [ ] Whether `profiles/neutrality-terms.toml` should be drift-checked by
-      `doctor` like `conventions.toml` is. Leaning no, since it is kit-internal
-      and never lands in a target repo.
+- [x] **False-positive load is the make-or-break risk.** Measured before the
+      checker was written: across the six roots, the only hits were six
+      instances of the maintainer handle inside the canonical clone URL — zero
+      vendor-model, zero heuristic. Handled with a per-class context exemption
+      (a handle inside `github.com/<owner>/` is project identity, not
+      attribution) rather than six line-pinned allowlist entries that move
+      whenever surrounding prose is edited. Host platforms stayed out of the
+      vendor class, and that decision is now pinned by test: adding `Cursor` to
+      the class fails both the host-platform fixture and the real-surface scan.
+- [x] **The heuristic class will have false positives** by construction.
+      Accepted as specified. Zero fired on the real surface, so the allowlist
+      shipped empty; the shape is documented in the catalog for the first entry
+      that needs it.
+- [x] **Overlay-dependent behavior needs a sensible no-overlay path.** Done in
+      `dmm`: with no overlay and no spec `models` field, the assembler emits
+      archetype language copied from council's wording, and `--json`-free
+      behavior is pinned by `test_tier2_assemble`.
+- [x] Whether `profiles/neutrality-terms.toml` should be drift-checked by
+      `doctor`. **Resolved: no.** The catalog never lands in a target repo, so
+      there is no target-side copy to drift from. Adding a doctor check would
+      mean adding a `SUMMARY` key and precedence slot for a file no adopter
+      has. The catalog is instead guarded where it can actually break: the
+      checker errors (exit 3) on a missing, unreadable, or invalid catalog
+      rather than silently scanning with a different one, and that path is
+      tested.
+
+## Outcome
+
+The checker was validated against history rather than only against fixtures:
+reconstructing the pre-fix versions of all four findings from git and scanning
+them produces 17 findings across three classes — the private-tool directive by
+the heuristic, the vendor lineup in both the `.py` and the `.md`, and the
+personal attribution in the profile.
+
+Finding 4 (a vendor-behavior claim with no revisit trigger) is **not** term
+detectable and is not claimed as covered. It was a judgment defect, not a
+term: the words were all legitimate, and only the absence of a trigger made it
+rot. The defer convention's no-trigger law is the mechanism for that class, and
+it applies to code comments rather than rule prose. Whether to extend
+trigger-required discipline to time-decaying claims in rule prose is a
+separate question this work does not answer.
