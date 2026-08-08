@@ -23,7 +23,9 @@ Spec schema (JSON object):
     focus              (str, required)  the review-focus paragraph (agent-drafted)
     context            (str, required)  what the component is + what was done and why + spec references
     files              (list[str], required)  paths relative to --root, in embed order
-    models             (list[str], optional)  default ["Grok", "Gemini", "GPT"]
+    models             (list[str], optional)  concrete reviewer lanes; when
+                                              absent the prompt describes
+                                              archetypes and names no vendor
     trusted_layers     (str, optional)  "do not re-review" boundary description
     rules              (list[str], optional)  domain rules the code must uphold
     already_addressed  (list[str], optional)  Tier 1 outcomes; "don't re-report"
@@ -35,10 +37,11 @@ Spec schema (JSON object):
 --exploit-out emits a companion prompt with the same embeds but an
 adversarial-verification mandate instead of a review mandate: the deliverable
 is a demonstrated invariant violation (concrete input + line-level code path)
-or a per-property proof that none exists. Intended for a separate model
-instance (e.g. a second GPT window) so its output stays independent of the
-review lane's framing. (The flag name is historical; the emitted prompt is
-phrased in counterexample terms, not attack terms.)
+or a per-property proof that none exists. Intended for a separate instance of
+a model — a second window, not a lane that already reviewed this change — so
+its output stays independent of the review framing. (The flag name is
+historical; the emitted prompt is phrased in counterexample terms, not attack
+terms.)
 
 Exit codes: 0 ok; 2 bad spec / missing file; 1 unexpected error.
 """
@@ -48,7 +51,16 @@ import json
 import sys
 from pathlib import Path
 
-DEFAULT_MODELS = ["Grok", "Gemini", "GPT"]
+# No default lineup. A named set of vendors is project-specific
+# configuration, and this skill ships to third-party repos where those names
+# are wrong, unavailable, or simply stale — model names age faster than
+# anything else in the kit. With no lineup supplied, the prompt describes
+# reviewer archetypes and leaves resolution to whoever runs it, matching how
+# skills/council resolves its voices.
+DEFAULT_LANE_ARCHETYPES = (
+    "the strongest reasoning model available to you, a capable model from a "
+    "different family, and a third family where one is available"
+)
 DEFAULT_OUT_OF_SCOPE = "Style and performance polish"
 DEFAULT_REPORT_FORMAT = (
     "For each finding: severity (Critical / Important / Minor), file + location, "
@@ -141,16 +153,23 @@ def build(spec: dict, root: Path) -> str:
     if missing:
         die(f"spec missing required field(s): {', '.join(missing)}")
 
-    models = spec.get("models") or DEFAULT_MODELS
-    model_list = ", ".join(models)
+    models = spec.get("models")
     out_of_scope = spec.get("out_of_scope") or DEFAULT_OUT_OF_SCOPE
     report_format = spec.get("report_format") or DEFAULT_REPORT_FORMAT
 
     parts = []
     parts.append(f"# Tier 2 cross-model review — {spec['subject']} (`{spec['bead_id']}`)")
+    if models:
+        lanes = f"each external model ({', '.join(models)})"
+    else:
+        lanes = (
+            f"each of three independent reviewer lanes — "
+            f"{DEFAULT_LANE_ARCHETYPES}. Never invent a model name; pick from "
+            f"what your environment actually offers"
+        )
     parts.append(
-        f"Paste everything below this line into each external model "
-        f"({model_list}). Collect the responses and hand them back for triage."
+        f"Paste everything below this line into {lanes}. Collect the "
+        f"responses and hand them back for triage."
     )
     parts.append("---")
     parts.append(

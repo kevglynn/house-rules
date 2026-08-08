@@ -97,7 +97,7 @@ output is not anchored by review framing.
 
 The emitted prompt is phrased in **counterexample terms, not attack/exploit
 terms** — same analytical demand, deliberately worded to avoid tripping
-provider safety filters tuned for offensive-security requests (Fable 5's
+provider safety filters tuned for offensive-security requests (one provider's
 guardrail did exactly this once, mid-generation). The `--exploit-out` flag
 name is historical; the output says "adversarial verification", "invariants
 to test", and "demonstrated violation", not "attack" or "exploit".
@@ -113,7 +113,7 @@ to test", and "demonstrated violation", not "attack" or "exploit".
 | `focus` | ✓ | the Phase 2 focus paragraph (one string) |
 | `context` | ✓ | what the component is + what was done and why (change summary) + spec references |
 | `files` | ✓ | list of paths relative to `--root`, in embed order |
-| `models` | | reviewer names; default `["Grok", "Gemini", "GPT"]` |
+| `models` | | concrete reviewer lanes; omit to have the prompt describe archetypes and name no vendor |
 | `trusted_layers` | | the "do not re-review" boundary description |
 | `rules` | | list of domain rules the code must uphold |
 | `already_addressed` | | list of Tier 1 outcomes; "don't re-report" |
@@ -140,6 +140,14 @@ disproving one is a finding**.
 Review the drafted prompt once, then hand the file(s) to the human to paste —
 the review prompt into each reviewer lane, the exploit prompt (if emitted)
 into its own separate instance.
+
+**Resolving the lanes.** Set `models` only when the concrete lineup is known:
+the user named it, or the project overlay's `models` key supplies it. With
+neither, leave the field out — the prompt then asks for three lanes by
+archetype (strongest reasoning model available, a capable model from a
+different family, a third family where one exists) and the human resolves
+them against what they actually have. Never write a model name into the spec
+on the kit's authority; a lineup that was right once ages into wrong advice.
 
 ### Phase 4 — Triage the responses (agent judgment)
 
@@ -183,7 +191,7 @@ overlay convention — one file, one section per skill):
 
 | Key | Meaning | Default when absent |
 |---|---|---|
-| `models` | Default reviewer set for the spec's `models` field | `Grok, Gemini, GPT` |
+| `models` | Default reviewer set for the spec's `models` field | none — the prompt asks for three lanes by archetype (strongest reasoning model available, a different family, a third family where available) |
 | `reviews_dir` | Where prompt docs are written | `docs/reviews/` |
 | `quality_gate` | Command(s) to re-run after fixes | Project's standard test/lint |
 | `reviewer_lanes` | Per-model effort/routing/probation policy | none — treat all `models` equally |
