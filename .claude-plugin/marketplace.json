@@ -11,7 +11,7 @@
       "name": "house-rules-core",
       "source": "./",
       "strict": false,
-      "description": "Zero-dependency core tier: standalone rules loadable as commands, the graybeard skill family, prose-voice, and the checker CLIs carried at scripts/defer-lint and scripts/banned-token-scan. No task-tracking workflow required.",
+      "description": "Zero-dependency core tier: graybeard skills, prose-voice, and checker CLIs (bin/defer-lint, bin/banned-token-scan on the Bash PATH; local init also ships scripts/). Always-on contract (explicit downgrade): Claude has no Cursor alwaysApply — core rules ship as discoverable commands/skills, not always-on policy. No task-tracking workflow required.",
       "author": { "name": "Kevin Glynn" },
       "license": "Apache-2.0",
       "category": "productivity",

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Behavioral tests for the plugin manifests on three surfaces
-(process-kit-wsi).
+(process-kit-wsi), plus Claude core packaging contracts (process-kit-i8r):
+always-on downgrade documentation, bin/ PATH wrappers, and a consumer-
+workspace fixture proving bare checker names resolve without scripts/.
 
 Surfaces and the schema each was verified against (2026-08-07):
   1. .claude-plugin/marketplace.json — Claude Code plugin marketplace.
@@ -30,7 +32,10 @@ Run: python3 scripts/tests/test_plugin_manifests.py
 """
 
 import json
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,6 +47,15 @@ CLAUDE_MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 CLAUDE_PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
 CURSOR_PLUGIN = REPO_ROOT / ".cursor-plugin" / "plugin.json"
 ROOT_PLUGIN = REPO_ROOT / "plugin.json"
+BIN_DIR = REPO_ROOT / "bin"
+
+# Pinned always-on contract (process-kit-i8r): Claude packages core as
+# discoverable commands/skills — explicit downgrade from Cursor alwaysApply.
+ALWAYS_ON_DOWNGRADE_RE = re.compile(
+    r"discoverable commands/skills.*not always-on policy",
+    re.IGNORECASE | re.DOTALL,
+)
+CORE_CHECKERS = ("defer-lint", "banned-token-scan")
 
 # Claude Code and Cursor both require kebab-case plugin/marketplace names.
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -197,6 +211,113 @@ class TestClaudeMarketplace(unittest.TestCase):
         for entry in self.entries.values():
             declared += entry.get("skills", []) + entry.get("commands", [])
         self.assertEqual(bad_paths(declared, REPO_ROOT), [])
+
+    def test_core_always_on_contract_is_explicit_downgrade(self):
+        # Loader-level pin: marketplace description states the Claude
+        # always-on downgrade, and delivery is commands[] (not hooks /
+        # alwaysApply). A description that still claims always-on or
+        # omits the downgrade fails this fixture.
+        core = self.entries["house-rules-core"]
+        self.assertRegex(core["description"], ALWAYS_ON_DOWNGRADE_RE)
+        self.assertIn("commands", core)
+        self.assertGreater(len(core["commands"]), 0)
+        self.assertNotIn("hooks", core)
+        # Claude projections strip alwaysApply; none may reintroduce it.
+        for cmd in core["commands"]:
+            text = (REPO_ROOT / normalize(cmd)).read_text(encoding="utf-8")
+            self.assertNotRegex(
+                text,
+                r"(?m)^alwaysApply:\s*true\s*$",
+                f"{cmd} must not claim alwaysApply",
+            )
+        upgrade = (REPO_ROOT / "claude/rules/core-upgrade-offer.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("always-on downgrade", upgrade.lower())
+        self.assertIn("discoverable commands", upgrade.lower())
+
+    def test_core_bin_wrappers_exist_for_checkers(self):
+        # Claude puts plugin bin/ on the Bash PATH; wrappers must exist
+        # for every core CLI basename while scripts/ remains for local init.
+        _, _, _, clis = core_expectations()
+        for cli in clis:
+            name = Path(cli).name
+            wrapper = BIN_DIR / name
+            self.assertTrue(
+                wrapper.is_file() and os.access(wrapper, os.X_OK),
+                f"missing executable bin/{name} for core CLI {cli}",
+            )
+            self.assertTrue(
+                (REPO_ROOT / cli).is_file(),
+                f"local-init path {cli} must still exist",
+            )
+
+
+class TestClaudeConsumerWorkspace(unittest.TestCase):
+    """Plugin-style install: bin/ on PATH, no scripts/ in the consumer cwd."""
+
+    def test_core_checkers_resolve_via_bin_on_path(self):
+        self.assertTrue(BIN_DIR.is_dir(), "bin/ missing — plugin PATH surface")
+        # Strip kit scripts/ from PATH so a bare name cannot accidentally
+        # resolve via a developer PATH that already includes scripts/.
+        path_parts = [
+            p
+            for p in os.environ.get("PATH", "").split(os.pathsep)
+            if p and Path(p).resolve() != (REPO_ROOT / "scripts").resolve()
+        ]
+        env = {**os.environ, "PATH": os.pathsep.join([str(BIN_DIR), *path_parts])}
+        with tempfile.TemporaryDirectory() as consumer:
+            consumer_path = Path(consumer)
+            # Relative scripts/ citation fails in a consumer with no kit tree.
+            try:
+                missing = subprocess.run(
+                    ["scripts/defer-lint", "--help"],
+                    cwd=consumer_path,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError:
+                missing = None  # absolute failure to resolve — expected
+            if missing is not None:
+                self.assertNotEqual(
+                    missing.returncode,
+                    0,
+                    "scripts/defer-lint must not resolve in a bare consumer cwd",
+                )
+            for name in CORE_CHECKERS:
+                result = subprocess.run(
+                    [name, "--help"],
+                    cwd=consumer_path,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    f"{name} --help failed from consumer cwd: {result.stderr}",
+                )
+                self.assertIn(name, result.stdout)
+
+    def test_claude_projections_teach_bare_checker_names(self):
+        # Claude projections prefer bare bin/ names; scripts/ is fallback.
+        cases = {
+            "claude/rules/defer-convention.md": "defer-lint",
+            "claude/rules/agent-identity.md": "banned-token-scan",
+        }
+        for rel, name in cases.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            self.assertRegex(
+                text,
+                rf"\*\*Checker:\*\* `{re.escape(name)}`",
+                f"{rel} must lead with bare `{name}`",
+            )
+            self.assertIn(
+                f"scripts/{name}",
+                text,
+                f"{rel} must keep scripts/ fallback for local installs",
+            )
 
 
 class TestCursorPlugin(unittest.TestCase):

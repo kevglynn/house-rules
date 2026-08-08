@@ -2,6 +2,8 @@
 
 This rule ships with the **house-rules-core** plugin. It is the pull-path from the zero-dependency wedge to the full playbook.
 
+**Claude packaging note (always-on downgrade):** Claude Code has no Cursor `alwaysApply`. Core rules and skills are packaged as discoverable commands/skills — not always-on policy. Invoke them when relevant; they are not injected every turn.
+
 ## When to offer
 
 Offer the full playbook install **once**, with explicit consent, when **all** of the following are true in the current workspace:

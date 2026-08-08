@@ -54,4 +54,4 @@ Rewrite the offending passage using complexity, scope, sequencing, and technical
 
 If you catch this regression in another agent's output during review, strip it silently and respond to the substance.
 
-**Checker:** `scripts/banned-token-scan` (kit-distributed) mechanizes this scan — reports candidate hits by token class for files or stdin (`--json` for agents); the not-regressions judgment stays with the reader. Class catalog and judgment boundary in `banned-token-scan --help`.
+**Checker:** `banned-token-scan` (kit-distributed; local installs also ship `scripts/banned-token-scan`) mechanizes this scan — reports candidate hits by token class for files or stdin (`--json` for agents); the not-regressions judgment stays with the reader. Class catalog and judgment boundary in `banned-token-scan --help`.

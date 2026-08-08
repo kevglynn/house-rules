@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Claude plugin PATH wrapper — bare `banned-token-scan` resolves when bin/ is on PATH.
+# Local init still distributes scripts/banned-token-scan; this does not replace that path.
+set -euo pipefail
+exec "$(cd "$(dirname "$0")/.." && pwd)/scripts/banned-token-scan" "$@"

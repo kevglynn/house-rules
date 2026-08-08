@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Claude plugin PATH wrapper — bare `defer-lint` resolves when bin/ is on PATH.
+# Local init still distributes scripts/defer-lint; this does not replace that path.
+set -euo pipefail
+exec "$(cd "$(dirname "$0")/.." && pwd)/scripts/defer-lint" "$@"

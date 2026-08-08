@@ -24,10 +24,15 @@
 # Line order is not significant; duplicates are rejected by the parser.
 #
 # Packaging constraints for consumers:
-#   - cli paths are also the required target-relative install paths:
-#     core rule prose cites scripts/defer-lint and
-#     scripts/banned-token-scan literally, so packaging must preserve
-#     scripts/ placement in targets or rewrite those citations.
+#   - cli paths under scripts/ remain the local-init install paths
+#     (house-rules init copies scripts/ as today).
+#   - Claude plugin packaging ALSO ships bin/<cli-basename> wrappers so
+#     bare command names (defer-lint, banned-token-scan) resolve on the
+#     Bash tool PATH after plugin-style install. Claude projections teach
+#     bare names with a scripts/ fallback note; Cursor .mdc dual-teaches.
+#   - Always-on contract (Claude): no alwaysApply equivalent — core rules
+#     ship as discoverable commands/skills (marketplace description), not
+#     always-on policy. Do not invent hooks or CLAUDE.md injection for this.
 #   - each rule also has a generated claude/rules/<name>.md projection
 #     (frontmatter stripped, .mdc -> .md); a Claude-flavored package
 #     derives those paths from the rule entries here.

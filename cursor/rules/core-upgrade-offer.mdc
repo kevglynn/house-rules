@@ -7,6 +7,8 @@ alwaysApply: true
 
 This rule ships with the **house-rules-core** plugin. It is the pull-path from the zero-dependency wedge to the full playbook.
 
+**Claude packaging note (always-on downgrade):** Claude Code has no Cursor `alwaysApply`. On Claude, core rules and skills ship as discoverable commands/skills — not always-on policy. Cursor keeps `alwaysApply: true` for this rule. On Claude, invoke when relevant; it is not injected every turn.
+
 ## When to offer
 
 Offer the full playbook install **once**, with explicit consent, when **all** of the following are true in the current workspace:

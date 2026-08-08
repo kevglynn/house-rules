@@ -14,4 +14,4 @@ Language-appropriate comment prefix (`//`, `#`, `/* */`, `--`); the ceiling and 
 Marker choice: `defer:` = deliberate simplification with known limits (structured — ceiling + trigger required); `TODO` = unstructured reminder; `FIXME` = actually broken.
 <!-- END GENERATED from profiles/conventions.toml -->
 
-**Checker:** `scripts/defer-lint` (kit-distributed) verifies the law — exit 1 on any defer lacking its upgrade-when clause; `--json` for agents; worked good/bad examples in `defer-lint --help`. Harvesting deferrals into a debt ledger: the `graybeard-debt` skill.
+**Checker:** `defer-lint` (kit-distributed; local installs also ship `scripts/defer-lint`) verifies the law — exit 1 on any defer lacking its upgrade-when clause; `--json` for agents; worked good/bad examples in `defer-lint --help`. Harvesting deferrals into a debt ledger: the `graybeard-debt` skill.
