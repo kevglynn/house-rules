@@ -26,7 +26,7 @@ The kit has two install tiers. A project-root stamp file `.house-rules-tier` rec
 
 `init --tier core` without `--tool` is stamp-only: no task-tracking init, no scratchpad, no sync-target append. Pair it with the `house-rules-core` plugin for rules. Re-run with `--tier core --tool cursor` (or `--tool claude` / `--tool both`) if you also want a local rules copy without upgrading to full.
 
-Core installs are deliberately excluded from `~/.house-rules-sync-targets`. Kit sync would overwrite a core subset with the full rule set and delete unrecognized files; keeping core off the list is the support guardrail.
+Core installs are deliberately excluded from `~/.house-rules-sync-targets`. Kit sync would overwrite a core subset with the full rule set; keeping core off the list is the support guardrail.
 
 The core plugin carries an in-agent upgrade offer (`core-upgrade-offer` rule): after core skills prove useful in a repo with no task tracking, the agent offers the full install once, with consent, and persists `.house-rules-upgrade-offered` so it does not re-nag.
 
@@ -49,11 +49,23 @@ Reports which targets have stale or missing rules without modifying anything.
 
 **Rules** (`cursor/rules/*.mdc`) sync automatically via `house-rules sync`. Add a target repo to `~/.house-rules-sync-targets` and run the script: rules distribute to the repo and all its worktrees (Cursor) or to `.claude/rules/` (Claude Code).
 
-The sync **only touches files the kit owns**. A rule your project wrote and put in `.cursor/rules/` or `.claude/rules/` survives every sync; the run reports it as unmanaged so you know the kit will neither update nor remove it. The cleanup pass deletes exactly one class of file: a rule the kit itself used to ship and no longer does, listed by stem in [`profiles/retired-rules.list`](../profiles/retired-rules.list). Under `--version`, rules newer than the pinned tag also count as kit-owned and are removed, so a downgrade produces the rule set that tag describes.
+**A routine sync never deletes anything.** It classifies every file in the rules directories it doesn't deliver, reports what it found, and leaves all of it in place. Deletion happens only when you pass `--retire`, which is the deliberate act of propagating a kit rename. The kit has renamed a rule once in its entire history, so making every sync destructive to cover that event bought nothing and cost real work — see [`profiles/retired-rules.list`](../profiles/retired-rules.list) for the list of names involved.
 
-Destructive operations are backed up. Both an overwrite of a locally-edited kit rule and a retirement deletion write a timestamped `.bak` first (safe mode, on by default; `--unsafe` disables backups for both). `--dry-run` previews the writes *and* the cleanup pass, including the unmanaged-file warnings. Deletion is skipped rather than forced if its backup fails, and the run exits non-zero so automation can see it.
+Ownership is decided by **bytes, not filenames**. A file is the kit's only if its content matches a version the kit actually shipped under that name. Three things follow:
 
-Note that a project rule sharing a filename with a live kit rule is still overwritten — that is the ordinary sync path, not cleanup, and it does write a `.bak`. Name project rules distinctly.
+| What's in the directory | What the sync does |
+|---|---|
+| A rule your project wrote | Kept, reported as **unmanaged** |
+| A file reusing a kit rule's name, with different bytes | Kept, reported as a **name collision** |
+| A rule the kit shipped and no longer delivers | Reported as **retirable**; removed only under `--retire` |
+
+A locally-edited copy of a retired kit rule lands in the middle row and is kept — the kit would rather leave a stale rule than delete your edit. `--check` reports a retirable rule as drift so the condition is visible in CI, and never flags the first two rows.
+
+One case where the kit does overwrite: a project rule sharing a filename with a rule the kit is **currently delivering**. That's the ordinary sync path rather than cleanup, and it writes a `.bak` first. Name project rules distinctly.
+
+Destructive operations are recoverable. An overwrite and a `--retire` deletion both write a timestamped `.bak` first (safe mode, on by default; `--unsafe` disables backups for both). The backup name is reserved atomically, so two syncs in the same second cannot overwrite each other's copy. If a backup can't be written the deletion is skipped and the run exits non-zero, so automation can tell it didn't happen.
+
+`--dry-run` and `--check` never write to a target repo or to the kit checkout, and `--dry-run` previews the cleanup pass alongside the writes. Both do materialize a temporary directory when combined with `--version`, since the pinned rules are extracted from git before use.
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.
 

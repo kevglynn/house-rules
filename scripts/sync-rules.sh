@@ -29,6 +29,12 @@ DRY_RUN=false
 # up as .bak before being overwritten. Pass --unsafe to allow silent
 # overwrite (rarely correct; kept for parity with prior behavior).
 SAFE_MODE=true
+# A routine sync never deletes. It reports which files are retirable and
+# leaves them alone; --retire is the deliberate opt-in that removes them.
+# The kit has renamed a rule once in its entire history, so making every
+# sync of every target destructive to cover that event was standing risk
+# for no routine benefit (process-kit-2d6).
+RETIRE=false
 PIN_VERSION=""
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --local)   LOCAL_ONLY=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --unsafe)  SAFE_MODE=false; shift ;;
+    --retire)  RETIRE=true; shift ;;
     --version)
       if [ $# -lt 2 ]; then
         echo "Error: --version requires an argument (git tag, e.g. v1.0.0). See --help." >&2
@@ -71,15 +78,26 @@ Options:
   --check                      Report drift without syncing
   --local                      Generate in this repo only (claude/all)
   --dry-run                    Preview what would be written
-  --unsafe                     Disable safe-mode backups (silent overwrite).
-                               Default is ON: locally modified files are
-                               backed up to .<ts>.bak before being
-                               overwritten.
+  --retire                     Actually remove retired kit rules. Without
+                               it, a sync never deletes: it reports which
+                               files are retirable and leaves them alone.
+  --unsafe                     Disable safe-mode backups. Default is ON:
+                               a file is backed up to .<ts>.bak before
+                               being overwritten AND before being removed
+                               under --retire.
   --version TAG                Sync rules from a specific git tag (e.g. v1.0.0)
   --show-version               Print current kit version and exit
   --help                       Show this help
 
 Config: ~/.house-rules-sync-targets (one repo root per line)
+
+File ownership:
+  The sync only deletes a file whose bytes match a version the kit
+  actually shipped under that name, and only under --retire. A rule your
+  project wrote is kept and reported as unmanaged. A file that reuses a
+  kit rule's name but holds different bytes is kept as a name collision.
+  A project rule sharing a name with a rule the kit is currently
+  delivering IS overwritten (with a .bak) — name project rules distinctly.
 
 Versioning:
   Without --version, rules sync from the current working tree (latest edits).
@@ -156,39 +174,46 @@ fi
 # cleanup pass may delete from a target. A missing or empty list is
 # deliberately fail-safe: nothing gets removed, everything unrecognized is
 # reported as unmanaged.
-RETIRED_STEMS=""
+RETIRED_STEMS=()
 RETIRED_LIST="$KIT_ROOT/profiles/retired-rules.list"
 if [ -f "$RETIRED_LIST" ]; then
-  # `read -r stem _` (default IFS) trims surrounding whitespace and takes
-  # the first field; `|| [ -n "$stem" ]` keeps a final line that has no
-  # trailing newline, which would otherwise be dropped silently — and with
-  # a one-entry list, dropping it no-ops the whole feature.
-  while read -r stem _ || [ -n "$stem" ]; do
-    case "$stem" in ""|\#*) continue ;; esac
-    RETIRED_STEMS="$RETIRED_STEMS $stem"
+  # Whole line, not the first whitespace field: a stem may legally contain
+  # spaces, and taking only the first field turned an entry "old rule" into
+  # "old" — which both failed to match the real file and made an unrelated
+  # old.mdc look kit-owned. `|| [ -n "$line" ]` keeps a final line with no
+  # trailing newline, which would otherwise be dropped silently.
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '#'*) continue ;; esac
+    line="${line#"${line%%[![:space:]]*}"}"   # trim leading whitespace
+    line="${line%"${line##*[![:space:]]}"}"   # trim trailing whitespace
+    [ -n "$line" ] || continue
+    RETIRED_STEMS+=("$line")
   done < "$RETIRED_LIST"
 fi
 
 # Stems the kit is delivering on THIS run (honors --version pinning).
-DELIVERED_STEMS=""
+DELIVERED_STEMS=()
 for f in "${MDC_FILES[@]}"; do
-  DELIVERED_STEMS="$DELIVERED_STEMS ${f%.mdc}"
+  DELIVERED_STEMS+=("${f%.mdc}")
 done
 
-# Every stem the kit has ever owned: what the working tree ships today,
-# plus what it has retired. Read from the working tree even under
-# --version, so a downgrade still recognizes newer rules as kit artifacts
-# and removes them rather than mistaking them for project content.
-KIT_KNOWN_STEMS="$RETIRED_STEMS"
+# Every stem the kit has ever used as a rule name: what the working tree
+# ships today, plus what it has retired. Read from the working tree even
+# under --version, so a downgrade still recognizes newer rules as kit
+# names. Note what this set is NOT: evidence that a given file on disk came
+# from the kit. It narrows the candidates; kit_authored_bytes decides.
+KIT_KNOWN_STEMS=("${RETIRED_STEMS[@]:-}")
 for f in "$KIT_ROOT/cursor/rules"/*.mdc; do
   [ -f "$f" ] || continue
   b="$(basename "$f")"
-  KIT_KNOWN_STEMS="$KIT_KNOWN_STEMS ${b%.mdc}"
+  KIT_KNOWN_STEMS+=("${b%.mdc}")
 done
 
 # Counted here rather than in the sync loop: --local runs the cleanup pass
 # without entering that loop, and `set -u` would abort on an unset counter.
 unmanaged_count=0
+collision_count=0
+retirable_count=0
 
 # --- Frontmatter stripping (for claude format) ---
 
@@ -223,26 +248,88 @@ strip_frontmatter() {
 
 # --- Stale file cleanup ---
 #
-# Three outcomes per unrecognized file in a rules directory:
-#   kit rule we are delivering  → overwritten by the sync loop, .bak first
-#   kit rule we are not         → removed, .bak first ("retired")
-#   anything else               → LEFT IN PLACE and reported ("unmanaged")
+# Four outcomes per file in a rules directory that we are not delivering:
+#   name unknown to the kit        → kept, reported "unmanaged"
+#   kit name, bytes never shipped  → kept, reported "name collision"
+#   kit name, bytes we shipped     → reported "retirable"; removed only
+#                                    under --retire, .bak first
+#   (delivering it)                → overwritten by the sync loop, .bak first
 #
-# The third case is the point. This pass used to delete whatever it did not
-# recognize, which destroyed project-authored rules that were never
-# committed and therefore unrecoverable (process-kit-2d6). A project may
-# keep its own rules in .cursor/rules/ or .claude/rules/; the kit will not
-# update or remove them. Operator-facing contract: docs/operations.md
+# Keeping the middle two is the point. This pass originally deleted
+# whatever it did not recognize, destroying project-authored rules that
+# were unrecoverable when uncommitted. The first fix narrowed that to "any
+# name the kit has ever used", which still deleted a project's own
+# ponytail-playbook.mdc on a routine sync, because a filename is not
+# provenance. Ownership now requires the bytes to match something the kit
+# actually shipped. Operator-facing contract: docs/operations.md
 # § "What syncs automatically vs. what you copy manually".
-#
-# "Kit rule we are not delivering" covers two cases, both genuine kit
-# artifacts rather than project content: a stem on the retired list (a rule
-# the kit renamed or dropped), and — under --version — a rule newer than
-# the pinned tag, which must go for the downgrade to produce the rule set
-# the tag describes.
 
-in_stem_set() { # in_stem_set <stem> <space-delimited set>
-  [[ " $2 " == *" $1 "* ]]
+in_stem_set() { # in_stem_set <stem> <set-member>...
+  local needle="$1"; shift
+  # An empty needle can only come from a malformed name, and the old
+  # space-delimited-string membership test matched it against every set.
+  [ -n "$needle" ] || return 1
+  local candidate
+  for candidate in "$@"; do
+    [[ "$candidate" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+# Render a .mdc source into the exact bytes the claude projection would
+# have, so a projected file can be byte-compared against it.
+render_claude() { # render_claude <mdc-path>
+  strip_frontmatter "$1" | sed 's/\.mdc/\.md/g'
+}
+
+# Every blob this rule name has ever had in kit history, newest first.
+kit_blob_history() { # kit_blob_history <stem>
+  local stem="$1" c
+  git -C "$KIT_ROOT" log --all --format=%H -- "cursor/rules/$stem.mdc" 2>/dev/null |
+    while read -r c; do
+      git -C "$KIT_ROOT" rev-parse --verify --quiet "$c:cursor/rules/$stem.mdc"
+    done
+}
+
+# Did the kit ever ship these exact bytes under this name? This is the
+# ownership test. A filename match only says the kit has used the name;
+# it says nothing about who wrote the file sitting there now.
+#
+# Deliberately asymmetric. A locally-edited kit rule fails this test and is
+# kept — a false keep, which costs a stale rule and a warning. A
+# project-authored file passing it would require byte-identical content,
+# at which point it is a kit rule by any useful definition. The expensive
+# direction is the one we refuse to take.
+kit_authored_bytes() { # kit_authored_bytes <path> <stem> <ext>
+  local path="$1" stem="$2" ext="$3" blob rc=1 tmp src
+  tmp="$(mktemp)"; src="$(mktemp)"
+
+  # Uncommitted working-tree state counts too: under --version, a rule
+  # added since the pin may not be committed yet.
+  local live="$KIT_ROOT/cursor/rules/$stem.mdc"
+  if [ -f "$live" ]; then
+    if [ "$ext" = mdc ]; then
+      cmp -s "$live" "$path" && rc=0
+    else
+      render_claude "$live" > "$tmp" && cmp -s "$tmp" "$path" && rc=0
+    fi
+  fi
+
+  if [ $rc -ne 0 ]; then
+    while read -r blob; do
+      [ -n "$blob" ] || continue
+      git -C "$KIT_ROOT" cat-file blob "$blob" > "$src" 2>/dev/null || continue
+      if [ "$ext" = mdc ]; then
+        if cmp -s "$src" "$path"; then rc=0; break; fi
+      else
+        render_claude "$src" > "$tmp"
+        if cmp -s "$tmp" "$path"; then rc=0; break; fi
+      fi
+    done < <(kit_blob_history "$stem")
+  fi
+
+  rm -f "$tmp" "$src"
+  return $rc
 }
 
 # Timestamped backup, shared by every destructive path so the convention
@@ -252,14 +339,21 @@ backup_file() {
   local path="$1" ts bak n=0
   ts="$(date +%Y%m%d%H%M%S)"
   bak="${path}.${ts}.bak"
-  # One-second timestamp granularity: two syncs in the same second would
-  # otherwise clobber the first backup, and on the deletion path that
-  # backup is the only remaining copy.
-  while [ -e "$bak" ]; do
+  # One-second timestamp granularity, so two syncs in the same second
+  # collide. `set -C` makes the reservation atomic: a test-then-copy left a
+  # window where both processes saw the name free, and the loser's cp then
+  # overwrote the winner's backup with the already-synced content — losing
+  # the only copy of the original bytes.
+  while ! ( set -C; : > "$bak" ) 2>/dev/null; do
     n=$((n + 1))
+    if [ $n -gt 100 ]; then
+      echo "✗ Could not reserve a backup name for $(basename "$path")" >&2
+      return 1
+    fi
     bak="${path}.${ts}-${n}.bak"
   done
   if ! cp "$path" "$bak"; then
+    rm -f "$bak"
     return 1
   fi
   echo "    ↳ backed up $(basename "$path") → $(basename "$bak")"
@@ -268,16 +362,42 @@ backup_file() {
 }
 
 retire_or_keep() {
-  local existing="$1" base="$2" stem="$3"
+  local existing="$1" base="$2" stem="$3" ext="$4"
 
-  # A generated projection directory (--local writes the kit's own
-  # claude/rules/) has no project-authored content by construction, so an
-  # unrecognized file there is an orphaned build artifact, not someone's
-  # rule. Keeping it would leave a retired rule loaded in the kit and ship
-  # it to every new adopter via init's wholesale copy.
-  if ! $LOCAL_ONLY && ! in_stem_set "$stem" "$KIT_KNOWN_STEMS"; then
+  # The kit's own claude/rules/ (written only by --local) is generated in
+  # full from cursor/rules/ and tracked in git, so an unrecognized file
+  # there is an orphaned build artifact rather than someone's rule, git is
+  # the backup, and regenerating is not a destructive act needing consent.
+  # Keeping it would leave a retired rule loaded in the kit and ship it to
+  # every new adopter via init's wholesale copy.
+  if $LOCAL_ONLY; then
+    if $DRY_RUN; then
+      echo "    [dry-run] Would prune orphaned projection: $base"
+      return 0
+    fi
+    if ! rm "$existing"; then
+      echo "✗ Failed to prune orphaned projection $base" >&2
+      return 1
+    fi
+    echo "    Pruned orphaned projection: $base"
+    return 0
+  fi
+
+  if ! in_stem_set "$stem" "${KIT_KNOWN_STEMS[@]:-}"; then
     echo "  ⚠ Unmanaged rule left in place: $base (not a kit rule — the kit will not update or remove it)"
     unmanaged_count=$((unmanaged_count + 1))
+    return 0
+  fi
+
+  if ! kit_authored_bytes "$existing" "$stem" "$ext"; then
+    echo "  ⚠ Name collision left in place: $base (a kit rule has used this name, but these bytes are not the kit's — treating it as yours)"
+    collision_count=$((collision_count + 1))
+    return 0
+  fi
+
+  if ! $RETIRE; then
+    echo "  ⓘ Retirable: $base (a kit rule the kit no longer ships; run with --retire to remove it)"
+    retirable_count=$((retirable_count + 1))
     return 0
   fi
 
@@ -297,8 +417,9 @@ retire_or_keep() {
   echo "    Removed retired: $base"
 }
 
-# One pass over both formats: a file is kit-managed iff its stem is in the
-# set being delivered, whichever extension it wears.
+# One pass over both formats: a file is being delivered iff its stem is in
+# the delivered set, whichever extension it wears. Everything else goes to
+# retire_or_keep for classification.
 cleanup_stale() { # cleanup_stale <dest> <ext>
   local dest="$1" ext="$2" rc=0
   [ -d "$dest" ] || return 0
@@ -307,8 +428,8 @@ cleanup_stale() { # cleanup_stale <dest> <ext>
     local base stem
     base="$(basename "$existing")"
     stem="${base%.$ext}"
-    in_stem_set "$stem" "$DELIVERED_STEMS" && continue
-    retire_or_keep "$existing" "$base" "$stem" || rc=1
+    in_stem_set "$stem" "${DELIVERED_STEMS[@]:-}" && continue
+    retire_or_keep "$existing" "$base" "$stem" "$ext" || rc=1
   done
   return $rc
 }
@@ -353,22 +474,24 @@ sync_claude_to() {
     return 0
   fi
   mkdir -p "$dest" || return 1
+  local rendered
+  rendered="$(mktemp)"
   for f in "${MDC_FILES[@]}"; do
     local md_name="${f%.mdc}.md"
-    if $SAFE_MODE && [ -f "$dest/$md_name" ]; then
-      local expected
-      expected="$(strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g')"
-      local actual
-      actual="$(cat "$dest/$md_name")"
-      if [[ "$expected" != "$actual" ]]; then
-        if ! backup_file "$dest/$md_name"; then
-          echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
-          return 1
-        fi
+    render_claude "$SRC/$f" > "$rendered" || { rm -f "$rendered"; return 1; }
+    # cmp, not a string compare of two command substitutions: those strip
+    # trailing newlines, so a file differing only in trailing newlines
+    # compared equal and was overwritten with no backup at all.
+    if $SAFE_MODE && [ -f "$dest/$md_name" ] && ! cmp -s "$rendered" "$dest/$md_name"; then
+      if ! backup_file "$dest/$md_name"; then
+        echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
+        rm -f "$rendered"
+        return 1
       fi
     fi
-    strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g' > "$dest/$md_name" || return 1
+    cp "$rendered" "$dest/$md_name" || { rm -f "$rendered"; return 1; }
   done
+  rm -f "$rendered"
   cleanup_stale "$dest" md
 }
 
@@ -378,20 +501,60 @@ sync_claude_to() {
 # `--check --local` stays green while an orphaned rule sits committed in
 # claude/rules/, gets loaded alongside its replacement, and ships to every
 # new adopter through init's wholesale copy.
+#
+# Every entry, not just *.<ext>: the guarantee is "exactly the projection",
+# and a stray .bak or .txt in there breaks it just as thoroughly as an
+# orphaned .md. Scanning only the projection extension is how the kit
+# managed to litter its own generated directory with backups and then
+# certify it clean.
 check_no_orphans() { # check_no_orphans <dest> <ext>
   local dest="$1" ext="$2" orphan=0
   $LOCAL_ONLY || return 0
+  [ -d "$dest" ] || return 0
+  shopt -s nullglob dotglob
+  for existing in "$dest"/*; do
+    local base stem
+    base="$(basename "$existing")"
+    if [ ! -f "$existing" ]; then
+      echo "  ✗ $base — not a regular file (generated directory must hold only the projection)"
+      orphan=1
+      continue
+    fi
+    if [[ "$base" != *."$ext" ]]; then
+      echo "  ✗ $base — not part of the projection (generated directory must hold only *.$ext)"
+      orphan=1
+      continue
+    fi
+    stem="${base%.$ext}"
+    in_stem_set "$stem" "${DELIVERED_STEMS[@]:-}" && continue
+    echo "  ✗ $base — orphaned projection (no matching cursor/rules/$stem.mdc)"
+    orphan=1
+  done
+  shopt -u nullglob dotglob
+  return $orphan
+}
+
+# Check mode used to look only for files it expected, so a target holding a
+# retired kit rule reported "all rules up to date" while the corresponding
+# sync would offer to remove it. Unmanaged and name-collision files are
+# deliberately NOT drift — they are the project's, and flagging them would
+# make check permanently red on any repo with its own rules.
+check_retirable_in() { # check_retirable_in <dest> <ext>
+  local dest="$1" ext="$2" drift=0
+  $LOCAL_ONLY && return 0
   [ -d "$dest" ] || return 0
   for existing in "$dest"/*."$ext"; do
     [ -f "$existing" ] || continue
     local base stem
     base="$(basename "$existing")"
     stem="${base%.$ext}"
-    in_stem_set "$stem" "$DELIVERED_STEMS" && continue
-    echo "  ✗ $base — orphaned projection (no matching cursor/rules/$stem.mdc)"
-    orphan=1
+    in_stem_set "$stem" "${DELIVERED_STEMS[@]:-}" && continue
+    in_stem_set "$stem" "${KIT_KNOWN_STEMS[@]:-}" || continue
+    kit_authored_bytes "$existing" "$stem" "$ext" || continue
+    echo "  ✗ $base — retired kit rule still present (run with --retire to remove)"
+    drift=1
   done
-  return $orphan
+  return $drift
 }
 
 check_cursor_in() {
@@ -401,11 +564,12 @@ check_cursor_in() {
     if [ ! -f "$dest/$f" ]; then
       echo "  ✗ $f — missing"
       stale=1
-    elif ! diff -q "$SRC/$f" "$dest/$f" > /dev/null 2>&1; then
+    elif ! cmp -s "$SRC/$f" "$dest/$f"; then
       echo "  ✗ $f — differs"
       stale=1
     fi
   done
+  check_retirable_in "$dest" mdc || stale=1
   if [ $stale -eq 0 ]; then
     echo "  ✓ all ${#MDC_FILES[@]} cursor rules up to date"
   fi
@@ -415,23 +579,26 @@ check_cursor_in() {
 check_claude_in() {
   local dest="$1"
   local stale=0
+  local rendered
+  rendered="$(mktemp)"
   for f in "${MDC_FILES[@]}"; do
     local md_name="${f%.mdc}.md"
     if [ ! -f "$dest/$md_name" ]; then
       echo "  ✗ $md_name — missing"
       stale=1
     else
-      local expected
-      expected="$(strip_frontmatter "$SRC/$f" | sed 's/\.mdc/\.md/g')"
-      local actual
-      actual="$(cat "$dest/$md_name")"
-      if [[ "$expected" != "$actual" ]]; then
+      render_claude "$SRC/$f" > "$rendered"
+      # Byte comparison for the same reason sync_claude_to uses one: a
+      # string compare called trailing-newline drift "up to date".
+      if ! cmp -s "$rendered" "$dest/$md_name"; then
         echo "  ✗ $md_name — differs"
         stale=1
       fi
     fi
   done
+  rm -f "$rendered"
   check_no_orphans "$dest" md || stale=1
+  check_retirable_in "$dest" md || stale=1
   if [ $stale -eq 0 ]; then
     echo "  ✓ all ${#MDC_FILES[@]} claude rules up to date"
   fi
@@ -553,8 +720,9 @@ sync_worktrees() {
       if ! sync_cursor_to "$wt_dest"; then
         error_count=$((error_count + 1))
         errors_summary+=("$wt_path (cursor, worktree): sync failed")
+      elif ! $DRY_RUN; then
+        echo "  ↳ worktree: $(basename "$wt_path")"
       fi
-      if ! $DRY_RUN; then echo "  ↳ worktree: $(basename "$wt_path")"; fi
     fi
     local_wt=$((local_wt + 1))
   done < <(git -C "$repo_root" worktree list --porcelain 2>/dev/null | grep '^worktree ' || true)
@@ -639,10 +807,27 @@ else
   fi
 fi
 
-if [ $unmanaged_count -gt 0 ]; then
+if [ $unmanaged_count -gt 0 ] || [ $collision_count -gt 0 ]; then
   echo ""
-  echo "⚠ $unmanaged_count unmanaged rule file(s) left in place across all targets."
-  echo "  These are not kit rules. The kit will not update or remove them."
+  if [ $unmanaged_count -gt 0 ]; then
+    echo "⚠ $unmanaged_count unmanaged rule file(s) left in place across all targets."
+    echo "  These are not kit rules. The kit will not update or remove them."
+  fi
+  if [ $collision_count -gt 0 ]; then
+    echo "⚠ $collision_count name collision(s) left in place across all targets."
+    echo "  A kit rule has used these names, but the bytes on disk are not the"
+    echo "  kit's, so they are treated as yours. Renaming them avoids the clash."
+  fi
+fi
+
+if [ $retirable_count -gt 0 ]; then
+  echo ""
+  echo "ⓘ $retirable_count retirable kit rule(s) found across all targets."
+  if $RETIRE; then
+    echo "  Removed (see per-target output above)."
+  else
+    echo "  Nothing was deleted. Re-run with --retire to remove them."
+  fi
 fi
 
 if [ $error_count -gt 0 ]; then

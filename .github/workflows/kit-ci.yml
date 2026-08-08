@@ -130,11 +130,14 @@ jobs:
           # default shallow checkout has no tags and the case would skip
           # itself into a silently green gate.
           fetch-depth: 0
-      - name: Sync stale-rule cleanup fixtures (project rules must survive)
-        # Throwaway HOME + mktemp target; pins the retired-rules allowlist
-        # so the cleanup pass can retire a renamed kit rule without
-        # deleting a rule the project wrote itself, and pins the .bak on
-        # the deletion path that safe mode used to skip (process-kit-2d6).
+      - name: Sync file-ownership fixtures (project rules must survive)
+        # Throwaway HOME + mktemp target. Pins the ownership contract that
+        # two successive bugs broke (process-kit-2d6): a filename is not
+        # provenance, so removal requires the bytes to match a version the
+        # kit shipped AND an explicit --retire; a default sync deletes
+        # nothing. Also pins the .bak on the deletion path, byte-level
+        # comparison on the claude overwrite path, and exactness of the
+        # kit's own generated claude/rules/.
         run: bash scripts/tests/test_sync_cleanup.sh
 
   tier-mechanics:
