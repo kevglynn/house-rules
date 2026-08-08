@@ -9,7 +9,7 @@ The 20-case spike baseline is ported verbatim from
 experiments/profile-spike/demo-cases.sh — same inputs, same expected exit
 codes — and runs against the committed profiles/conventions.toml. The one
 sanctioned behavior change on top of the baseline: `spike` is an accepted
-COMMIT type (Kevin, 2026-08-05). It is still not a branch type.
+COMMIT type (process-kit-8qv, 2026-08-05). It is still not a branch type.
 
 Run: python3 scripts/tests/test_conventions.py
 """

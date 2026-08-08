@@ -37,8 +37,8 @@ profile = "process-kit"
 # ---------------------------------------------------------------------------
 # 1a. Commit-message grammar
 # Law home: cursor/rules/operating-model.mdc § Git Conventions (generated).
-# `spike` sanctioned as a commit type by Kevin, 2026-08-05 (process-kit-8qv);
-# `wip` remains unsanctioned.
+# `spike` sanctioned as a commit type by decision record process-kit-8qv,
+# 2026-08-05; `wip` remains unsanctioned.
 # ---------------------------------------------------------------------------
 [commit]
 format = "<type>: <summary>"
@@ -50,7 +50,7 @@ summary_max_chars = 72
 # ---------------------------------------------------------------------------
 # 1b. Branch-naming grammar
 # `spike` is NOT a branch type — only the commit type was sanctioned
-# (Kevin, 2026-08-05); the demo-case baseline pins spike/... branches as
+# (process-kit-8qv, 2026-08-05); the demo-case baseline pins spike/... branches as
 # rejected. The prose grammar is not deterministically parseable (<bead-id>
 # and <short-description> are both kebab-case), so the checker validates the
 # checkable envelope: known type + "/" + lowercase kebab slug with >= 2

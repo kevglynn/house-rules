@@ -2,7 +2,7 @@
 
 This rule ships with the **house-rules-core** plugin. It is the pull-path from the zero-dependency wedge to the full playbook.
 
-**Claude packaging note (always-on downgrade):** Claude Code has no Cursor `alwaysApply`. On Claude, core rules and skills ship as discoverable commands/skills — not always-on policy. Cursor keeps `alwaysApply: true` for this rule. On Claude, invoke when relevant; it is not injected every turn.
+**Packaging note (always-on downgrade):** this rule is always-on only where the host offers an always-on rule mechanism. Cursor does (`alwaysApply`, which this rule's frontmatter sets). Where the host offers none — Claude Code, as of 2026-08 — core rules and skills ship as discoverable commands and skills instead: invoke this rule when it is relevant rather than expecting it every turn. *Revisit when:* a host without an always-on mechanism gains one, or Cursor renames or drops `alwaysApply` — the core tier's packaging assumes this split.
 
 ## When to offer
 
