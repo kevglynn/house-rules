@@ -173,6 +173,17 @@ class DocsPathLintTest(FixtureTest):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(out["findings"][0]["path"], "scripts/gone.sh")
 
+    def test_tilde_bash_fence_is_scanned(self):
+        # Markdown permits ~~~ fences; a stale path inside one must not
+        # silently exit 0 (Tier-2 Codex finding).
+        self.write(
+            "README.md",
+            "~~~bash\nbash scripts/gone.sh\n~~~\n",
+        )
+        r, out = self.scan_json()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(out["findings"][0]["path"], "scripts/gone.sh")
+
     def test_untagged_fence_with_shellish_first_line_is_scanned(self):
         self.write("README.md", fenced("bash scripts/gone.sh", tag=""))
         r, out = self.scan_json()

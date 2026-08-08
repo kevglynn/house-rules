@@ -136,18 +136,17 @@ if [ $errors -gt 0 ]; then
   exit 1
 fi
 
-# ---------- Tier stamp (written early so partial runs still leave a stamp) ----------
-
-printf '%s\n' "$TIER" > "$PROJECT_ROOT/.house-rules-tier"
-echo "✓ Wrote .house-rules-tier ($TIER)"
-
 # ---------- Core stamp-only path ----------
 #
 # Plugin installs deliver rules; this path only records the tier so doctor
 # and sync-target logic know not to nag. Optional --tool still copies local
 # rules below (same as full), but beads/scratchpad/sync stay skipped.
+# Stamp is written here only after the path is known to be stamp-only —
+# never before a --tool validation that may refuse.
 
 if [[ "$TIER" == "core" && -z "$TOOL" ]]; then
+  printf '%s\n' "$TIER" > "$PROJECT_ROOT/.house-rules-tier"
+  echo "✓ Wrote .house-rules-tier ($TIER)"
   echo ""
   echo "=== Core tier stamped ==="
   echo ""
@@ -170,6 +169,8 @@ fi
 # a repo behind the user's back — if there's no TTY, the flag must be
 # passed explicitly (which means the agent had to declare the choice to
 # the user before running).
+# Validate --tool BEFORE writing .house-rules-tier so a refused/invalid
+# invocation cannot leave a misleading authoritative stamp.
 
 if [ -z "$TOOL" ]; then
   if [ ! -t 0 ]; then
@@ -206,6 +207,16 @@ case "$TOOL" in
     exit 1
     ;;
 esac
+
+# ---------- Tier stamp (after tool validation) ----------
+#
+# Written once --tool is known-valid so doctor treats the stamp as
+# authoritative. Mid-copy failures can still leave a stamp with a partial
+# install — that is a known ceiling (doctor should still surface missing
+# pieces); the refused-before-any-work case is the one we close here.
+
+printf '%s\n' "$TIER" > "$PROJECT_ROOT/.house-rules-tier"
+echo "✓ Wrote .house-rules-tier ($TIER)"
 
 echo ""
 
@@ -252,6 +263,19 @@ if $SKILLS; then
   skills_dests=""
   [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]] && skills_dests=".cursor/skills"
   [[ "$TOOL" == "claude" || "$TOOL" == "both" ]] && skills_dests="$skills_dests .claude/skills"
+  # Core tier: only skills listed in profiles/core-manifest.list — never the
+  # full skills/ tree (Tier-2 finding: --skills leaked full-tier skills).
+  core_skill_allow=""
+  if [[ "$TIER" == "core" ]]; then
+    core_manifest="$KIT_ROOT/profiles/core-manifest.list"
+    if [ -f "$core_manifest" ]; then
+      while IFS='|' read -r kind path _rest; do
+        case "$kind" in ""|\#*) continue ;; esac
+        [[ "$kind" == "skill" ]] || continue
+        core_skill_allow="$core_skill_allow $(basename "$path")"
+      done < "$core_manifest"
+    fi
+  fi
   if [ -d "$skills_src" ]; then
     for skills_rel in $skills_dests; do
       skills_dest="$PROJECT_ROOT/$skills_rel"
@@ -260,6 +284,12 @@ if $SKILLS; then
       for skill_dir in "$skills_src"/*/; do
         [ -d "$skill_dir" ] || continue
         skill_name="$(basename "$skill_dir")"
+        if [[ "$TIER" == "core" ]]; then
+          case " $core_skill_allow " in
+            *" $skill_name "*) ;;
+            *) continue ;;
+          esac
+        fi
         cp -rf "$skill_dir" "$skills_dest/"
         echo "  ↳ $skill_name"
         skills_count=$((skills_count + 1))
@@ -281,12 +311,30 @@ fi
 # scripts/distributed-clis.list; this loop distributes each entry and
 # doctor.sh drift-checks the same manifest. Per-script rationale
 # and the field layout live in the manifest's header comments.
+# Core tier: only CLIs listed in profiles/core-manifest.list.
 
 clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
+core_cli_allow=""
+if [[ "$TIER" == "core" ]]; then
+  core_manifest="$KIT_ROOT/profiles/core-manifest.list"
+  if [ -f "$core_manifest" ]; then
+    while IFS='|' read -r kind path _rest; do
+      case "$kind" in ""|\#*) continue ;; esac
+      [[ "$kind" == "cli" ]] || continue
+      core_cli_allow="$core_cli_allow $(basename "$path")"
+    done < "$core_manifest"
+  fi
+fi
 
 if [ -f "$clis_manifest" ]; then
   while IFS='|' read -r cli_name _cli_rest; do
     case "$cli_name" in ""|\#*) continue ;; esac
+    if [[ "$TIER" == "core" ]]; then
+      case " $core_cli_allow " in
+        *" $cli_name "*) ;;
+        *) continue ;;
+      esac
+    fi
     cli_src="$KIT_ROOT/scripts/$cli_name"
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
     [ -f "$cli_src" ] || continue
@@ -687,10 +735,18 @@ fi
 # every later sync-rules.sh run until removed by hand.
 # Core-tier installs must never register — they are not kit-sync consumers
 # (rules arrive via plugin; registering would invite full-rule sync wipes).
+# Reclassifying full→core must also *remove* any prior exact registration.
 TARGETS_FILE="$HOME/.house-rules-sync-targets"
 tmp_root="${TMPDIR:-/tmp}"
 if [[ "$TIER" == "core" ]]; then
   echo "– Skipped ~/.house-rules-sync-targets registration (core tier)"
+  if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+    # grep exits 1 when every line matched (file becomes empty) — do not
+    # treat that as failure or skip the mv.
+    grep -vxF "$PROJECT_ROOT" "$TARGETS_FILE" > "$TARGETS_FILE.tmp" || true
+    mv "$TARGETS_FILE.tmp" "$TARGETS_FILE"
+    echo "✓ Removed prior sync-target registration (full→core)"
+  fi
 else
   case "$PROJECT_ROOT/" in
     "${tmp_root%/}/"* | /tmp/*)
@@ -720,18 +776,28 @@ if $SKILLS; then
     echo "  • $(ls -1d "$PROJECT_ROOT/$skills_rel/"*/ 2>/dev/null | wc -l | tr -d ' ') skills ($skills_rel/)" 2>/dev/null || true
   done
 fi
-echo "  • Beads task tracking (bd list, bd ready, bd create)"
-if $HOOKS_INSTALLED; then
-  echo "  • Beads git hooks (bd hooks install — auto-export / sync on commit & push)"
+if [[ "$TIER" == "full" ]]; then
+  echo "  • Beads task tracking (bd list, bd ready, bd create)"
+  if $HOOKS_INSTALLED; then
+    echo "  • Beads git hooks (bd hooks install — auto-export / sync on commit & push)"
+  fi
+  if $NO_HOOKS; then
+    echo "  • Beads git hooks skipped — run bd hooks install when ready"
+  fi
+  echo "  • Scratchpad for cross-session context"
+else
+  echo "  • Task tracking / scratchpad skipped (core tier)"
 fi
-if $NO_HOOKS; then
-  echo "  • Beads git hooks skipped — run bd hooks install when ready"
-fi
-echo "  • Scratchpad for cross-session context"
 [ -f "$coc_dest" ] && echo "  • Agentic Covenant (CODE_OF_CONDUCT.md)"
 if [ -f "$clis_manifest" ]; then
   while IFS='|' read -r cli_name _key _header _note cli_label cli_detail; do
     case "$cli_name" in ""|\#*) continue ;; esac
+    if [[ "$TIER" == "core" ]]; then
+      case " $core_cli_allow " in
+        *" $cli_name "*) ;;
+        *) continue ;;
+      esac
+    fi
     [ -f "$PROJECT_ROOT/scripts/$cli_name" ] && \
       echo "  • $cli_label (scripts/$cli_name — $cli_detail)"
   done < "$clis_manifest"

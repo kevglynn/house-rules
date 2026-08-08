@@ -312,6 +312,21 @@ echo ""
 
 clis_manifest="$KIT_ROOT/scripts/distributed-clis.list"
 
+# Core tier: only drift-check CLIs listed in profiles/core-manifest.list.
+# A leftover tdd-ledger / close-reason-lint from a prior full install must
+# not turn a healthy core stamp red (Tier-2 finding).
+core_cli_allow=""
+if $CORE_TIER; then
+  core_manifest="$KIT_ROOT/profiles/core-manifest.list"
+  if [ -f "$core_manifest" ]; then
+    while IFS='|' read -r kind path _rest; do
+      case "$kind" in ""|\#*) continue ;; esac
+      [[ "$kind" == "cli" ]] || continue
+      core_cli_allow="$core_cli_allow $(basename "$path")"
+    done < "$core_manifest"
+  fi
+fi
+
 if [ ! -f "$clis_manifest" ]; then
   echo "Distributed CLIs:"
   check_warn "Manifest missing at $clis_manifest — cannot drift-check kit CLIs"
@@ -319,6 +334,12 @@ if [ ! -f "$clis_manifest" ]; then
 else
   while IFS='|' read -r cli_name cli_key cli_header cli_note _label _detail; do
     case "$cli_name" in ""|\#*) continue ;; esac
+    if $CORE_TIER; then
+      case " $core_cli_allow " in
+        *" $cli_name "*) ;;
+        *) continue ;;
+      esac
+    fi
     echo "$cli_header:"
     cli_src="$KIT_ROOT/scripts/$cli_name"
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
@@ -593,7 +614,12 @@ has_beads=false
 [ -d "$PROJECT_ROOT/.beads" ] || [ -d "$PROJECT_ROOT/.dolt" ] && has_beads=true
 
 if $CORE_TIER; then
-  check_pass "Sync targets — N/A for core tier (core installs are not sync targets)"
+  if [ -f "$TARGETS_FILE" ] && grep -qxF "$PROJECT_ROOT" "$TARGETS_FILE" 2>/dev/null; then
+    check_fail "Core-tier project still registered in ~/.house-rules-sync-targets — full-rule sync would overwrite" \
+      "grep -vxF \"$PROJECT_ROOT\" ~/.house-rules-sync-targets > /tmp/hr-targets && mv /tmp/hr-targets ~/.house-rules-sync-targets (or re-run init --tier core --tool …)"
+  else
+    check_pass "Sync targets — N/A for core tier (not registered as a sync consumer)"
+  fi
 elif $is_kit_repo; then
   # The kit is the sync SOURCE — registration as a target is inapplicable.
   echo "  – kit repo itself: sync source, not a target (registration check skipped)"
@@ -743,7 +769,7 @@ fi
 
 if [ $fail -gt 0 ]; then
   echo ""
-  echo "Run 'bash \"$KIT_ROOT/scripts/house-rules\" init' to fix most issues automatically."
+  echo "Run 'bash \"$KIT_ROOT/scripts/house-rules\" init --tool cursor (or --tool claude / --tool both)' to fix most issues automatically."
   exit 1
 else
   if [ $warn -gt 0 ]; then

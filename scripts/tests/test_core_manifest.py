@@ -80,15 +80,21 @@ def find_missing(entries, root):
 def grep_targets(entries, root):
     """Files whose text must be bd/beads-clean.
 
-    A skill entry denotes the whole directory, so every .md in it is
-    checked — SKILL.md plus any companion files a skill grows later.
+    A skill entry denotes the whole directory, so every Markdown companion
+    in it is checked — SKILL.md plus any .md/.mdc files a skill grows later
+    (case-insensitive suffix).
     """
     targets = []
     for kind, path in entries:
         if kind == "rule":
             targets.append(root / path)
         elif kind == "skill":
-            targets.extend(sorted((root / path).rglob("*.md")))
+            skill_root = root / path
+            if not skill_root.is_dir():
+                continue
+            for p in sorted(skill_root.rglob("*")):
+                if p.is_file() and p.suffix.lower() in {".md", ".mdc"}:
+                    targets.append(p)
     return targets
 
 
@@ -227,6 +233,22 @@ class TestCheckersAreNotVacuous(unittest.TestCase):
             hits = find_unclean([("skill", "skills/some-skill")], root)
             self.assertEqual(len(hits), 1)
             self.assertIn("references.md", hits[0][0])
+
+    def test_dirty_skill_mdc_companion_is_flagged(self):
+        # .mdc companions are in scope — a dirty nested .mdc must not
+        # escape the cleanliness checker (Tier-2 Codex finding).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skills" / "some-skill"
+            nested = skill / "refs"
+            nested.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("Clean text.\n", encoding="utf-8")
+            (nested / "companion.mdc").write_text(
+                "Claim the bead with bd update --claim.\n", encoding="utf-8"
+            )
+            hits = find_unclean([("skill", "skills/some-skill")], root)
+            self.assertEqual(len(hits), 1)
+            self.assertIn("companion.mdc", hits[0][0])
 
 
 if __name__ == "__main__":

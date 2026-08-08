@@ -14,9 +14,9 @@ neither this doc set nor these clone-path idioms, so distributing it
 would only add drift surface.
 
 Detection scope (existence checking only — nothing is executed): inside
-fenced blocks tagged bash/sh/shell/zsh/console (and untagged fences whose
-first line looks like a shell command), two token classes are resolved
-against the repo root:
+fenced blocks tagged bash/sh/shell/zsh/console (backtick or tilde
+delimiters; and untagged fences whose first line looks like a shell
+command), two token classes are resolved against the repo root:
   - any token containing `scripts/` (bare, ./-prefixed, or behind a
     known clone prefix: ~/process-kit/, ~/house-rules/, $HOME/<either>,
     $PROCESS_KIT/, ${PROCESS_KIT:-$HOME/process-kit}/)
@@ -201,26 +201,44 @@ def extract_tokens(line):
     return list(dict.fromkeys(tokens))
 
 
+FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})(.*)$")
+
+
 def iter_fences(lines):
     """Yields (opener_lineno, info_tag, [(lineno, text), ...]) per fenced
-    block. Simple toggle state machine: any ``` line opens or closes; an
-    unclosed fence at EOF still yields its content."""
+    block. CommonMark-style: opening ``` or ~~~ (3+); closing fence uses
+    the same character with length >= opener. Unclosed fence at EOF still
+    yields its content."""
     block = None
     tag = None
     opener = None
+    delim_char = None
+    delim_len = 0
     for lineno, line in enumerate(lines, start=1):
         stripped = line.strip()
-        if stripped.startswith("```"):
+        m = FENCE_OPEN_RE.match(stripped)
+        if m:
+            marker, rest = m.group(1), m.group(2)
             if block is None:
                 block = []
-                # First word of the info string: ```bash title="x" is
-                # still a bash fence.
-                info = stripped.lstrip("`").strip().lower()
+                info = rest.strip().lower()
                 tag = info.split()[0] if info else ""
                 opener = lineno
-            else:
+                delim_char = marker[0]
+                delim_len = len(marker)
+            elif (
+                marker[0] == delim_char
+                and len(marker) >= delim_len
+                and not rest.strip()
+            ):
                 yield opener, tag, block
                 block = None
+                tag = None
+                opener = None
+                delim_char = None
+                delim_len = 0
+            else:
+                block.append((lineno, line))
         elif block is not None:
             block.append((lineno, line))
     if block is not None:

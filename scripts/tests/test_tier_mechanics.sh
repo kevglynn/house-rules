@@ -75,7 +75,9 @@ check "init --tier core does not create scratchpad" \
   bash -c "! test -f '$core_repo/.cursor/scratchpad.md' && ! test -f '$core_repo/scratchpad.md'"
 
 # Doctor on core stamp alone (no local rules — plugin-delivered is fine).
-doc_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" 2>&1)" || true
+# Capture $? immediately — `|| true` would make the asserted exit code
+# vacuous (Tier-2 finding).
+doc_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" 2>&1)"
 doc_rc=$?
 check "core doctor: no Beads-not-initialized failure" \
   out_lacks "$doc_out" "Beads not initialized"
@@ -87,7 +89,7 @@ check "core doctor: beads section N/A for core" \
   out_has_re "$doc_out" "N/A for core tier"
 # Agent SUMMARY must not be bootstrap_needed solely because beads/rules
 # dirs are absent when stamp is core.
-agent_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" --agent 2>&1)" || true
+agent_out="$(HOME="$h" bash "$DOCTOR" "$core_repo" --agent 2>&1)"
 agent_rc=$?
 check "core doctor --agent: not SUMMARY bootstrap_needed" \
   out_lacks "$agent_out" "SUMMARY: bootstrap_needed"
@@ -121,6 +123,33 @@ check "init --tier full writes .house-rules-tier=full" \
   test "$(tr -d '[:space:]' < "$full_repo/.house-rules-tier" 2>/dev/null)" = "full"
 check "init --tier full registers sync-targets" \
   grep -qxF "$full_repo" "$full_home/.house-rules-sync-targets"
+
+# full→core: must remove the prior registration and leave doctor green
+# on the sync section (not a silent N/A while still registered).
+(cd "$full_repo" && HOME="$full_home" bash "$INIT" --tool cursor --tier core --no-hooks > /dev/null 2>&1)
+check "full→core rewrites .house-rules-tier=core" \
+  test "$(tr -d '[:space:]' < "$full_repo/.house-rules-tier" 2>/dev/null)" = "core"
+check "full→core removes sync-target registration" \
+  bash -c "! grep -qxF '$full_repo' '$full_home/.house-rules-sync-targets'"
+# Re-register manually to pin doctor's residual-registration failure.
+printf '%s\n' "$full_repo" >> "$full_home/.house-rules-sync-targets"
+resid_out="$(HOME="$full_home" bash "$DOCTOR" "$full_repo" 2>&1)" || true
+check "doctor flags residual sync registration on core stamp" \
+  out_has "$resid_out" "still registered in ~/.house-rules-sync-targets"
+# Clean the residual so later fixtures aren't polluted.
+grep -vxF "$full_repo" "$full_home/.house-rules-sync-targets" \
+  > "$full_home/.house-rules-sync-targets.tmp" \
+  && mv "$full_home/.house-rules-sync-targets.tmp" "$full_home/.house-rules-sync-targets"
+
+# Refuse invalid --tool without leaving a core/full stamp on a fresh repo.
+bogus="$h/bogus-tool"
+mkdir -p "$bogus"
+git -C "$bogus" init -q
+bogus_out="$(cd "$bogus" && HOME="$h" bash "$INIT" --tier core --tool nope 2>&1)"
+bogus_rc=$?
+check "init --tool invalid exits nonzero" test "$bogus_rc" != "0"
+check "init --tool invalid does not write tier stamp" \
+  bash -c "! test -f '$bogus/.house-rules-tier'"
 
 # Absent stamp treated as full: doctor still fails missing sync on a
 # non-core fixture (regression pin).
@@ -170,6 +199,28 @@ check "upgrade rule: do not re-offer when marker present" \
 check "core-manifest lists core-upgrade-offer" \
   grep -qF 'rule|cursor/rules/core-upgrade-offer.mdc' \
     "$KIT_ROOT/profiles/core-manifest.list"
+
+# Core --skills must copy only core-manifest skills (not the full tree).
+skills_home="$(new_home)"
+skills_repo="$skills_home/skills-core"
+mkdir -p "$skills_repo"
+git -C "$skills_repo" init -q
+(cd "$skills_repo" && HOME="$skills_home" bash "$INIT" --tier core --tool cursor --skills --no-hooks > /dev/null 2>&1)
+copied="$(ls -1d "$skills_repo/.cursor/skills/"*/ 2>/dev/null | xargs -n1 basename | sort | tr '\n' ' ')"
+check "core --skills copies graybeard-review" \
+  bash -c "test -d '$skills_repo/.cursor/skills/graybeard-review'"
+check "core --skills copies prose-voice" \
+  bash -c "test -d '$skills_repo/.cursor/skills/prose-voice'"
+check "core --skills does not copy bead-authoring" \
+  bash -c "! test -d '$skills_repo/.cursor/skills/bead-authoring'"
+check "core --skills does not copy pragmatic-tdd" \
+  bash -c "! test -d '$skills_repo/.cursor/skills/pragmatic-tdd'"
+check "core CLI set is core-manifest only" \
+  bash -c "test -f '$skills_repo/scripts/defer-lint' && test -f '$skills_repo/scripts/banned-token-scan' && ! test -f '$skills_repo/scripts/tdd-ledger' && ! test -f '$skills_repo/scripts/close-reason-lint'"
+
+# Doctor must teach an explicit --tool on the catch-all remediation line.
+check "doctor teaches init with explicit --tool" \
+  grep -qF 'init --tool cursor (or --tool claude / --tool both)' "$DOCTOR"
 
 echo ""
 echo "passed: $PASS  failed: $FAIL"

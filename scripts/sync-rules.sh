@@ -484,6 +484,17 @@ for target in "${TARGETS[@]}"; do
     continue
   fi
 
+  # Core-tier stamps are not sync consumers — rules arrive via plugin.
+  # Skipping here is the last-line defense when a residual registration
+  # survives (full→core without re-init) or doctor has not yet flagged it.
+  if [ -f "$repo_root/.house-rules-tier" ]; then
+    target_tier="$(tr -d '[:space:]' < "$repo_root/.house-rules-tier")"
+    if [[ "$target_tier" == "core" ]]; then
+      echo "  – Skipping $repo_root (core tier stamp — not a sync consumer)"
+      continue
+    fi
+  fi
+
   for fmt in "${FORMATS_TO_RUN[@]}"; do
     if ! sync_repo "$repo_root" "$fmt"; then
       if $CHECK_MODE; then
