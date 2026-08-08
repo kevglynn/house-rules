@@ -159,7 +159,7 @@ When the external-model responses come back:
 7. **Pattern-level insight check:** capture systemic findings with
    `bd remember --key <area>-<topic>`.
 
-### Phase 5 — Close evidence
+### Phase 5 — Close evidence and archive
 
 Emit the line for `bd close --reason`:
 
@@ -167,6 +167,14 @@ Emit the line for `bd close --reason`:
 Tier 2 (<models>): N accepted (fixed in <commit> | deferred to <bead-ids>),
 N rejected-with-reason. Dispositions in notes.
 ```
+
+Then archive the round's artifacts: `git mv` the prompt document, its spec
+JSON, and the `--exploit-out` companion (if emitted) to
+`<reviews_dir>/archive/` as soon as triage completes and the fixes land — at
+the same time the triage note goes on the bead. Active prompts awaiting
+external-model responses stay at the top level of `<reviews_dir>` so they're
+easy to find; everything finished lives in `archive/`. Only Tier 2
+prompt/spec artifacts are archived — other review documents stay in place.
 
 ## Project Overlay
 
