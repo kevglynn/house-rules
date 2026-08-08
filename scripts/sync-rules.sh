@@ -468,7 +468,7 @@ if $LOCAL_ONLY; then
       echo "Checking: $KIT_ROOT/claude/rules"
       check_claude_in "$dest" || { echo "Run without --check to regenerate."; exit 1; }
     else
-      sync_claude_to "$dest"
+      sync_claude_to "$dest" || { echo "✗ Projection failed — see errors above." >&2; exit 1; }
       echo "Generated ${#MDC_FILES[@]} claude rules → $dest"
     fi
   fi
@@ -550,7 +550,10 @@ sync_worktrees() {
       echo "  ↳ worktree: $(basename "$wt_path")"
       check_cursor_in "$wt_dest" || stale_count=$((stale_count + 1))
     else
-      sync_cursor_to "$wt_dest"
+      if ! sync_cursor_to "$wt_dest"; then
+        error_count=$((error_count + 1))
+        errors_summary+=("$wt_path (cursor, worktree): sync failed")
+      fi
       if ! $DRY_RUN; then echo "  ↳ worktree: $(basename "$wt_path")"; fi
     fi
     local_wt=$((local_wt + 1))

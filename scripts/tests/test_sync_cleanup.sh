@@ -240,6 +240,31 @@ check "--check --local reports the orphan" \
 check "--check --local exits non-zero on an orphan" \
   test "$RC" -ne 0
 
+# --- Scenario 6: an unbackupable deletion must not report success ---
+#
+# The file-level outcome is already safe (keep it rather than delete it
+# unbacked). The hazard is the exit code: automation running
+# `sync-rules.sh && deploy` cannot tell that a retirement silently did not
+# happen if the run still exits 0.
+
+echo "--- a failed deletion backup surfaces as an error ---"
+if [ "$(id -u)" -eq 0 ]; then
+  echo "skip - running as root, chmod cannot make the file unreadable"
+else
+  setup_target
+  chmod 000 "$TARGET/.cursor/rules/ponytail-playbook.mdc"
+  OUT="$(HOME="$HOME_DIR" bash "$SYNC" --format cursor 2>&1)"; RC=$?
+  chmod 644 "$TARGET/.cursor/rules/ponytail-playbook.mdc"
+  check "unbackupable retired rule is left on disk" \
+    test -f "$TARGET/.cursor/rules/ponytail-playbook.mdc"
+  check "operator is told the backup failed" \
+    out_has "$OUT" "Failed to back up ponytail-playbook.mdc before removal"
+  check "the run does not claim the retirement succeeded" \
+    out_lacks "$OUT" "Removed retired: ponytail-playbook.mdc"
+  check "the run exits non-zero so automation can see it" \
+    test "$RC" -ne 0
+fi
+
 echo ""
 echo "Passed: $PASS  Failed: $FAIL"
 [ "$FAIL" -eq 0 ]
