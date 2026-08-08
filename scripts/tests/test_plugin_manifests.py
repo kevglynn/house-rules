@@ -4,23 +4,23 @@
 always-on downgrade documentation, bin/ PATH wrappers, and a consumer-
 workspace fixture proving bare checker names resolve without scripts/.
 
+Typed validation (process-kit-5lj) pins official/minimal schemas under
+scripts/tests/fixtures/schemas/ and checks them with a stdlib subset
+validator — not a hand-maintained top-level field-name whitelist alone.
+Claude marketplace also asserts unique plugins[].name (upstream schema
+does not); negative fixtures prove wrong types and duplicates fail.
+
 Surfaces and the schema each was verified against (2026-08-07):
   1. .claude-plugin/marketplace.json — Claude Code plugin marketplace.
-     Docs: https://code.claude.com/docs/en/plugin-marketplaces and
-     https://code.claude.com/docs/en/plugins-reference. Required fields:
-     name, owner.name, plugins; each entry requires name + source. A
-     marketplace-root source ("./") with strict: false makes the entry
-     the complete component definition, and a component-declaring
-     .claude-plugin/plugin.json alongside it would be a load conflict.
+     Pinned: fixtures/schemas/claude-code-marketplace.min.schema.json
+     (subset of https://json.schemastore.org/claude-code-marketplace.json).
+     Docs: https://code.claude.com/docs/en/plugin-marketplaces.
   2. .cursor-plugin/plugin.json — Cursor Plugin manifest.
-     Docs: https://cursor.com/docs/reference/plugins. Required field:
-     name (lowercase kebab-case); rules/skills accept path arrays;
-     paths must be relative with no ".." traversal.
+     Pinned: fixtures/schemas/cursor-plugin.min.schema.json
+     (typed contract from https://cursor.com/docs/reference/plugins).
   3. plugin.json (repo root) — Agent Plugins open standard.
-     Docs: https://agent-plugins.org/plugin-authors/manifest. Required:
-     $schema + name; the top-level field set is closed; names are 1-64
-     chars of lowercase alnum/hyphen/period with alnum ends and no
-     "--" or "..".
+     Pinned: fixtures/schemas/agent-plugins-plugin.schema.json
+     (https://agent-plugins.org/schemas/1.0.0/plugin.schema.json).
 
 Core-plugin contents are DERIVED from profiles/core-manifest.list via
 test_core_manifest.parse_manifest — the single source of truth for core
@@ -31,6 +31,7 @@ correctness is zero signal).
 Run: python3 scripts/tests/test_plugin_manifests.py
 """
 
+import copy
 import json
 import os
 import re
@@ -43,11 +44,16 @@ from test_core_manifest import MANIFEST as CORE_MANIFEST
 from test_core_manifest import parse_manifest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SCHEMA_DIR = Path(__file__).resolve().parent / "fixtures" / "schemas"
 CLAUDE_MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 CLAUDE_PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
 CURSOR_PLUGIN = REPO_ROOT / ".cursor-plugin" / "plugin.json"
 ROOT_PLUGIN = REPO_ROOT / "plugin.json"
 BIN_DIR = REPO_ROOT / "bin"
+
+AGENT_PLUGINS_SCHEMA_PATH = SCHEMA_DIR / "agent-plugins-plugin.schema.json"
+CLAUDE_MARKETPLACE_SCHEMA_PATH = SCHEMA_DIR / "claude-code-marketplace.min.schema.json"
+CURSOR_PLUGIN_SCHEMA_PATH = SCHEMA_DIR / "cursor-plugin.min.schema.json"
 
 # Pinned always-on contract (process-kit-i8r): Claude packages core as
 # discoverable commands/skills — explicit downgrade from Cursor alwaysApply.
@@ -61,20 +67,6 @@ CORE_CHECKERS = ("defer-lint", "banned-token-scan")
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-# The Agent Plugins manifest schema is closed: unknown top-level fields
-# are schema violations (agent-plugins.org/plugin-authors/manifest).
-AGENT_PLUGINS_FIELDS = {
-    "$schema",
-    "name",
-    "version",
-    "description",
-    "author",
-    "homepage",
-    "repository",
-    "license",
-    "keywords",
-    "extensions",
-}
 AGENT_PLUGINS_NAME = re.compile(r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$")
 
 # Beads-workflow members the full plugin must cover (names verified
@@ -96,7 +88,7 @@ def load_json(path):
 
 
 def agent_plugins_name_ok(name):
-    """Name rule from the Agent Plugins standard."""
+    """Name rule from the Agent Plugins standard (schema pattern + length)."""
     if not isinstance(name, str) or not 1 <= len(name) <= 64:
         return False
     if "--" in name or ".." in name:
@@ -146,6 +138,127 @@ def core_expectations():
     return skills, rules_mdc, rules_md, clis
 
 
+# ---------------------------------------------------------------------------
+# Stdlib JSON Schema subset validator (pinned schemas; no jsonschema dep)
+# ---------------------------------------------------------------------------
+
+_TYPE_MAP = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+    "number": (int, float),
+    "integer": int,
+    "null": type(None),
+}
+
+
+class SchemaValidationError(ValueError):
+    """Raised when an instance fails a pinned schema check."""
+
+
+def validate_schema(instance, schema, path="$"):
+    """Validate `instance` against a Draft-07 / 2020-12 *subset*.
+
+    Supported keywords: type, required, properties, additionalProperties
+    (bool or schema), const, pattern, minLength, maxLength, items (schema),
+    anyOf. Enough to exercise the pinned Agent Plugins / Claude / Cursor
+    schemas without a pip dependency.
+    """
+    if "const" in schema and instance != schema["const"]:
+        raise SchemaValidationError(
+            f"{path}: expected const {schema['const']!r}, got {instance!r}"
+        )
+
+    if "type" in schema:
+        expected = schema["type"]
+        types = expected if isinstance(expected, list) else [expected]
+
+        def _matches(t):
+            py = _TYPE_MAP[t]
+            if t in ("integer", "number") and isinstance(instance, bool):
+                return False  # bool subclasses int
+            return isinstance(instance, py)
+
+        if not any(_matches(t) for t in types):
+            raise SchemaValidationError(
+                f"{path}: expected type {expected!r}, got {type(instance).__name__}"
+            )
+
+    if "anyOf" in schema:
+        errors = []
+        for i, sub in enumerate(schema["anyOf"]):
+            try:
+                validate_schema(instance, sub, f"{path}/anyOf[{i}]")
+                break
+            except SchemaValidationError as exc:
+                errors.append(str(exc))
+        else:
+            raise SchemaValidationError(
+                f"{path}: matched no anyOf branch ({len(errors)} errors)"
+            )
+
+    if isinstance(instance, str):
+        if "minLength" in schema and len(instance) < schema["minLength"]:
+            raise SchemaValidationError(
+                f"{path}: string shorter than minLength {schema['minLength']}"
+            )
+        if "maxLength" in schema and len(instance) > schema["maxLength"]:
+            raise SchemaValidationError(
+                f"{path}: string longer than maxLength {schema['maxLength']}"
+            )
+        if "pattern" in schema and re.search(schema["pattern"], instance) is None:
+            raise SchemaValidationError(
+                f"{path}: string does not match pattern {schema['pattern']!r}"
+            )
+
+    if isinstance(instance, dict):
+        for key in schema.get("required", []):
+            if key not in instance:
+                raise SchemaValidationError(f"{path}: missing required property {key!r}")
+        props = schema.get("properties", {})
+        for key, value in instance.items():
+            if key in props:
+                validate_schema(value, props[key], f"{path}.{key}")
+            elif "additionalProperties" in schema:
+                add = schema["additionalProperties"]
+                if add is False:
+                    raise SchemaValidationError(
+                        f"{path}: additional property {key!r} not allowed"
+                    )
+                if isinstance(add, dict):
+                    validate_schema(value, add, f"{path}.{key}")
+
+    if isinstance(instance, list) and "items" in schema:
+        item_schema = schema["items"]
+        if isinstance(item_schema, dict):
+            for i, item in enumerate(instance):
+                validate_schema(item, item_schema, f"{path}[{i}]")
+
+
+def assert_unique_plugin_names(plugins):
+    """Raise SchemaValidationError if plugins[].name duplicates exist.
+
+    Dict-by-name indexing masks duplicates; walk the list explicitly.
+    Upstream SchemaStore marketplace schema does not enforce uniqueness.
+    """
+    if not isinstance(plugins, list):
+        raise SchemaValidationError("plugins: expected array")
+    seen = {}
+    for i, entry in enumerate(plugins):
+        if not isinstance(entry, dict):
+            raise SchemaValidationError(f"plugins[{i}]: expected object")
+        name = entry.get("name")
+        if not isinstance(name, str):
+            raise SchemaValidationError(f"plugins[{i}].name: expected string")
+        if name in seen:
+            raise SchemaValidationError(
+                f"duplicate plugins[].name {name!r} at indices "
+                f"{seen[name]} and {i}"
+            )
+        seen[name] = i
+
+
 class TestClaudeMarketplace(unittest.TestCase):
     """.claude-plugin/marketplace.json satisfies the vendor schema and
     the core/full tier contract."""
@@ -153,7 +266,18 @@ class TestClaudeMarketplace(unittest.TestCase):
     def setUp(self):
         self.assertTrue(CLAUDE_MARKETPLACE.is_file(), "marketplace.json missing")
         self.doc = load_json(CLAUDE_MARKETPLACE)
+        self.schema = load_json(CLAUDE_MARKETPLACE_SCHEMA_PATH)
+        # Uniqueness before dict-by-name (which would mask duplicates).
+        assert_unique_plugin_names(self.doc["plugins"])
         self.entries = {p["name"]: p for p in self.doc["plugins"]}
+
+    def test_matches_pinned_marketplace_schema(self):
+        validate_schema(self.doc, self.schema)
+        self.assertIn("json.schemastore.org/claude-code-marketplace", self.schema["$comment"])
+
+    def test_plugin_names_are_unique(self):
+        names = [p["name"] for p in self.doc["plugins"]]
+        self.assertEqual(len(names), len(set(names)))
 
     def test_required_marketplace_fields(self):
         self.assertRegex(self.doc["name"], KEBAB)
@@ -184,8 +308,6 @@ class TestClaudeMarketplace(unittest.TestCase):
         self.assertEqual(set(core["commands"]), rules_md)
         # CLIs travel because the entry's source is the marketplace root:
         # every core CLI must exist, executable, at its manifest path.
-        import os
-
         for cli in clis:
             target = REPO_ROOT / cli
             self.assertTrue(
@@ -327,6 +449,11 @@ class TestCursorPlugin(unittest.TestCase):
     def setUp(self):
         self.assertTrue(CURSOR_PLUGIN.is_file(), "cursor plugin.json missing")
         self.doc = load_json(CURSOR_PLUGIN)
+        self.schema = load_json(CURSOR_PLUGIN_SCHEMA_PATH)
+
+    def test_matches_pinned_cursor_schema(self):
+        validate_schema(self.doc, self.schema)
+        self.assertIn("cursor.com/docs/reference/plugins", self.schema["$comment"])
 
     def test_required_name_field(self):
         self.assertEqual(self.doc["name"], "house-rules-core")
@@ -348,20 +475,97 @@ class TestRootAgentPlugin(unittest.TestCase):
     def setUp(self):
         self.assertTrue(ROOT_PLUGIN.is_file(), "root plugin.json missing")
         self.doc = load_json(ROOT_PLUGIN)
+        self.schema = load_json(AGENT_PLUGINS_SCHEMA_PATH)
+
+    def test_matches_pinned_agent_plugins_schema(self):
+        # Full official schema pinned under fixtures/schemas/ — closed
+        # top-level set via additionalProperties: false, not a local whitelist.
+        self.assertEqual(self.schema["$id"], AGENT_PLUGINS_SCHEMA)
+        validate_schema(self.doc, self.schema)
 
     def test_required_schema_and_name(self):
         self.assertEqual(self.doc["$schema"], AGENT_PLUGINS_SCHEMA)
         self.assertTrue(agent_plugins_name_ok(self.doc["name"]))
-
-    def test_schema_is_closed(self):
-        unknown = set(self.doc) - AGENT_PLUGINS_FIELDS
-        self.assertEqual(unknown, set(), f"unknown top-level fields: {unknown}")
 
     def test_standard_discovers_skills_from_skills_dir(self):
         # The standard has no component-path fields; skills load from
         # skills/. The layout the manifest relies on must exist.
         skill_dirs = sorted((REPO_ROOT / "skills").glob("*/SKILL.md"))
         self.assertGreater(len(skill_dirs), 0)
+
+
+class TestSchemaNegatives(unittest.TestCase):
+    """Temp-mutated JSON fixtures: wrong types and duplicate names fail."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.marketplace = load_json(CLAUDE_MARKETPLACE)
+        cls.marketplace_schema = load_json(CLAUDE_MARKETPLACE_SCHEMA_PATH)
+        cls.agent = load_json(ROOT_PLUGIN)
+        cls.agent_schema = load_json(AGENT_PLUGINS_SCHEMA_PATH)
+        cls.cursor = load_json(CURSOR_PLUGIN)
+        cls.cursor_schema = load_json(CURSOR_PLUGIN_SCHEMA_PATH)
+
+    def test_marketplace_rejects_skills_as_string(self):
+        doc = copy.deepcopy(self.marketplace)
+        doc["plugins"][0]["skills"] = "./skills/graybeard-review"  # must be array
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.marketplace_schema)
+        self.assertIn("skills", str(ctx.exception))
+
+    def test_marketplace_rejects_strict_as_string(self):
+        doc = copy.deepcopy(self.marketplace)
+        doc["plugins"][0]["strict"] = "false"
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.marketplace_schema)
+        self.assertIn("strict", str(ctx.exception))
+
+    def test_marketplace_rejects_owner_name_as_number(self):
+        doc = copy.deepcopy(self.marketplace)
+        doc["owner"]["name"] = 42
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.marketplace_schema)
+        self.assertIn("owner.name", str(ctx.exception))
+
+    def test_marketplace_rejects_duplicate_plugin_names(self):
+        doc = copy.deepcopy(self.marketplace)
+        dup = copy.deepcopy(doc["plugins"][0])
+        doc["plugins"].append(dup)  # same name, second entry
+        with self.assertRaises(SchemaValidationError) as ctx:
+            assert_unique_plugin_names(doc["plugins"])
+        self.assertIn("duplicate", str(ctx.exception).lower())
+        self.assertIn(dup["name"], str(ctx.exception))
+        # Dict-by-name would silently collapse to one entry — prove the trap.
+        collapsed = {p["name"]: p for p in doc["plugins"]}
+        self.assertEqual(len(collapsed), len(doc["plugins"]) - 1)
+
+    def test_agent_plugins_rejects_keywords_as_string(self):
+        doc = copy.deepcopy(self.agent)
+        doc["keywords"] = "rules,skills"
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.agent_schema)
+        self.assertIn("keywords", str(ctx.exception))
+
+    def test_agent_plugins_rejects_unknown_top_level_field(self):
+        doc = copy.deepcopy(self.agent)
+        doc["skills"] = ["./skills/"]  # closed schema — not a top-level field
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.agent_schema)
+        self.assertIn("additional property", str(ctx.exception).lower())
+
+    def test_agent_plugins_rejects_author_as_string(self):
+        doc = copy.deepcopy(self.agent)
+        doc["author"] = "Kevin Glynn"
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.agent_schema)
+        self.assertIn("author", str(ctx.exception))
+
+    def test_cursor_rejects_rules_as_object(self):
+        doc = copy.deepcopy(self.cursor)
+        doc["rules"] = {"path": "./cursor/rules/"}
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_schema(doc, self.cursor_schema)
+        self.assertIn("rules", str(ctx.exception))
 
 
 class TestCheckersAreNotVacuous(unittest.TestCase):
@@ -392,6 +596,17 @@ class TestCheckersAreNotVacuous(unittest.TestCase):
         self.assertTrue(
             declared_covers(["./skills/"], "skills/bead-authoring", REPO_ROOT)
         )
+
+    def test_pinned_schemas_exist_and_cite_upstream(self):
+        for path in (
+            AGENT_PLUGINS_SCHEMA_PATH,
+            CLAUDE_MARKETPLACE_SCHEMA_PATH,
+            CURSOR_PLUGIN_SCHEMA_PATH,
+        ):
+            self.assertTrue(path.is_file(), f"missing pinned schema {path}")
+        ap = load_json(AGENT_PLUGINS_SCHEMA_PATH)
+        self.assertEqual(ap["$id"], AGENT_PLUGINS_SCHEMA)
+        self.assertIs(ap["additionalProperties"], False)
 
 
 if __name__ == "__main__":
