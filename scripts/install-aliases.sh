@@ -18,6 +18,8 @@ set -uo pipefail
 #   ./scripts/install-aliases.sh --help
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/marker-rewrite.sh
+. "$KIT_ROOT/scripts/lib/marker-rewrite.sh"
 ALIASES_FILE="$HOME/.house-rules-aliases.sh"
 # Marker prefix is "house-rules:" (final kit name, decision 0001 A1).
 # Recognition of the predecessor playbook's legacy marker prefix was
@@ -188,59 +190,17 @@ rc_append_block() {
   mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
 }
 
-# One scanner for both rewrites: strips every managed block; with `emit`,
-# re-emits the current block at the first BEGIN — in place, because block
-# position in the rc is load-bearing (source-order precedence). Used by
-# uninstall (strip) and by the content refresh (emit) when a present block
-# body is stale.
+# Strip every managed block; with `emit`, re-emit at the first BEGIN
+# (rc position is load-bearing). Shared scan/refusal: scripts/lib/marker-rewrite.sh.
 rc_rewrite_block() {
   local rc="$1" emit="${2:-}"
-  local tmp
-  tmp="$(mktemp "${rc}.tmp.XXXXXX")" || return 1
-  local in_block=0 consumed=0 malformed=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ]; then
-      if [ "$line" = "$SOURCE_BEGIN" ]; then
-        in_block=1
-        if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
-          rc_block
-        fi
-        consumed=1
-        continue
-      fi
-      # Orphan END is malformed grammar — refuse rather than copy it
-      # through and claim a clean rewrite.
-      if [ "$line" = "$SOURCE_END" ]; then
-        malformed=1
-        break
-      fi
-      printf '%s\n' "$line"
-      continue
-    fi
-    # in_block=1: only the exact END closes cleanly. Any other rc
-    # house-rules marker (nested BEGIN, near-miss END with trailing
-    # whitespace) means the scan would discard user bytes — refuse.
-    if [ "$line" = "$SOURCE_END" ]; then
-      in_block=0
-      continue
-    fi
-    case "$line" in
-      '# BEGIN house-rules:'*|'# END house-rules:'*)
-        malformed=1
-        break
-        ;;
-    esac
-    continue
-  done < "$rc" > "$tmp"
-  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF), a nested/near-miss marker, an orphan
-  # END, or a scan that consumed no BEGIN (e.g. CRLF markers).
-  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ] || [ $malformed -eq 1 ]; then
-    rm -f "$tmp"
-    echo "⚠ $rc: alias block markers are malformed (unpaired/nested BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 2
+  if [ -n "$emit" ]; then
+    marker_rewrite_file "$rc" "$SOURCE_BEGIN" "$SOURCE_END" \
+      rc "alias block markers" rc_block
+  else
+    marker_rewrite_file "$rc" "$SOURCE_BEGIN" "$SOURCE_END" \
+      rc "alias block markers"
   fi
-  mv "$tmp" "$rc" || { rm -f "$tmp"; return 1; }
 }
 
 rc_remove_block() {

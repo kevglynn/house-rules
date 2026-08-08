@@ -17,6 +17,8 @@ set -euo pipefail
 #   ./scripts/init.sh --help
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/marker-rewrite.sh
+. "$KIT_ROOT/scripts/lib/marker-rewrite.sh"
 TOOL=""
 TIER="full"
 STEALTH=false
@@ -604,89 +606,18 @@ AGENTS_SECTION
 # when the section is present but its version stamp is stale or missing.
 # Emits exactly one fresh section even if the file somehow carries several.
 # Returns the shared writer contract (0 = written, 1 = I/O failure,
-# 2 = malformed markers, warn-and-skip) — same codes as the block writers
-# in install-aliases.sh and install-global-safety-net.sh, whose scan loop
-# this mirrors (defer/extraction trigger noted at rewrite_block there).
+# 2 = malformed markers, warn-and-skip) via scripts/lib/marker-rewrite.sh.
 refresh_agents_section() {
-  local tmp in_block=0 emitted=0 malformed=0
-  tmp="$(mktemp "${agents_md}.tmp.XXXXXX")" || return 1
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ]; then
-      if [ "$line" = "$agents_begin" ]; then
-        in_block=1
-        if [ $emitted -eq 0 ]; then
-          render_agents_section
-          emitted=1
-        fi
-        continue
-      fi
-      if [ "$line" = "$agents_end" ]; then
-        malformed=1
-        break
-      fi
-      printf '%s\n' "$line"
-      continue
-    fi
-    if [ "$line" = "$agents_end" ]; then
-      in_block=0
-      continue
-    fi
-    # Any other HTML house-rules marker while open (cross-ID / nested /
-    # near-miss) would discard user bytes — refuse before mv.
-    case "$line" in
-      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
-        malformed=1
-        break
-        ;;
-    esac
-    continue
-  done < "$agents_md" > "$tmp"
-  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF), nested/cross-ID/near-miss markers, an
-  # orphan END, or a scan that consumed no BEGIN (emitted=0).
-  if [ $in_block -eq 1 ] || [ $emitted -eq 0 ] || [ $malformed -eq 1 ]; then
-    rm -f "$tmp"
-    echo "⚠ $agents_md: house-rules section markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 2
-  fi
-  mv "$tmp" "$agents_md" || { rm -f "$tmp"; return 1; }
+  marker_rewrite_file "$agents_md" "$agents_begin" "$agents_end" \
+    html "house-rules section markers" render_agents_section
 }
 
 # Structural currency: exactly one well-formed section containing the live
 # version stamp. Stamp-anywhere grep was wrong — a later stale duplicate
 # (or an orphan carrying the stamp text) could hide forever.
 agents_section_is_current() {
-  local in_block=0 count=0 stamp_ok=0
-  local stamp="<!-- house-rules:version ${kit_version} -->"
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ]; then
-      if [ "$line" = "$agents_begin" ]; then
-        in_block=1
-        count=$((count + 1))
-        if [ "$count" -gt 1 ]; then
-          return 1
-        fi
-        continue
-      fi
-      if [ "$line" = "$agents_end" ]; then
-        return 1
-      fi
-      continue
-    fi
-    if [ "$line" = "$agents_end" ]; then
-      in_block=0
-      continue
-    fi
-    case "$line" in
-      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
-        return 1
-        ;;
-    esac
-    if [ "$line" = "$stamp" ]; then
-      stamp_ok=1
-    fi
-  done < "$agents_md"
-  [ $in_block -eq 0 ] && [ "$count" -eq 1 ] && [ "$stamp_ok" -eq 1 ]
+  marker_html_section_contains "$agents_md" "$agents_begin" "$agents_end" \
+    "<!-- house-rules:version ${kit_version} -->"
 }
 
 agents_refresh_failed=0

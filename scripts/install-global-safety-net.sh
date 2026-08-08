@@ -20,6 +20,8 @@ set -uo pipefail
 #   ./scripts/install-global-safety-net.sh --help
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/marker-rewrite.sh
+. "$KIT_ROOT/scripts/lib/marker-rewrite.sh"
 SAFETY_NET_DIR="$KIT_ROOT/global-safety-net"
 CLAUDE_MD="$HOME/CLAUDE.md"
 CURSOR_SNIPPET_FILE="$SAFETY_NET_DIR/cursor-snippet.generated.md"
@@ -128,41 +130,9 @@ block_is_current() {
   [ -n "$have" ] && [ "${have%$'\n'}" = "${want%$'\n'}" ]
 }
 
-# Whole-file house-rules marker grammar check. Per-block rewrite_block can
-# refuse its own id, but install/uninstall walks BLOCKS independently — a
-# later id's rewrite would still destroy user bytes nested under an earlier
-# malformed block. Refuse any mutation when the stream is not a flat
-# sequence of well-formed, non-overlapping HTML house-rules marker pairs.
+# Whole-file preflight before multi-id walks (shared helper).
 claude_md_markers_ok() {
-  [ -f "$CLAUDE_MD" ] || return 0
-  local in_block_id="" line id
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      '<!-- BEGIN house-rules:'*)
-        id="${line#<!-- BEGIN house-rules:}"
-        id="${id%% -->*}"
-        if [ -n "$in_block_id" ]; then
-          return 1
-        fi
-        if [ "$line" != "$(marker_begin "$id")" ]; then
-          return 1
-        fi
-        in_block_id="$id"
-        ;;
-      '<!-- END house-rules:'*)
-        id="${line#<!-- END house-rules:}"
-        id="${id%% -->*}"
-        if [ -z "$in_block_id" ] || [ "$id" != "$in_block_id" ]; then
-          return 1
-        fi
-        if [ "$line" != "$(marker_end "$id")" ]; then
-          return 1
-        fi
-        in_block_id=""
-        ;;
-    esac
-  done < "$CLAUDE_MD"
-  [ -z "$in_block_id" ]
+  marker_html_stream_ok "$CLAUDE_MD"
 }
 
 claude_md_refuse_malformed() {
@@ -194,70 +164,17 @@ append_block_new() {
   mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
-# One scanner for both rewrites: strips every copy of the block; with
-# `emit`, re-emits the current render at the first BEGIN (position in the
-# file is preserved). Used by install (emit) and uninstall (strip).
-#
-# defer: this marker-scan loop is hand-copied across the three installers
-# (rc_rewrite_block in install-aliases.sh, refresh_agents_section in
-# init.sh, here) because each installer must stay a standalone single
-# file. ceiling: a scan or guard fix must be hand-propagated to all three
-# copies. upgrade when: a fourth copy appears, or a scan-behavior fix has
-# to land in every copy — extract a sourced scripts/lib helper then.
-# (Tier 2 process-kit-anq hand-propagated cross-ID / orphan-END / near-miss
-# guards again; extraction trigger remains open.)
+# Strip every copy of the block; with `emit`, re-emit at the first BEGIN
+# (position preserved). Shared scan/refusal: scripts/lib/marker-rewrite.sh.
 rewrite_block() {
   local id="$1" emit="${2:-}"
-  local tmp
-  tmp="$(mktemp "${CLAUDE_MD}.tmp.XXXXXX")" || return 1
-  local begin end in_block=0 consumed=0 malformed=0
-  begin="$(marker_begin "$id")"
-  end="$(marker_end "$id")"
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ $in_block -eq 0 ]; then
-      if [ "$line" = "$begin" ]; then
-        in_block=1
-        if [ -n "$emit" ] && [ $consumed -eq 0 ]; then
-          render_block "$id"
-        fi
-        consumed=1
-        continue
-      fi
-      # Orphan END for this id is malformed grammar — refuse rather than
-      # copy it through and claim a clean rewrite.
-      if [ "$line" = "$end" ]; then
-        malformed=1
-        break
-      fi
-      printf '%s\n' "$line"
-      continue
-    fi
-    # in_block=1: only the exact END for this id closes cleanly. Any other
-    # HTML house-rules marker (cross-ID BEGIN/END, same-ID nested BEGIN,
-    # near-miss END with trailing whitespace) means the scan would discard
-    # user bytes between markers — refuse before mv.
-    if [ "$line" = "$end" ]; then
-      in_block=0
-      continue
-    fi
-    case "$line" in
-      '<!-- BEGIN house-rules:'*|'<!-- END house-rules:'*)
-        malformed=1
-        break
-        ;;
-    esac
-    continue
-  done < "$CLAUDE_MD" > "$tmp"
-  # Refuse the rewrite when the marker scan went wrong: an unpaired BEGIN
-  # (in_block still open at EOF), a nested/cross-ID/near-miss marker, an
-  # orphan END, or a scan that consumed no BEGIN (e.g. CRLF markers that
-  # match substring grep but not the whole-line test).
-  if [ $in_block -eq 1 ] || [ $consumed -eq 0 ] || [ $malformed -eq 1 ]; then
-    rm -f "$tmp"
-    echo "⚠ $CLAUDE_MD: block '$id' markers are malformed (unpaired/nested/cross-ID BEGIN/END or not line-exact, e.g. CRLF); file left untouched — repair the marker lines manually" >&2
-    return 2
+  if [ -n "$emit" ]; then
+    marker_rewrite_file "$CLAUDE_MD" "$(marker_begin "$id")" "$(marker_end "$id")" \
+      html "block '$id' markers" render_block "$id"
+  else
+    marker_rewrite_file "$CLAUDE_MD" "$(marker_begin "$id")" "$(marker_end "$id")" \
+      html "block '$id' markers"
   fi
-  mv "$tmp" "$CLAUDE_MD" || { rm -f "$tmp"; return 1; }
 }
 
 remove_block() {
