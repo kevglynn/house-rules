@@ -383,6 +383,16 @@ retire_or_keep() {
     return 0
   fi
 
+  # Ownership below is decided by comparing bytes, so a file that cannot be
+  # read cannot be classified. Falling through would call it a name
+  # collision — "these bytes are not the kit's" — which is a guess reported
+  # as a decision, and it returns 0, so the run exits clean over a file the
+  # sync never actually examined. Leave it alone, but say so and fail.
+  if [ ! -r "$existing" ]; then
+    echo "✗ Cannot read $base — ownership is decided by content, so this file cannot be classified; leaving it in place" >&2
+    return 1
+  fi
+
   if ! in_stem_set "$stem" "${KIT_KNOWN_STEMS[@]:-}"; then
     echo "  ⚠ Unmanaged rule left in place: $base (not a kit rule — the kit will not update or remove it)"
     unmanaged_count=$((unmanaged_count + 1))
