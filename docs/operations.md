@@ -67,6 +67,10 @@ Destructive operations are recoverable. An overwrite and a `--retire` deletion b
 
 The one exception is `--local`, the maintainer-only mode that regenerates the kit's own `claude/rules/`. That directory is generated in full and tracked in git, so git is the backup and no `.bak` is written on either the overwrite or the prune path — a backup there would break the byte-exactness the following `--check --local` enforces.
 
+**`init` carries the same guarantee**, from the same implementation (`scripts/lib/backup-file.sh`). Re-running `house-rules init` over an existing install backs up any kit-owned file whose bytes on disk differ from the kit's — rules, skills, the conventions profile, and the distributed checker CLIs — under the same `<file>.<timestamp>.bak` name, and `--unsafe` waives it exactly as it does in sync. Unchanged files are not backed up, so a re-run over an untouched install leaves no `.bak` litter. A failed backup aborts rather than overwriting.
+
+Two different postures are in play, and the distinction is deliberate. Files the kit **owns** (the four groups above) are overwritten, because delivering the current version is what init is for; the `.bak` is what makes that non-destructive. Files init **seeds but does not own** — the scratchpad, `CODE_OF_CONDUCT.md`, the PR template, the tdd-ledger workflow — are never overwritten at all, since the project is expected to edit them and the kit has no newer truth to deliver. Init never deletes anything, so sync's keep-and-warn classification has no counterpart here.
+
 `--dry-run` and `--check` never write to a target repo or to the kit checkout, and `--dry-run` previews the cleanup pass alongside the writes. Both do materialize a temporary directory when combined with `--version`, since the pinned rules are extracted from git before use.
 
 **Worktree setup** (`.cursor/worktrees.json` + `scripts/setup-worktree.sh`) is a one-time manual copy per repo. These files may need repo-specific customization (additional dependencies, environment setup), so they're templates you adopt, not auto-synced artifacts.

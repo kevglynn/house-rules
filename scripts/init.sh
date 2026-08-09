@@ -19,11 +19,14 @@ set -euo pipefail
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/marker-rewrite.sh
 . "$KIT_ROOT/scripts/lib/marker-rewrite.sh"
+# shellcheck source=lib/backup-file.sh
+. "$KIT_ROOT/scripts/lib/backup-file.sh"
 TOOL=""
 TIER="full"
 STEALTH=false
 NO_HOOKS=false
 SKILLS=false
+SAFE_MODE=true
 PROJECT_ROOT="$(pwd)"
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --stealth) STEALTH=true; shift ;;
     --no-hooks) NO_HOOKS=true; shift ;;
     --skills) SKILLS=true; shift ;;
+    --unsafe) SAFE_MODE=false; shift ;;
     --help|-h)
       cat <<'EOF'
 One-command project setup for house-rules.
@@ -59,7 +63,16 @@ Options:
   --stealth                   Use bd init --stealth (for personal repos)
   --no-hooks                  Skip bd hooks install (default: install beads git hooks)
   --skills                    Copy skill directories from the kit into .cursor/skills/
+  --unsafe                    Overwrite without writing .bak copies first
+                              (default: back up any kit-owned file whose
+                              bytes on disk differ from the kit's, same
+                              convention as sync-rules.sh)
   --help                      Show this help
+
+Re-running init is safe by default: a delivered file you have edited is
+copied to <file>.<timestamp>.bak before it is replaced. Files init creates
+but does not own — the scratchpad, CODE_OF_CONDUCT.md, the PR template, the
+tdd-ledger workflow — are never overwritten at all.
 
 Run from the root of the project you want to set up.
 EOF
@@ -114,6 +127,30 @@ cleanup_init() {
   rmdir "$LOCKDIR" 2>/dev/null || true
 }
 trap cleanup_init EXIT
+
+# The one door for every kit-owned file init writes into the target repo.
+#
+# init is the command a user re-runs most casually, and before
+# process-kit-jjj each of these was a bare cp: a project that had edited a
+# delivered rule lost the edit with nothing printed and nothing recoverable.
+# sync had grown the guarantee during process-kit-2d6; init writes to the
+# same directories through a second door, so it needs the same one — and
+# from the same implementation, or the two conventions drift.
+#
+# A failed backup aborts instead of overwriting. Proceeding would destroy the
+# exact bytes the backup existed to preserve.
+install_file() { # install_file <src> <dest> <label>
+  local src="$1" dest="$2" label="$3"
+  if $SAFE_MODE && ! backup_before_overwrite "$src" "$dest"; then
+    echo "✗ Failed to back up $label before overwrite — refusing to replace it" >&2
+    return 1
+  fi
+  if ! cp -f "$src" "$dest" 2>"$CP_ERR"; then
+    echo "✗ Failed to copy $label → $dest"
+    sed 's/^/    /' "$CP_ERR" 2>/dev/null
+    return 1
+  fi
+}
 
 echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
 echo "  tier: $TIER"
@@ -259,14 +296,19 @@ echo ""
 if [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.cursor/rules"
   mkdir -p "$dest"
-  # Guard cp explicitly: set -e + an empty source glob or read-only
-  # destination would otherwise abort the script mid-bootstrap with no
-  # diagnostic and a misleading "0 rules" summary.
-  if ! cp "$KIT_ROOT/cursor/rules/"*.mdc "$dest/" 2>"$CP_ERR"; then
-    echo "✗ Failed to copy Cursor rules → $dest"
-    sed 's/^/    /' "$CP_ERR" 2>/dev/null
-    exit 1
-  fi
+  # Per-file rather than one glob cp, so an existing edited rule can be
+  # backed up before it is replaced. Guard explicitly: set -e + an empty
+  # source glob or read-only destination would otherwise abort the script
+  # mid-bootstrap with no diagnostic and a misleading "0 rules" summary.
+  for rule_src in "$KIT_ROOT/cursor/rules/"*.mdc; do
+    if [ ! -f "$rule_src" ]; then
+      echo "✗ Failed to copy Cursor rules → $dest"
+      echo "    no .mdc rules found in $KIT_ROOT/cursor/rules"
+      exit 1
+    fi
+    install_file "$rule_src" "$dest/$(basename "$rule_src")" \
+      "$(basename "$rule_src")" || exit 1
+  done
   count=$(ls -1 "$dest/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Cursor rules → .cursor/rules/"
 fi
@@ -274,11 +316,15 @@ fi
 if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.claude/rules"
   mkdir -p "$dest"
-  if ! cp "$KIT_ROOT/claude/rules/"*.md "$dest/" 2>"$CP_ERR"; then
-    echo "✗ Failed to copy Claude rules → $dest"
-    sed 's/^/    /' "$CP_ERR" 2>/dev/null
-    exit 1
-  fi
+  for rule_src in "$KIT_ROOT/claude/rules/"*.md; do
+    if [ ! -f "$rule_src" ]; then
+      echo "✗ Failed to copy Claude rules → $dest"
+      echo "    no .md rules found in $KIT_ROOT/claude/rules"
+      exit 1
+    fi
+    install_file "$rule_src" "$dest/$(basename "$rule_src")" \
+      "$(basename "$rule_src")" || exit 1
+  done
   count=$(ls -1 "$dest/"*.md 2>/dev/null | wc -l | tr -d ' ')
   echo "✓ Copied $count Claude Code rules → .claude/rules/"
 fi
@@ -320,7 +366,18 @@ if $SKILLS; then
             *) continue ;;
           esac
         fi
-        cp -rf "$skill_dir" "$skills_dest/"
+        # Walked per-file rather than cp -rf: a skill is a directory of
+        # files a project may have edited, and a recursive copy overwrites
+        # each of them with no chance to back one up. Like cp -rf, this adds
+        # and replaces but never removes, so a file the kit no longer ships
+        # stays put.
+        while IFS= read -r -d '' skill_file; do
+          skill_rel="${skill_file#"$skill_dir"}"
+          skill_file_dest="$skills_dest/$skill_name/$skill_rel"
+          mkdir -p "$(dirname "$skill_file_dest")"
+          install_file "$skill_file" "$skill_file_dest" \
+            "$skill_name/$skill_rel" || exit 1
+        done < <(find "$skill_dir" -type f -print0)
         echo "  ↳ $skill_name"
         skills_count=$((skills_count + 1))
       done
@@ -369,11 +426,7 @@ if [ -f "$clis_manifest" ]; then
     cli_dest="$PROJECT_ROOT/scripts/$cli_name"
     [ -f "$cli_src" ] || continue
     mkdir -p "$PROJECT_ROOT/scripts"
-    if ! cp -f "$cli_src" "$cli_dest" 2>"$CP_ERR"; then
-      echo "✗ Failed to copy $cli_name → scripts/"
-      sed 's/^/    /' "$CP_ERR" 2>/dev/null
-      exit 1
-    fi
+    install_file "$cli_src" "$cli_dest" "$cli_name" || exit 1
     chmod +x "$cli_dest"
     echo "✓ Copied $cli_name CLI → scripts/$cli_name"
   done < "$clis_manifest"
@@ -392,11 +445,8 @@ fi
 profile_src="$KIT_ROOT/profiles/conventions.toml"
 if [ -f "$profile_src" ]; then
   mkdir -p "$PROJECT_ROOT/profiles"
-  if ! cp -f "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" 2>"$CP_ERR"; then
-    echo "✗ Failed to copy profiles/conventions.toml"
-    sed 's/^/    /' "$CP_ERR" 2>/dev/null
-    exit 1
-  fi
+  install_file "$profile_src" "$PROJECT_ROOT/profiles/conventions.toml" \
+    "profiles/conventions.toml" || exit 1
   echo "✓ Copied conventions profile → profiles/conventions.toml"
 else
   echo "⚠ Conventions profile missing at $profile_src — distributed checkers will fall back to built-in grammars"
@@ -723,6 +773,13 @@ fi
 echo ""
 echo "=== Setup complete ==="
 echo ""
+# Same line sync prints, for the same reason: a re-run that quietly replaced
+# a file someone had edited should say so in the summary, not only in the
+# scrollback next to the file it touched.
+if $SAFE_MODE && [ "$SAFE_BACKUP_COUNT" -gt 0 ]; then
+  echo "$SAFE_BACKUP_COUNT file(s) backed up before overwrite — .bak copies preserved."
+  echo ""
+fi
 echo "What's ready:"
 echo "  • $(ls -1 "$PROJECT_ROOT/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') Cursor rules" 2>/dev/null || true
 echo "  • $(ls -1 "$PROJECT_ROOT/.claude/rules/"*.md 2>/dev/null | wc -l | tr -d ' ') Claude rules" 2>/dev/null || true

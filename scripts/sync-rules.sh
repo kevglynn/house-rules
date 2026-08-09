@@ -21,6 +21,10 @@ set -uo pipefail
 
 KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$KIT_ROOT/cursor/rules"
+# backup_file / backup_before_overwrite / SAFE_BACKUP_COUNT. Shared with
+# init.sh so both writers into a target repo leave the same recoverable copy
+# under the same name (process-kit-jjj).
+. "$KIT_ROOT/scripts/lib/backup-file.sh"
 FORMAT="cursor"
 CHECK_MODE=false
 LOCAL_ONLY=false
@@ -332,35 +336,6 @@ kit_authored_bytes() { # kit_authored_bytes <path> <stem> <ext>
   return $rc
 }
 
-# Timestamped backup, shared by every destructive path so the convention
-# (name shape, operator message, counter) has one owner. Returns 1 if the
-# copy fails; each caller decides what that means for its own flow.
-backup_file() {
-  local path="$1" ts bak n=0
-  ts="$(date +%Y%m%d%H%M%S)"
-  bak="${path}.${ts}.bak"
-  # One-second timestamp granularity, so two syncs in the same second
-  # collide. `set -C` makes the reservation atomic: a test-then-copy left a
-  # window where both processes saw the name free, and the loser's cp then
-  # overwrote the winner's backup with the already-synced content — losing
-  # the only copy of the original bytes.
-  while ! ( set -C; : > "$bak" ) 2>/dev/null; do
-    n=$((n + 1))
-    if [ $n -gt 100 ]; then
-      echo "✗ Could not reserve a backup name for $(basename "$path")" >&2
-      return 1
-    fi
-    bak="${path}.${ts}-${n}.bak"
-  done
-  if ! cp "$path" "$bak"; then
-    rm -f "$bak"
-    return 1
-  fi
-  echo "    ↳ backed up $(basename "$path") → $(basename "$bak")"
-  safe_backup_count=$((safe_backup_count + 1))
-  return 0
-}
-
 retire_or_keep() {
   local existing="$1" base="$2" stem="$3" ext="$4"
 
@@ -637,7 +612,7 @@ validate_target() {
 
 # --- Local-only mode (generate in this repo) ---
 
-safe_backup_count=0
+SAFE_BACKUP_COUNT=0
 
 if $LOCAL_ONLY; then
   if [[ "$FORMAT" == "cursor" ]]; then
@@ -751,7 +726,7 @@ repo_count=0
 wt_count=0
 stale_count=0
 error_count=0
-safe_backup_count=0
+SAFE_BACKUP_COUNT=0
 errors_summary=()
 
 FORMATS_TO_RUN=()
@@ -818,8 +793,8 @@ elif $CHECK_MODE; then
   fi
 else
   echo "Done. ${#MDC_FILES[@]} rules ($fmt_label$ver_label) → $repo_count repos + $wt_count worktrees."
-  if $SAFE_MODE && [ $safe_backup_count -gt 0 ]; then
-    echo "$safe_backup_count file(s) backed up before overwrite or removal — .bak copies preserved."
+  if $SAFE_MODE && [ $SAFE_BACKUP_COUNT -gt 0 ]; then
+    echo "$SAFE_BACKUP_COUNT file(s) backed up before overwrite or removal — .bak copies preserved."
   fi
 fi
 

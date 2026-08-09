@@ -1,5 +1,5 @@
 # Kit self-enforcement — the kit runs the checks its doctrine prescribes.
-# Thirteen gates: (1) the claude/rules projection must match the cursor/rules
+# Fourteen gates: (1) the claude/rules projection must match the cursor/rules
 # canon (sync-rules.sh --check --local), (2) the GENERATED rule fragments
 # must match their render from profiles/conventions.toml (conventions
 # render-rule --check), (3) all shell scripts pass shellcheck at warning
@@ -21,7 +21,8 @@
 # (test_sync_cleanup.sh), (12) the Tier 2 assembler names no model vendor
 # unless the caller asked for one (test_tier2_assemble, in checker-suites),
 # (13) the distributed surface names no vendor model, person, or private
-# tool (neutrality-scan, with a seeded-leak self-test).
+# tool (neutrality-scan, with a seeded-leak self-test), (14) re-running init
+# over an existing install never destroys a local edit (test_init_backup.sh).
 
 name: kit ci
 
@@ -176,6 +177,20 @@ jobs:
         # comparison on the claude overwrite path, and exactness of the
         # kit's own generated claude/rules/.
         run: bash scripts/tests/test_sync_cleanup.sh
+
+  init-backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-running init never destroys a local edit
+        # Throwaway HOME + mktemp repo. process-kit-2d6 gave the sync path a
+        # recoverable copy before every destructive write; init writes into
+        # the same directories through a second door and had none, so a
+        # re-run silently ate local edits to rules, skills, the conventions
+        # profile, and the distributed CLIs. Pins the .bak contents, the
+        # shared-implementation requirement, the --unsafe waiver, and the
+        # absence of .bak litter when nothing actually changed.
+        run: bash scripts/tests/test_init_backup.sh
 
   tier-mechanics:
     runs-on: ubuntu-latest
