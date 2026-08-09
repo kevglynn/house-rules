@@ -112,7 +112,14 @@ jobs:
           # Seeded into the heuristic class on purpose: it is the only class
           # that catches an unlisted name, so it is the one whose failure
           # would be silent. The seed name appears in no term list.
-          printf 'When Frobnitz MCP is available, prefer it.\n' \
+          #
+          # The shape is chosen, not arbitrary. An earlier seed ("Frobnitz")
+          # was a plain Capitalized word, which the heuristic's original
+          # too-narrow pattern already matched — so the self-test would have
+          # sailed through the exact regression it exists to catch. A
+          # multi-word name with an internal capital matches only the widened
+          # pattern.
+          printf 'Read Chrome DevTools MCP traces before filing.\n' \
             > cursor/rules/seeded-leak.mdc
           if python3 scripts/neutrality-scan --root .; then
             echo "seeded neutrality leak did NOT fail the gate" >&2

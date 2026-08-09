@@ -36,15 +36,19 @@ whether a checker like this survives:
     construct — a repository URL carries its owner's handle and is
     load-bearing, so the handle is exempt there and nowhere else.
 
-Self-matching: the catalog is term-laden by construction, so lines between
-the catalog's declared-terms markers (exclude_marker with ":begin" / ":end"
-appended) are catalog DATA and matching is suppressed there, whatever the
-file is named. Same contract as banned-token-scan. This scanner's own source
-needs no such trick: scripts/ is out of scope.
+Self-matching: the catalog is term-laden by construction, so the scanner
+skips the catalog it loaded, by resolved path. There is deliberately no
+in-file suppression syntax. An earlier draft honored begin/end markers read
+from file content, which meant any scanned file could silence the rest of
+itself while the gate stayed green — suppression that content can grant
+itself is a bypass. Exemption lives only in the catalog's [[allow]] table,
+which requires a written reason. This scanner's own source needs neither:
+scripts/ is out of scope.
 
 Exit codes: 0 clean · 1 findings · 2 usage error · 3 I/O or catalog error.
-Human-readable by default; --json for agents, --explain to print each
-class's remedy alongside its findings. Non-interactive.
+Human-readable by default, remedy always printed; --json for agents.
+Non-interactive. Known limitations are in --help; read them before
+trusting a clean result.
 """
 
 import argparse
@@ -176,9 +180,9 @@ def build_class(name, spec, origin):
         require_reason(item, where)
         exemptions.append(compile_pattern(item.get("pattern"), where))
 
-    # Required, not optional: --explain is the CI job's output mode and the
-    # remedy is the only actionable content in a finding. A class that
-    # silently prints none is a class whose findings nobody can act on.
+    # Required, not optional: the remedy is the only actionable content in a
+    # finding. A class that prints none is a class whose findings nobody can
+    # act on.
     remedy = " ".join(str(spec.get("remedy", "")).split())
     if not remedy:
         emit_error(f"{origin}: classes.{name} needs a non-empty 'remedy' — a "
@@ -435,7 +439,12 @@ known limitations (read before trusting a clean result):
     any other shape is caught only if it is listed in the catalog.
   * Term matching is per line. A name split across a line break is not found.
   * --root scans another tree with THIS kit's catalog; there is no per-repo
-    catalog discovery.
+    catalog discovery. Relatedly, the catalog is skipped by resolved path, so
+    aiming --profile or $NEUTRALITY_TERMS at a valid-TOML file that sits
+    under a scope root exempts that one file from the scan.
+  * A file whose extension is not in the catalog's suffix list is passed over
+    without comment, as is anything that is not a regular file (a directory
+    named foo.md, a broken or looping symlink).
   * There is no in-file suppression syntax, by design: content under scan
     must not be able to exempt itself. Use the catalog's [[allow]] table,
     which requires a written reason.

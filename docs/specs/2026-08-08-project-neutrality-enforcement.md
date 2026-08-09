@@ -35,6 +35,25 @@ is not absorbed into the match — without it the reported term was `Use GitHub
 MCP`, which is useless as an allowlist entry, and generic prose like "An MCP
 plan" false-positived. `TestUnlistedToolHeuristic` pins all five shapes.
 
+**The test suite was then rebuilt around the property, not the bugs.** A
+fourth lens mutated the fixed checker and found the suite still green through
+changes that scan strictly less content: a size threshold skipping 14 of 64
+files, a truncation reading the first 40 lines of each, an `OSError` swallowed
+into "no findings", and eleven of thirteen vendor terms deleted from the
+catalog. Each of those is the original incident's shape — a green signal over
+content nobody read — reproduced inside the checker's own tests. The suite now
+derives the expected file count instead of asserting a floor, plants a leak in
+a copy of the real distributed surface as a positive control, pins a leak on
+the last line of a 2001-line file, mirrors the catalog's term list explicitly
+so a deletion is a two-file change, and loops every declared term and suffix.
+All six mutations now fail the suite.
+
+The CI gate's seeded-leak self-test was also wrong in a way only mutation
+showed: its seed (`Frobnitz MCP`) was a plain capitalized word, the one shape
+the too-narrow heuristic already matched, so the self-test would have passed
+straight through the regression it exists to catch. The seed is now a
+multi-word name with an internal capital.
+
 Also corrected: an unresolvable scope root now errors instead of being skipped
 in silence (a renamed directory would have gone unscanned with the gate green
 forever); an undecodable byte no longer makes a whole file report clean; class

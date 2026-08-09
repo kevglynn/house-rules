@@ -26,6 +26,8 @@ Run: python3 scripts/tests/test_neutrality_scan.py
 """
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,8 +42,29 @@ TERMS_PROFILE = REPO_ROOT / "profiles" / "neutrality-terms.toml"
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_ERROR = 0, 1, 2, 3
 
-DECLARED_ROOTS = tomllib.loads(
-    TERMS_PROFILE.read_text(encoding="utf-8"))["scope"]["roots"]
+CATALOG = tomllib.loads(TERMS_PROFILE.read_text(encoding="utf-8"))
+DECLARED_ROOTS = CATALOG["scope"]["roots"]
+DECLARED_SUFFIXES = CATALOG["scope"]["suffixes"]
+DECLARED_CLASSES = CATALOG["classes"]
+
+# Mirrored on purpose, not derived. A test that reads the catalog can only
+# check that whatever it finds there works — delete eleven vendor names in a
+# TOML edit and a derived test happily verifies the two that remain. Pinning
+# the expected sets here means removing a term is a deliberate two-file
+# change, which is the right friction for the list that defines this
+# checker's coverage.
+EXPECTED_ENTRIES = {
+    "vendor_model": {
+        "Grok", "Gemini", "GPT", "Codex", "Copilot", "Opus", "Sonnet",
+        "Fable", "Llama", "Mistral", "DeepSeek", "Qwen", "Kimi",
+    },
+    "personal": {"Kevin", "kevglynn"},
+    "private_tool": {"Jawnt"},
+}
+EXPECTED_SUFFIXES = {".md", ".mdc", ".toml", ".py", ".sh", ".txt", ".list",
+                     ".yml", ".yaml", ".json"}
+EXPECTED_ROOTS = {"cursor/rules", "claude/rules", "skills", "templates",
+                  "global-safety-net", "profiles"}
 
 
 def run_scan(root=None, *args):
@@ -131,11 +154,21 @@ class TestRealSurfaceIsClean(unittest.TestCase):
         self.assertEqual(rc, EXIT_CLEAN)
         self.assertTrue(payload["ok"])
 
-    def test_reports_what_it_actually_scanned(self):
-        # A scanner that silently resolved zero files would pass the two
-        # tests above while checking nothing.
+    def test_scanned_count_equals_the_files_the_catalog_declares(self):
+        # Derived, not a floor. A ">20" assertion against a real 64 absorbs a
+        # fifth of the surface silently — which is the same shape as the
+        # incident this checker exists to prevent, reproduced in its own
+        # test. Recomputing the expected set here means any file that stops
+        # being scanned fails this test by name.
+        expected = set()
+        for rel in DECLARED_ROOTS:
+            for p in (REPO_ROOT / rel).rglob("*"):
+                if p.is_file() and p.suffix.lower() in DECLARED_SUFFIXES:
+                    expected.add(p.resolve())
+        expected.discard(TERMS_PROFILE.resolve())  # the catalog skips itself
         rc, payload = scan_json()
-        self.assertGreater(payload["scanned"], 20, "suspiciously few files scanned")
+        self.assertEqual(payload["scanned"], len(expected))
+        self.assertGreater(len(expected), 40, "the surface itself looks wrong")
 
     def test_every_declared_root_contributed_files(self):
         # Stronger than a total: a single root going empty (renamed
@@ -144,6 +177,29 @@ class TestRealSurfaceIsClean(unittest.TestCase):
         rc, payload = scan_json()
         empty = [r for r, n in payload["coverage"].items() if n == 0]
         self.assertEqual(empty, [], f"declared roots scanned nothing: {empty}")
+
+    def test_a_leak_planted_in_a_copy_of_the_real_surface_is_caught(self):
+        # The positive control for the three assertions above. "The real
+        # surface is clean" is unfalsifiable on its own: gut the catalog and
+        # it stays green. Copying the actual distributed content and seeding
+        # one leak into it proves the clean result was earned.
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel in DECLARED_ROOTS:
+                shutil.copytree(REPO_ROOT / rel, Path(tmp) / rel)
+            # Aim at the copied catalog, not the original: the scanner skips
+            # the catalog it LOADED, by resolved path, so a copy left under a
+            # scope root is ordinary content and reports every term it
+            # declares. Pointing --profile at the copy reproduces exactly
+            # what the real invocation does.
+            prof = ["--profile", str(Path(tmp) / "profiles" / "neutrality-terms.toml")]
+            rc, out, _ = run_scan(tmp, *prof)
+            self.assertEqual(rc, EXIT_CLEAN, f"the copy is not clean:\n{out}")
+            write(tmp, "cursor/rules/planted.mdc",
+                  "Read Chrome DevTools MCP traces before filing.\n")
+            rc, payload = scan_json(tmp, *prof)
+            self.assertEqual(rc, EXIT_FINDINGS,
+                             "a leak in the real surface would not be caught")
+            self.assertIn("Chrome DevTools MCP", terms_of(payload))
 
     def test_the_terms_catalog_does_not_flag_itself(self):
         # The catalog is term-laden by construction and lives under a scanned
@@ -361,6 +417,35 @@ class TestNoSilentCleanPath(TreeCase):
                          "a file suppressed its own scanning")
         self.assertIn("Frobnitz MCP", terms_of(payload))
 
+    def test_a_leak_on_the_last_line_of_a_long_file_is_found(self):
+        # Pins that the whole file is read. Truncating scan_file to the first
+        # N lines is a one-token change that leaves most of the distributed
+        # surface partly unexamined while every other test stays green.
+        self.put("cursor/rules/long.mdc",
+                 "filler line\n" * 2000 + "Use Frobnitz MCP always.\n")
+        rc, payload = scan_json(self.tree)
+        self.assertEqual(rc, EXIT_FINDINGS, "the tail of a long file went unread")
+        self.assertEqual(payload["findings"][0]["line"], 2001)
+
+    def test_a_leak_in_a_large_file_is_found(self):
+        # Pins that no size threshold quietly excludes a file.
+        self.put("skills/s/SKILL.md",
+                 "x" * 200_000 + "\nUse Frobnitz MCP always.\n")
+        rc, payload = scan_json(self.tree)
+        self.assertEqual(rc, EXIT_FINDINGS, "a large file went unscanned")
+
+    @unittest.skipIf(os.geteuid() == 0, "running as root: chmod cannot deny read")
+    def test_an_unreadable_file_is_an_error_not_a_pass(self):
+        # The other half of the decode fix. Swallowing OSError and returning
+        # no findings is "reported clean without reading the content" — the
+        # precise outcome this checker exists to make impossible.
+        p = self.put("cursor/rules/locked.mdc", "Use Frobnitz MCP always.\n")
+        p.chmod(0o000)
+        self.addCleanup(p.chmod, 0o644)
+        rc, out, err = run_scan(self.tree)
+        self.assertEqual(rc, EXIT_ERROR, f"an unreadable file scanned clean:\n{out}")
+        self.assertEqual(error_payload(err)["error_kind"], "io")
+
     def test_an_unresolvable_scope_root_is_an_error_not_a_pass(self):
         # Rename a scanned directory and the old behavior was to skip it in
         # silence — indistinguishable from a root that resolved and was
@@ -425,6 +510,75 @@ class TestNoSilentCleanPath(TreeCase):
         self.assertIn("list", err)
 
 
+class TestCatalogDataIsPinned(TreeCase):
+    """Nearly all of this checker's coverage lives in TOML, not in code, so
+    a term silently dropped during a catalog edit costs real coverage while
+    every hand-written test stays green. These loop the catalog, so entries
+    added later are pinned without anyone remembering to write a test."""
+
+    def test_the_catalog_still_declares_every_term_it_is_supposed_to(self):
+        # Guards deletion, which the loop below structurally cannot: a test
+        # that derives its expectations from the catalog verifies only the
+        # terms that survived the edit.
+        actual = {name: set(spec.get("entries", []))
+                  for name, spec in DECLARED_CLASSES.items()
+                  if spec.get("entries")}
+        self.assertEqual(actual, EXPECTED_ENTRIES)
+
+    def test_the_catalog_still_declares_every_root_and_suffix(self):
+        self.assertEqual(set(DECLARED_ROOTS), EXPECTED_ROOTS)
+        self.assertEqual(set(DECLARED_SUFFIXES), EXPECTED_SUFFIXES)
+
+    def test_every_listed_term_in_every_class_flags(self):
+        missed = []
+        for cls_name, spec in DECLARED_CLASSES.items():
+            for term in spec.get("entries", []):
+                with tempfile.TemporaryDirectory() as tmp:
+                    make_tree(tmp)
+                    # Bare, with no MCP suffix: this must be the listed
+                    # class's own matching, not the heuristic backstopping it.
+                    write(tmp, "cursor/rules/t.mdc", f"Consider {term} here.\n")
+                    rc, payload = scan_json(tmp)
+                    if rc != EXIT_FINDINGS or cls_name not in classes_of(payload):
+                        missed.append(f"{cls_name}:{term}")
+        self.assertEqual(missed, [], f"catalog terms that do not flag: {missed}")
+
+    def test_every_declared_suffix_is_actually_scanned(self):
+        missed = []
+        for suffix in DECLARED_SUFFIXES:
+            with tempfile.TemporaryDirectory() as tmp:
+                make_tree(tmp)
+                write(tmp, f"skills/s/probe{suffix}", "Ask Grok about it.\n")
+                rc, _, _ = run_scan(tmp)
+                if rc != EXIT_FINDINGS:
+                    missed.append(suffix)
+        self.assertEqual(missed, [], f"declared suffixes not scanned: {missed}")
+
+    def test_every_class_declares_a_precedence(self):
+        # Overlap resolution reads it. A class added without one silently
+        # defaults to the heuristic's rank and loses to any wider match.
+        missing = [n for n, s in DECLARED_CLASSES.items() if "precedence" not in s]
+        self.assertEqual(missing, [], f"classes without a precedence: {missing}")
+
+    def test_an_unreadable_file_raises_rather_than_returning_no_findings(self):
+        # The behavioral version of this (chmod 000) cannot run as root, and
+        # a local root run is exactly when someone would not notice the skip.
+        # This reads the handler instead: returning [] there is "clean
+        # because it was never read", the outcome the checker exists to
+        # prevent.
+        source = SCANNER.read_text(encoding="utf-8")
+        handler = source.split("except OSError")[1].split("\n\n")[0]
+        self.assertIn("emit_error", handler,
+                      "the OSError path must fail loudly, not return no findings")
+
+    def test_the_checker_source_names_no_suppression_marker(self):
+        # The deleted bypass, pinned at the source level: the contract must
+        # not come back by way of someone re-adding the marker handling.
+        source = SCANNER.read_text(encoding="utf-8")
+        self.assertNotIn("declared-terms:begin", source)
+        self.assertNotIn("exclude_marker", source)
+
+
 class TestScopeBoundary(TreeCase):
     """Out-of-scope trees are where names are correct and load-bearing."""
 
@@ -436,8 +590,17 @@ class TestScopeBoundary(TreeCase):
         self.assertEqual(rc, EXIT_CLEAN, f"docs/ was scanned:\n{out}")
 
     def test_scripts_are_not_scanned(self):
-        self.put("scripts/init.sh",
-                 "echo 'clone https://github.com/kevglynn/house-rules'\n")
+        # The content must be something that genuinely flags in scope,
+        # otherwise the test passes for the wrong reason and would keep
+        # passing if scripts/ were added to the roots. The earlier fixture
+        # used a clone URL, which the personal class exempts anywhere.
+        text = "echo 'ask Grok to review this'\n"
+        self.put("templates/precondition.sh", text)
+        rc, _, _ = run_scan(self.tree)
+        self.assertEqual(rc, EXIT_FINDINGS, "precondition: content must flag in scope")
+        (Path(self.tree) / "templates/precondition.sh").unlink()
+
+        self.put("scripts/init.sh", text)
         rc, out, _ = run_scan(self.tree)
         self.assertEqual(rc, EXIT_CLEAN, f"scripts/ was scanned:\n{out}")
 
