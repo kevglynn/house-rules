@@ -2,9 +2,49 @@
 
 **Date:** 2026-08-08
 **Beads:** epic `process-kit-4wh` (children: `ei0` private-tool leak, `dmm` tier2 de-vendoring, `9mf` distributed-text hygiene, `pi6` neutrality checker)
-**Status:** Implemented as specified. All four findings remediated; the checker
-ships as `scripts/neutrality-scan` with `profiles/neutrality-terms.toml` and the
-`neutrality-gate` job in kit CI. Open questions resolved below.
+**Status:** Implemented, then revised by Tier 1 review. All four findings
+remediated; the checker ships as `scripts/neutrality-scan` with
+`profiles/neutrality-terms.toml` and the `neutrality-gate` job in kit CI. Open
+questions resolved below; two design decisions were reversed — see "Tier 1
+revisions".
+
+## Tier 1 revisions
+
+The first implementation passed its own tests and reported the surface clean.
+Review found that "clean" had several silent paths to it, and that the class
+advertised as the safety net was the weakest part of the design.
+
+**The declared-terms region is gone.** The catalog solved its own
+self-matching problem by wrapping its body in `:begin`/`:end` markers that the
+scanner honored in *any* scanned file. That made suppression a property of
+content — any rule or skill could open a region and silence the rest of itself
+with the gate still green, and an unterminated region silenced everything
+after it with no warning in the mode CI runs. The scanner now skips the
+catalog it loaded, by resolved path, and offers no in-file suppression at all.
+Exemption lives only in `[[allow]]`, which is in the catalog and requires a
+written reason. Guarded by `test_no_in_file_marker_can_suppress_scanning`.
+
+**The heuristic was widened after being measured.** `\b[A-Z][a-z]+ MCP\b` was
+written against the single leak on hand and shipped described as "the only
+class that catches a leak nobody has enumerated." Against five real MCP server
+names it caught one: internal capitals (`GitHub`), all-caps (`AWS`), digits
+(`S3`), camel case (`OpenAI`), and multi-word names (`Chrome DevTools`) all
+passed clean. The token shape is now `[A-Z][A-Za-z0-9]*` with a run of up to
+four tokens, plus a leading stopword lookahead so a capitalized sentence-opener
+is not absorbed into the match — without it the reported term was `Use GitHub
+MCP`, which is useless as an allowlist entry, and generic prose like "An MCP
+plan" false-positived. `TestUnlistedToolHeuristic` pins all five shapes.
+
+Also corrected: an unresolvable scope root now errors instead of being skipped
+in silence (a renamed directory would have gone unscanned with the gate green
+forever); an undecodable byte no longer makes a whole file report clean; class
+overlap resolves by declared precedence rather than match width, so a listed
+name reports with "this name is never legitimate" instead of the heuristic's
+softer "allowlist it"; the config suffixes (`.yml`, `.yaml`, `.json`) are
+scanned, which brought the CI workflow template — the most literally
+distributed file in the kit — into scope for the first time; and the error
+envelope now matches the rest of the checker family rather than a private
+shape. `--explain` was deleted and the remedy always prints.
 
 ## Background
 

@@ -106,7 +106,7 @@ jobs:
         # checker, and four violations shipped — one a private-tool directive
         # in an always-on rule that reached every sync target. Reporter only;
         # the suite in checker-suites guards the checker itself.
-        run: python3 scripts/neutrality-scan --root . --explain
+        run: python3 scripts/neutrality-scan --root .
       - name: Gate self-test — a seeded leak must fail the scan
         run: |
           # Seeded into the heuristic class on purpose: it is the only class

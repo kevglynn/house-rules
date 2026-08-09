@@ -9,13 +9,16 @@
 # distributed-clis.list: an adopter's repo is supposed to name its own
 # project, so running this against one would be noise.
 #
-# Self-matching: a catalog cannot assemble its own terms from parts, so the
-# catalog body below sits inside a declared-terms region and matching is
-# suppressed between the markers, whatever this file is named or where it
-# lives. Same contract as banned-token-scan's [tokens] region. The base
-# marker on this line is inert — only the ":begin"-suffixed form opens a
-# region.
-exclude_marker = "neutrality-scan:declared-terms"
+# Self-matching: a catalog cannot assemble its own terms from parts, so this
+# file would flag every entry it declares. The scanner therefore skips the
+# catalog it loaded, by resolved path.
+#
+# It does NOT offer an in-file marker to suppress a region, which is how an
+# earlier draft solved this. A suppression marker readable from content is
+# writable by the author of that content: any scanned file could open a
+# region and silence the rest of itself while the gate stayed green. The
+# exemption surface is [[allow]] below, which lives here and demands a
+# reason.
 
 # The surface `house-rules init` distributes, or that an agent reads as law.
 #
@@ -36,9 +39,13 @@ roots = [
 # Skill support files count. The leak that motivated this checker was a
 # vendor lineup in a skill's .py assembler, not in its prose — a
 # markdown-only scanner would have missed it.
-suffixes = [".md", ".mdc", ".toml", ".py", ".sh", ".txt", ".list"]
-
-# neutrality-scan:declared-terms:begin
+#
+# The config suffixes are here for the same reason: templates/ ships CI
+# workflow YAML that installs into an adopter's repo, and picking suffixes by
+# "what did the known leak use" left the most literally-distributed file in
+# the kit unscanned.
+suffixes = [".md", ".mdc", ".toml", ".py", ".sh", ".txt", ".list",
+            ".yml", ".yaml", ".json"]
 
 # Third-party model and reviewer-lane names. Model names age faster than
 # anything else in the kit, so generic content describes reviewer archetypes
@@ -49,6 +56,10 @@ suffixes = [".md", ".mdc", ".toml", ".py", ".sh", ".txt", ".list"]
 # listing them would make the checker unusable and it would be switched off
 # within a day, at which point it catches nothing at all.
 [classes.vendor_model]
+# Enumerated classes outrank the heuristic when both match the same text:
+# "this name is never legitimate" is the accurate remedy, and the heuristic's
+# softer "rename or allowlist it" would mislead.
+precedence = 10
 remedy = """describe the lane by capability and family (as skills/council does) \
 and let whoever runs it resolve the name, or move the concrete lineup to the \
 project or machine-global overlay"""
@@ -71,6 +82,7 @@ entries = [
 # Maintainer names and handles. Provenance belongs to the decision record,
 # which is durable and impersonal; the name adds nothing the ID does not.
 [classes.personal]
+precedence = 10
 remedy = """cite the decision record (a bead ID or docs/decisions/ entry) \
 instead of the person, or move the parameter to the machine-global overlay"""
 entries = [
@@ -81,23 +93,38 @@ entries = [
 # A repository URL carries its owner's handle and is load-bearing: agents
 # instruct users to clone it. Exempted by context rather than by pinning line
 # numbers that move whenever the surrounding prose is edited.
+#
+# Anchored at the scheme and closed at the repo segment: it covers the
+# canonical clone URL and nothing looser. An exemption applies only where it
+# CONTAINS the match, so this cannot exempt a name elsewhere on the line —
+# but an author who knows the pattern can still wrap a name in a
+# canonical-looking URL. Context exemptions cut false positives; they are
+# not a security boundary. Review is.
 [[classes.personal.exempt_context]]
-pattern = 'github\.com/[A-Za-z0-9._-]+/'
+pattern = 'https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+'
 reason = "the canonical clone URL is project identity, not attribution"
 
 # Named private projects and tools. A list only ever catches what someone
 # already thought of, which is why the heuristic class below exists.
 [classes.private_tool]
+precedence = 10
 remedy = """describe the capability the tool provides and move the tool's name \
 to the project overlay"""
 entries = [
   "Jawnt",
 ]
 
-# Structural, not listed: a capitalized word immediately before "MCP". This
+# Structural, not listed: capitalized token(s) immediately before "MCP". This
 # is the only class that catches a leak nobody has enumerated, and it is what
 # would have caught the private-tool directive that shipped in an always-on
 # rule (process-kit-ei0).
+#
+# The token shape is [A-Z][A-Za-z0-9]*, not [A-Z][a-z]+. The narrower form
+# was written against the one leak on hand and missed the dominant way MCP
+# servers are actually named: of five real server names planted as a test,
+# it caught one. Internal capitals ("GitHub", "DevTools"), all-caps ("AWS"),
+# and digits ("S3") all have to match, and the {0,3} run covers multi-word
+# names ("Chrome DevTools MCP").
 #
 # False positives are expected by construction — any capitalized word in that
 # position matches, including a legitimately generic example. Accept them: an
@@ -105,12 +132,31 @@ entries = [
 # is not. Lowercase carriers ("an MCP plan", "the MCP tools") and the plural
 # ("query MCPs") are generic prose about the protocol and do not match.
 [classes.private_tool_heuristic]
+precedence = 0
 remedy = """rewrite in capability terms ("when a cross-project read tool is \
 available") and name the tool in the project overlay, or allowlist it with a \
 reason if the kit documents it by name"""
+#
+# The leading negative lookahead is what keeps the match on the tool's name.
+# Without it a capitalized sentence-opener is absorbed into the match: "Use
+# GitHub MCP" reported the term as "Use GitHub MCP", and "An MCP plan" — the
+# generic protocol prose this class is documented NOT to flag — matched on
+# "An". Blocking a stopword at the start does not lose the finding, because
+# the engine simply retries one token later and matches "GitHub MCP". Cost:
+# a tool actually named after a stopword goes unflagged.
 patterns = [
-  '\b[A-Z][a-z]+ MCP\b',
+  '''\b(?!(?:The|A|An|This|That|These|Those|Each|Every|Any|Some|No|Not|Our|Your|Its|Their|My|Use|Using|Used|When|Where|Which|What|Why|How|If|And|But|Or|For|With|Via|Per|Prefer|See|Run|Add|Set|Call|Query|Read|Write|Check|Note|One|Two|New|All|Both|Only|Also|Then|Than|Do|Does|Don|Never|Always)\b)[A-Z][A-Za-z0-9]*(?: [A-Z][A-Za-z0-9]*){0,3} MCP\b''',
 ]
+
+# The kit's two declared host platforms, exempted for the same reason they
+# are absent from the vendor list: they appear legitimately on nearly every
+# page, and a checker that flags them gets switched off. The optional
+# capitalized run in front keeps the exemption span wide enough to cover the
+# whole match ("The Cursor MCP"), since an exemption only applies when it
+# contains the match.
+[[classes.private_tool_heuristic.exempt_context]]
+pattern = '\b(?:[A-Z][A-Za-z0-9]* )*(?:Claude Code|Cursor|Claude) MCP\b'
+reason = "Cursor and Claude Code are the kit's declared host platforms"
 
 # Recorded exemptions. Each entry is a decision with a stated reason — an
 # unexplained exemption is indistinguishable from someone silencing a real
@@ -121,5 +167,3 @@ patterns = [
 #   term = "Figma MCP"
 #   reason = "first-party integration the kit documents by name"
 # )
-
-# neutrality-scan:declared-terms:end

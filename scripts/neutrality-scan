@@ -61,35 +61,50 @@ ENV_PROFILE = "NEUTRALITY_TERMS"
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_ERROR = 0, 1, 2, 3
 
 
-def emit_error(msg, kind, code):
-    """Errors are JSON on stderr in both output modes, so a wrapper can tell
-    a broken run from a clean one without parsing prose."""
-    sys.stderr.write(json.dumps({"error": kind, "message": msg}) + "\n")
-    raise SystemExit(code)
+def emit_error(message, kind, code):
+    """The family's agent contract, byte-for-byte: key names and ordering
+    match defer-lint / close-reason-lint / banned-token-scan so a wrapper can
+    read `error` across all of them and get a human message, not a class
+    name."""
+    json.dump({"ok": False, "error": message, "error_kind": kind,
+               "exit_code": code}, sys.stderr, sort_keys=True)
+    sys.stderr.write("\n")
+    sys.exit(code)
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """argparse that reports usage errors as JSON on stderr (agent convention)."""
+
+    def error(self, message):
+        json.dump({"ok": False, "error": message, "error_kind": "usage",
+                   "exit_code": EXIT_USAGE}, sys.stderr, sort_keys=True)
+        sys.stderr.write("\n")
+        sys.exit(EXIT_USAGE)
 
 
 # --- catalog ------------------------------------------------------------
 
 
-def resolve_profile(explicit, root):
+def resolve_profile(explicit):
     """--profile > $NEUTRALITY_TERMS > the catalog in this script's repo.
 
     Deliberately not relative to --root: fixture trees and target repos have
     no catalog of their own, and the catalog is a property of the kit rather
-    than of whatever is being scanned.
+    than of whatever is being scanned. Consequence worth knowing (and listed
+    under known limitations in --help): pointing --root at another repo scans
+    it with the kit's catalog.
     """
     if explicit:
-        return Path(explicit), "flag"
+        return Path(explicit)
     env = os.environ.get(ENV_PROFILE)
     if env:
-        return Path(env), "env"
-    return Path(__file__).resolve().parent.parent / PROFILE_RELPATH, "default"
+        return Path(env)
+    return Path(__file__).resolve().parent.parent / PROFILE_RELPATH
 
 
-def load_catalog(path, source):
+def load_catalog(path):
     if not path.is_file():
-        emit_error(f"catalog not found: {path} (resolved from {source})",
-                   "catalog", EXIT_ERROR)
+        emit_error(f"catalog not found: {path}", "catalog", EXIT_ERROR)
     try:
         with path.open("rb") as fh:
             return tomllib.load(fh)
@@ -99,9 +114,12 @@ def load_catalog(path, source):
 
 
 def compile_literal(term, origin):
-    """A listed term matches as a whole word. The lookarounds rather than \\b
-    so a hyphenated or suffixed slug ("GPT-4o", "Grokking") does not match on
-    a boundary the author did not intend."""
+    """A listed term matches as a whole word.
+
+    Lookarounds rather than \\b because \\b counts "_" as a word character, so
+    "_kevglynn" and "kevglynn_x" would escape a \\b-anchored term. They do NOT
+    exclude a hyphenated slug — "GPT" still matches inside "GPT-4o", which is
+    the behavior we want: a version-suffixed model name is the same leak."""
     if not isinstance(term, str) or not term.strip():
         emit_error(f"{origin}: term entries must be non-empty strings",
                    "catalog", EXIT_ERROR)
@@ -121,21 +139,36 @@ def compile_pattern(pattern, origin):
                    "catalog", EXIT_ERROR)
 
 
+def want_list(value, where):
+    """A bare string is iterable, so `entries = "Grok"` silently compiles one
+    matcher per character. Guards like this one exist only where the wrong
+    shape fails QUIETLY — a wrong scalar type already dies loudly on its own,
+    and validating it would be noise in a repo-local file CI parses on every
+    push."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        emit_error(f"{where}: must be a list, got {type(value).__name__}",
+                   "catalog", EXIT_ERROR)
+    return value
+
+
 def build_class(name, spec, origin):
     if not isinstance(spec, dict):
         emit_error(f"{origin}: classes.{name} must be a table",
                    "catalog", EXIT_ERROR)
     matchers = []
-    for i, term in enumerate(spec.get("entries", [])):
+    for i, term in enumerate(want_list(spec.get("entries"), f"{origin}: classes.{name}.entries")):
         matchers.append(compile_literal(term, f"{origin}: classes.{name}.entries[{i}]"))
-    for i, pattern in enumerate(spec.get("patterns", [])):
+    for i, pattern in enumerate(want_list(spec.get("patterns"), f"{origin}: classes.{name}.patterns")):
         matchers.append(compile_pattern(pattern, f"{origin}: classes.{name}.patterns[{i}]"))
     if not matchers:
         emit_error(f"{origin}: classes.{name} declares no entries or patterns",
                    "catalog", EXIT_ERROR)
 
     exemptions = []
-    for i, item in enumerate(spec.get("exempt_context", [])):
+    for i, item in enumerate(want_list(spec.get("exempt_context"),
+                                       f"{origin}: classes.{name}.exempt_context")):
         where = f"{origin}: classes.{name}.exempt_context[{i}]"
         if not isinstance(item, dict):
             emit_error(f"{where}: must be a table with pattern and reason",
@@ -143,11 +176,31 @@ def build_class(name, spec, origin):
         require_reason(item, where)
         exemptions.append(compile_pattern(item.get("pattern"), where))
 
+    # Required, not optional: --explain is the CI job's output mode and the
+    # remedy is the only actionable content in a finding. A class that
+    # silently prints none is a class whose findings nobody can act on.
+    remedy = " ".join(str(spec.get("remedy", "")).split())
+    if not remedy:
+        emit_error(f"{origin}: classes.{name} needs a non-empty 'remedy' — a "
+                   f"finding with no remedy tells the reader nothing to do",
+                   "catalog", EXIT_ERROR)
+
+    # Declared, not inferred. Overlap resolution used to keep the longest
+    # match and call it "most specific", which ranked a catalog-listed name
+    # below the heuristic that happens to contain it — and handed the reader
+    # the heuristic's allowlist-friendly remedy for a name the catalog says
+    # is never legitimate. Higher wins.
+    precedence = spec.get("precedence", 0)
+    if not isinstance(precedence, int) or isinstance(precedence, bool):
+        emit_error(f"{origin}: classes.{name}.precedence must be an integer",
+                   "catalog", EXIT_ERROR)
+
     return {
         "name": name,
         "matchers": matchers,
         "exemptions": exemptions,
-        "remedy": " ".join(str(spec.get("remedy", "")).split()),
+        "remedy": remedy,
+        "precedence": precedence,
     }
 
 
@@ -166,7 +219,7 @@ def require_reason(item, where):
 
 def build_allowlist(catalog, origin):
     allowed = {}
-    for i, item in enumerate(catalog.get("allow", [])):
+    for i, item in enumerate(want_list(catalog.get("allow"), f"{origin}: allow")):
         where = f"{origin}: allow[{i}]"
         if not isinstance(item, dict):
             emit_error(f"{where}: must be a table with term and reason",
@@ -192,43 +245,57 @@ def build_scope(catalog, origin):
         ):
             emit_error(f"{origin}: scope.{key} must be a non-empty list of "
                        f"strings", "catalog", EXIT_ERROR)
+
+    # An absolute root silently discards --root when joined (Path(root) /
+    # "/etc" is "/etc"), and a ..-traversal walks outside the tree under
+    # scan. Both then blow up in relative_to with an exit code that collides
+    # with "findings found". The same guard, with the same reasoning, is in
+    # scripts/tests/test_core_manifest.py.
+    for rel in roots:
+        p = Path(rel)
+        if p.is_absolute() or ".." in p.parts:
+            emit_error(f"{origin}: scope.roots entry {rel!r} must be a "
+                       f"relative path without '..'", "catalog", EXIT_ERROR)
+
     return list(roots), {s.lower() for s in suffixes}
-
-
-def build_markers(catalog, origin):
-    marker = catalog.get("exclude_marker")
-    if not isinstance(marker, str) or not marker.strip():
-        emit_error(f"{origin}: exclude_marker must be a non-empty string",
-                   "catalog", EXIT_ERROR)
-    return marker + ":begin", marker + ":end"
 
 
 # --- scanning -----------------------------------------------------------
 
 
-def target_files(root, roots, suffixes):
+def target_files(root, roots, suffixes, skip, origin):
+    """Files to scan, and the roots that did not resolve.
+
+    A declared root that isn't there used to be skipped in silence, which is
+    indistinguishable from a root that resolved and was clean — rename a
+    scanned directory and the gate stays green forever over an unscanned
+    tree. The caller turns a missing root into a catalog error.
+    """
+    missing = [rel for rel in roots if not (root / rel).is_dir()]
+    if missing:
+        emit_error(f"{origin}: scope.roots does not resolve under the scanned "
+                   f"tree: {', '.join(missing)} — a root that is not there is "
+                   f"not a root that is clean", "catalog", EXIT_ERROR)
+
     for rel in roots:
         base = root / rel
-        if not base.is_dir():
-            continue
         for path in sorted(base.rglob("*")):
-            if path.is_file() and path.suffix.lower() in suffixes:
-                yield path
-
-
-def _marker_at(line, marker):
-    """Index where `marker` stands as a whole token, else -1. Word-ish
-    boundaries on both sides so a marker-shaped substring inside a longer
-    word cannot open or close a region."""
-    idx = line.find(marker)
-    while idx != -1:
-        end = idx + len(marker)
-        before = line[idx - 1] if idx else ""
-        after = line[end] if end < len(line) else ""
-        if not (before.isalnum() or after.isalnum()):
-            return idx
-        idx = line.find(marker, idx + 1)
-    return -1
+            if not (path.is_file() and path.suffix.lower() in suffixes):
+                continue
+            # Declared roots nest ("cursor/rules"), so coverage is keyed by
+            # the declared string, not by the first path component.
+            # The catalog is term-laden by construction and would flag every
+            # entry in itself. Skipped by identity rather than by a marker
+            # the file declares: a content-side marker contract lets any
+            # scanned file silence itself by opening a region, which is a
+            # bypass, not a feature.
+            #
+            # defer: only the resolved catalog is skipped. ceiling: a second
+            # term-laden data file under a scanned root would flag itself.
+            # upgrade when: such a file is added — extend `skip` to a set.
+            if path.resolve() == skip:
+                continue
+            yield rel, path
 
 
 def exempt_spans(line, exemptions):
@@ -239,30 +306,25 @@ def inside(span, spans):
     return any(start <= span[0] and span[1] <= end for start, end in spans)
 
 
-def scan_file(path, relpath, classes, allowed, begin, end):
-    """Findings in one file, honoring declared-terms regions, per-class
-    context exemptions, and the allowlist."""
+def scan_file(path, relpath, classes, allowed):
+    """Findings in one file, honoring per-class context exemptions and the
+    allowlist. There is deliberately no in-file suppression mechanism: a
+    content-side opt-out is writable by the same author whose content is
+    under scan."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        # A binary or unreadable file in a text-suffix tree is not a
-        # neutrality question; skipping beats failing the whole run.
-        return [], 0
+        # errors="replace" rather than a skip: an undecodable byte in one
+        # line is no reason to stop reading the other 400, and a file that
+        # scans as clean because it was never read is the failure mode this
+        # whole checker exists to prevent. Only a genuine OSError bails.
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        emit_error(f"cannot read {relpath}: {exc}", "io", EXIT_ERROR)
 
     findings = []
-    regions = 0
-    suppressing = False
-    for lineno, line in enumerate(text.splitlines(), 1):
-        if suppressing:
-            if _marker_at(line, end) != -1:
-                suppressing = False
-            continue
-        if _marker_at(line, begin) != -1:
-            regions += 1
-            # A begin+end pair on one line is a complete one-line region.
-            suppressing = _marker_at(line, end) == -1
-            continue
-
+    # split("\n"), not splitlines(): splitlines() also breaks on \x0b, \x0c,
+    # \x1c-\x1e and U+2028/9, so a line number in a finding would not match
+    # the reader's editor for any file containing one.
+    for lineno, line in enumerate(text.split("\n"), 1):
         candidates = []
         for cls in classes:
             spans = exempt_spans(line, cls["exemptions"]) if cls["exemptions"] else []
@@ -273,7 +335,8 @@ def scan_file(path, relpath, classes, allowed, begin, end):
                         continue
                     if spans and inside(match.span(), spans):
                         continue
-                    candidates.append((match.span(), cls["name"], term))
+                    candidates.append((match.span(), cls["name"], term,
+                                       cls["precedence"]))
 
         for span, cls_name, term in dedupe_overlaps(candidates):
             findings.append({
@@ -281,34 +344,63 @@ def scan_file(path, relpath, classes, allowed, begin, end):
                 "line": lineno,
                 "class": cls_name,
                 "term": term,
-                "text": line.strip(),
+                # Capped: a minified or single-line generated file would
+                # otherwise put its entire contents in every finding, and in
+                # the JSON payload once per finding.
+                "text": clip(line.strip()),
             })
-    return findings, regions
+    return findings
+
+
+def clip(text, limit=200):
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def dedupe_overlaps(candidates):
     """One leak, one finding. A listed term often sits inside a structural
     match of the same leak — the private-tool name inside the capitalized-
     word-plus-MCP bigram — and reporting both says nothing the wider match
-    did not. Keep the most specific (longest) match and drop any contained
-    in one already kept; report in source order."""
+    did not.
+
+    Which one survives is the class's DECLARED precedence, not the wider
+    span: the enumerated class carries the accurate remedy ("this name is
+    never legitimate"), while the heuristic carries the softer one ("rename
+    or allowlist it"). Ranking by width handed the reader the softer remedy
+    for the harder leak. Width breaks a precedence tie, offset breaks that.
+    """
     kept = []
-    for span, cls_name, term in sorted(
-        candidates, key=lambda c: (c[0][0] - c[0][1], c[0][0])
+    for span, cls_name, term, rank in sorted(
+        candidates, key=lambda c: (-c[3], c[0][0] - c[0][1], c[0][0])
     ):
-        if any(start <= span[0] and span[1] <= end for (start, end), _, _ in kept):
+        if any(overlaps(span, k[0]) for k in kept):
             continue
-        kept.append((span, cls_name, term))
-    return sorted(kept, key=lambda c: c[0][0])
+        kept.append((span, cls_name, term, rank))
+    return [(s, c, t) for s, c, t, _ in sorted(kept, key=lambda c: c[0][0])]
+
+
+def overlaps(a, b):
+    """Any intersection, not containment. Two matches that merely straddle
+    each other are still one leak reported twice."""
+    return a[0] < b[1] and b[0] < a[1]
 
 
 # --- output -------------------------------------------------------------
 
 
-def report_human(findings, scanned, profile, explain, classes):
+def format_coverage(per_root):
+    """Per-root file counts, always shown. A root that resolves but matches
+    no files reports the same "clean" as a root that was scanned — printing
+    the counts is what makes an empty root visible to the reader."""
+    return ", ".join(f"{rel} {n}" for rel, n in per_root.items())
+
+
+def report_human(findings, per_root, profile, classes):
+    scanned = sum(per_root.values())
     if not findings:
         print(f"Scanned {scanned} file(s) across the distributed surface: "
-              f"clean. [catalog: {profile}]")
+              f"clean.")
+        print(f"  coverage: {format_coverage(per_root)}")
+        print(f"  catalog: {profile}")
         return EXIT_CLEAN
 
     by_class = {}
@@ -320,25 +412,50 @@ def report_human(findings, scanned, profile, explain, classes):
         print(f"{name}:")
         for f in by_class[name]:
             print(f"  {f['file']}:{f['line']}  [{f['term']}]  {f['text']}")
-        if explain and remedies.get(name):
-            print(f"  → {remedies[name]}")
+        # Always, not behind a flag. The remedy is the only part of a finding
+        # that tells the reader what to do; a mode that hides it is a mode
+        # nobody should be running.
+        print(f"  → {remedies[name]}")
         print()
 
     print(f"Scanned {scanned} file(s): {len(findings)} finding(s) in "
-          f"{len(by_class)} class(es). [catalog: {profile}]")
-    if not explain:
-        print("Re-run with --explain for the remedy per class.")
+          f"{len(by_class)} class(es).")
+    print(f"  coverage: {format_coverage(per_root)}")
+    print(f"  catalog: {profile}")
     return EXIT_FINDINGS
 
 
+EPILOG = """\
+exit codes:
+  0  clean          1  findings          2  usage error      3  catalog or I/O error
+
+known limitations (read before trusting a clean result):
+  * The private_tool_heuristic class catches an unlisted name only when it is
+    written as <Capitalized token(s)> + "MCP". A private tool referred to by
+    any other shape is caught only if it is listed in the catalog.
+  * Term matching is per line. A name split across a line break is not found.
+  * --root scans another tree with THIS kit's catalog; there is no per-repo
+    catalog discovery.
+  * There is no in-file suppression syntax, by design: content under scan
+    must not be able to exempt itself. Use the catalog's [[allow]] table,
+    which requires a written reason.
+  * A class's exempt_context is matched against the same line, so an author
+    who knows the exemption can construct text that satisfies it — writing a
+    canonical-looking URL around a name, for instance. Context exemptions
+    cut false positives; they are not a security boundary, and review is
+    still what catches a deliberate evasion.
+"""
+
+
 def main():
-    ap = argparse.ArgumentParser(
+    ap = JsonArgumentParser(
         prog="neutrality-scan",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Check kit-authored content for project-neutrality "
                     "violations (vendor model names, personal identifiers, "
-                    "private tool names).",
-        epilog="Exit: 0 clean, 1 findings, 2 usage error, 3 catalog or I/O "
-               "error. Kit-internal; not distributed to target repos.",
+                    "private tool names). Kit-internal; not distributed to "
+                    "target repos.",
+        epilog=EPILOG,
     )
     ap.add_argument("--root", default=".",
                     help="repo root to scan (default: cwd)")
@@ -347,20 +464,17 @@ def main():
                          "the catalog in this script's repo)")
     ap.add_argument("--json", action="store_true",
                     help="machine-readable output for agents")
-    ap.add_argument("--explain", action="store_true",
-                    help="print each class's remedy alongside its findings")
     args = ap.parse_args()
 
     root = Path(args.root)
     if not root.is_dir():
         emit_error(f"--root is not a directory: {root}", "usage", EXIT_USAGE)
 
-    profile_path, source = resolve_profile(args.profile, root)
-    catalog = load_catalog(profile_path, source)
+    profile_path = resolve_profile(args.profile)
+    catalog = load_catalog(profile_path)
     origin = str(profile_path)
 
     roots, suffixes = build_scope(catalog, origin)
-    begin, end = build_markers(catalog, origin)
     allowed = build_allowlist(catalog, origin)
 
     class_specs = catalog.get("classes")
@@ -371,28 +485,26 @@ def main():
                for name, spec in sorted(class_specs.items())]
 
     findings = []
-    scanned = 0
-    regions = 0
-    for path in target_files(root, roots, suffixes):
-        scanned += 1
-        hits, region_count = scan_file(
-            path, str(path.relative_to(root)), classes, allowed, begin, end
-        )
-        findings.extend(hits)
-        regions += region_count
+    per_root = {rel: 0 for rel in roots}
+    skip = profile_path.resolve()
+    for declared_root, path in target_files(root, roots, suffixes, skip, origin):
+        per_root[declared_root] += 1
+        findings.extend(
+            scan_file(path, str(path.relative_to(root)), classes, allowed))
 
     if args.json:
         print(json.dumps({
+            "ok": not findings,
             "findings": findings,
-            "scanned": scanned,
+            "scanned": sum(per_root.values()),
+            "coverage": per_root,
             "profile": origin,
             "roots": roots,
-            "declared_term_regions": regions,
             "allowlisted": sorted(allowed),
-        }, indent=2))
+        }, indent=2, sort_keys=True))
         return EXIT_FINDINGS if findings else EXIT_CLEAN
 
-    return report_human(findings, scanned, origin, args.explain, classes)
+    return report_human(findings, per_root, origin, classes)
 
 
 if __name__ == "__main__":
