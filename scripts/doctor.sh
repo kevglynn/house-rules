@@ -304,8 +304,9 @@ echo ""
 # ---------- Distributed CLIs (manifest-driven) ----------
 #
 # Every kit CLI registered in scripts/distributed-clis.list is kit-managed:
-# init.sh copies it with cp -f (same semantics as rules), so each
-# drift-checks against the kit copy the same way rules do. The tdd-ledger
+# init.sh installs it through install_file (same semantics as rules — an
+# edited copy is backed up before it is replaced), so each drift-checks
+# against the kit copy the same way rules do. The tdd-ledger
 # CI workflow (.github/workflows/tdd-ledger-verify.yml) is NOT drift-checked
 # — init treats it as not-overwriting, so target repos may legitimately
 # customize it; we only note its absence when that CLI is present.

@@ -223,6 +223,9 @@ echo "--- whitespace in a stem does not confer ownership ---"
 WKIT="$(mktemp -d)"; CLEANUP+=("$WKIT")
 mkdir -p "$WKIT/scripts" "$WKIT/profiles" "$WKIT/cursor/rules"
 cp "$KIT_ROOT/scripts/sync-rules.sh" "$WKIT/scripts/"
+# sync-rules.sh sources scripts/lib/backup-file.sh; a fake kit without it is
+# a degraded sync whose backups are command-not-found.
+cp -r "$KIT_ROOT/scripts/lib" "$WKIT/scripts/lib"
 cp "$KIT_ROOT/cursor/rules/operating-model.mdc" "$WKIT/cursor/rules/"
 printf 'alpha\nbeta\n' > "$WKIT/profiles/retired-rules.list"
 setup_target
@@ -303,6 +306,7 @@ FAKE_KIT="$(mktemp -d)"; CLEANUP+=("$FAKE_KIT")
 mkdir -p "$FAKE_KIT/scripts" "$FAKE_KIT/profiles" "$FAKE_KIT/claude/rules"
 cp -r "$KIT_ROOT/cursor" "$FAKE_KIT/cursor"
 cp "$KIT_ROOT/scripts/sync-rules.sh" "$FAKE_KIT/scripts/"
+cp -r "$KIT_ROOT/scripts/lib" "$FAKE_KIT/scripts/lib"
 cp "$KIT_ROOT/profiles/retired-rules.list" "$FAKE_KIT/profiles/"
 printf '# orphaned build artifact\n' > "$FAKE_KIT/claude/rules/some-renamed-rule.md"
 

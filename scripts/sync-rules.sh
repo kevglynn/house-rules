@@ -23,8 +23,14 @@ KIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$KIT_ROOT/cursor/rules"
 # backup_file / backup_before_overwrite / SAFE_BACKUP_COUNT. Shared with
 # init.sh so both writers into a target repo leave the same recoverable copy
-# under the same name (process-kit-jjj).
-. "$KIT_ROOT/scripts/lib/backup-file.sh"
+# under the same name (process-kit-jjj). Guarded because this script runs
+# without errexit: an unguarded source of a missing lib carries on and only
+# surfaces as `backup_file: command not found` at the first overwrite.
+# shellcheck source=lib/backup-file.sh
+. "$KIT_ROOT/scripts/lib/backup-file.sh" || {
+  echo "✗ Missing scripts/lib/backup-file.sh — incomplete kit checkout" >&2
+  exit 1
+}
 FORMAT="cursor"
 CHECK_MODE=false
 LOCAL_ONLY=false
@@ -423,13 +429,10 @@ cleanup_stale() { # cleanup_stale <dest> <ext>
 
 safe_backup() {
   local src_file="$1" dest_file="$2"
-  if $SAFE_MODE && [ -f "$dest_file" ]; then
-    if ! diff -q "$src_file" "$dest_file" > /dev/null 2>&1; then
-      if ! backup_file "$dest_file"; then
-        echo "✗ Failed to back up $(basename "$dest_file") before overwrite — refusing to sync this file" >&2
-        return 1
-      fi
-    fi
+  $SAFE_MODE || return 0
+  if ! backup_before_overwrite "$src_file" "$dest_file"; then
+    echo "✗ Failed to back up $(basename "$dest_file") before overwrite — refusing to sync this file" >&2
+    return 1
   fi
   return 0
 }
@@ -473,12 +476,9 @@ sync_claude_to() {
     # git is the backup, while a .bak dropped here breaks the exactness the
     # next --check --local enforces — the documented edit-then-sync loop would
     # leave the tree in a state the kit's own gate rejects.
-    if ! $LOCAL_ONLY && $SAFE_MODE && [ -f "$dest/$md_name" ] && ! cmp -s "$rendered" "$dest/$md_name"; then
-      if ! backup_file "$dest/$md_name"; then
-        echo "✗ Failed to back up $md_name before overwrite — refusing to sync this file" >&2
-        rm -f "$rendered"
-        return 1
-      fi
+    if ! $LOCAL_ONLY && ! safe_backup "$rendered" "$dest/$md_name"; then
+      rm -f "$rendered"
+      return 1
     fi
     cp "$rendered" "$dest/$md_name" || { rm -f "$rendered"; return 1; }
   done
@@ -612,8 +612,6 @@ validate_target() {
 
 # --- Local-only mode (generate in this repo) ---
 
-SAFE_BACKUP_COUNT=0
-
 if $LOCAL_ONLY; then
   if [[ "$FORMAT" == "cursor" ]]; then
     echo "--local only applies to non-cursor formats (cursor rules are the source)."
@@ -726,7 +724,6 @@ repo_count=0
 wt_count=0
 stale_count=0
 error_count=0
-SAFE_BACKUP_COUNT=0
 errors_summary=()
 
 FORMATS_TO_RUN=()

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared house-rules marker scan + refusal for the three installers.
 # Sourced from KIT_ROOT (each installer remains a standalone bash script).
 #

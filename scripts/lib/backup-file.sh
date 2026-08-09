@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared timestamped-backup primitive for the kit's destructive writers.
 # Sourced from KIT_ROOT (each caller remains a standalone bash script).
 #

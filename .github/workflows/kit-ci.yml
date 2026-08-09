@@ -134,9 +134,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: shellcheck scripts/*.sh + the house-rules dispatcher
+      - name: shellcheck scripts/*.sh + lib + the house-rules dispatcher
         # -S warning: fail on warnings and errors; info/style stay advisory.
-        run: shellcheck -S warning scripts/*.sh scripts/house-rules
+        # scripts/lib/*.sh is sourced by both writers into a target repo, so
+        # it is on the critical path and belongs in the gate; -x follows the
+        # source directives so the libs are checked in context too.
+        run: shellcheck -S warning -x scripts/*.sh scripts/lib/*.sh scripts/house-rules
 
   marker-blocks:
     runs-on: ubuntu-latest
@@ -187,9 +190,13 @@ jobs:
         # recoverable copy before every destructive write; init writes into
         # the same directories through a second door and had none, so a
         # re-run silently ate local edits to rules, skills, the conventions
-        # profile, and the distributed CLIs. Pins the .bak contents, the
-        # shared-implementation requirement, the --unsafe waiver, and the
-        # absence of .bak litter when nothing actually changed.
+        # profile, and the distributed CLIs. Coverage is pattern-class, not a
+        # list of sites: it installs the full surface (--tool both --skills),
+        # edits every delivered file, and demands one .bak per edited file, so
+        # a write site added later is covered without editing the suite. Also
+        # pins the shared-implementation requirement, the --unsafe waiver, the
+        # AGENTS.md marker-refresh backup, the absence of .bak litter when
+        # nothing changed, and that an unbackupable file is never overwritten.
         run: bash scripts/tests/test_init_backup.sh
 
   tier-mechanics:

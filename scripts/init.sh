@@ -70,9 +70,10 @@ Options:
   --help                      Show this help
 
 Re-running init is safe by default: a delivered file you have edited is
-copied to <file>.<timestamp>.bak before it is replaced. Files init creates
-but does not own — the scratchpad, CODE_OF_CONDUCT.md, the PR template, the
-tdd-ledger workflow — are never overwritten at all.
+copied to <file>.<timestamp>.bak before it is replaced, as is AGENTS.md
+before its house-rules section is refreshed. Files init creates but does not
+own — the scratchpad, CODE_OF_CONDUCT.md, the PR template, the tdd-ledger
+workflow — are never overwritten at all.
 
 Run from the root of the project you want to set up.
 EOF
@@ -129,18 +130,19 @@ cleanup_init() {
 trap cleanup_init EXIT
 
 # The one door for every kit-owned file init writes into the target repo.
+# Rationale and the shared-convention contract: scripts/lib/backup-file.sh.
 #
-# init is the command a user re-runs most casually, and before
-# process-kit-jjj each of these was a bare cp: a project that had edited a
-# delivered rule lost the edit with nothing printed and nothing recoverable.
-# sync had grown the guarantee during process-kit-2d6; init writes to the
-# same directories through a second door, so it needs the same one — and
-# from the same implementation, or the two conventions drift.
-#
-# A failed backup aborts instead of overwriting. Proceeding would destroy the
-# exact bytes the backup existed to preserve.
-install_file() { # install_file <src> <dest> <label>
-  local src="$1" dest="$2" label="$3"
+# A failed backup aborts instead of overwriting — proceeding would destroy
+# the exact bytes the backup existed to preserve.
+install_file() { # install_file <src> <dest> [label]
+  local src="$1" dest="$2" label="${3:-$(basename "$2")}"
+  # cp into a directory-shaped destination silently lands the file *inside*
+  # it and returns 0, so the rule installs somewhere no agent reads and the
+  # run still reports success.
+  if [ -d "$dest" ]; then
+    echo "✗ $label: destination is a directory ($dest) — refusing to install into it" >&2
+    return 1
+  fi
   if $SAFE_MODE && ! backup_before_overwrite "$src" "$dest"; then
     echo "✗ Failed to back up $label before overwrite — refusing to replace it" >&2
     return 1
@@ -148,8 +150,40 @@ install_file() { # install_file <src> <dest> <label>
   if ! cp -f "$src" "$dest" 2>"$CP_ERR"; then
     echo "✗ Failed to copy $label → $dest"
     sed 's/^/    /' "$CP_ERR" 2>/dev/null
+    # The backup above may already have succeeded, in which case the
+    # destination is now truncated or gone. Say so and point at the copy,
+    # rather than leaving a message that reads as "nothing was written".
+    if $SAFE_MODE; then
+      echo "    destination may be partially written — restore from the .bak beside it" >&2
+    fi
     return 1
   fi
+}
+
+# Install every file matching <glob-ext> from a kit rules directory.
+#
+# Per-file rather than one glob cp, so an existing edited rule can be backed
+# up before it is replaced. The empty-glob case is checked once after the
+# loop: testing it per-iteration reports "no rules found" for a directory
+# full of rules when a single entry happens not to be a regular file, and
+# does so after the earlier entries are already installed.
+install_rules_dir() { # install_rules_dir <src-dir> <ext> <dest> <label>
+  local src_dir="$1" ext="$2" dest="$3" label="$4" found=0 rule_src
+  for rule_src in "$src_dir"/*."$ext"; do
+    [ -e "$rule_src" ] || continue
+    if [ ! -f "$rule_src" ]; then
+      echo "✗ $(basename "$rule_src") in $src_dir is not a regular file" >&2
+      return 1
+    fi
+    install_file "$rule_src" "$dest/$(basename "$rule_src")" || return 1
+    found=$((found + 1))
+  done
+  if [ "$found" -eq 0 ]; then
+    echo "✗ Failed to copy $label → $dest"
+    echo "    no .$ext rules found in $src_dir"
+    return 1
+  fi
+  echo "✓ Copied $found $label → ${dest#"$PROJECT_ROOT"/}/"
 }
 
 echo "=== house-rules init: $(basename "$PROJECT_ROOT") ==="
@@ -296,37 +330,13 @@ echo ""
 if [[ "$TOOL" == "cursor" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.cursor/rules"
   mkdir -p "$dest"
-  # Per-file rather than one glob cp, so an existing edited rule can be
-  # backed up before it is replaced. Guard explicitly: set -e + an empty
-  # source glob or read-only destination would otherwise abort the script
-  # mid-bootstrap with no diagnostic and a misleading "0 rules" summary.
-  for rule_src in "$KIT_ROOT/cursor/rules/"*.mdc; do
-    if [ ! -f "$rule_src" ]; then
-      echo "✗ Failed to copy Cursor rules → $dest"
-      echo "    no .mdc rules found in $KIT_ROOT/cursor/rules"
-      exit 1
-    fi
-    install_file "$rule_src" "$dest/$(basename "$rule_src")" \
-      "$(basename "$rule_src")" || exit 1
-  done
-  count=$(ls -1 "$dest/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
-  echo "✓ Copied $count Cursor rules → .cursor/rules/"
+  install_rules_dir "$KIT_ROOT/cursor/rules" mdc "$dest" "Cursor rules" || exit 1
 fi
 
 if [[ "$TOOL" == "claude" || "$TOOL" == "both" ]]; then
   dest="$PROJECT_ROOT/.claude/rules"
   mkdir -p "$dest"
-  for rule_src in "$KIT_ROOT/claude/rules/"*.md; do
-    if [ ! -f "$rule_src" ]; then
-      echo "✗ Failed to copy Claude rules → $dest"
-      echo "    no .md rules found in $KIT_ROOT/claude/rules"
-      exit 1
-    fi
-    install_file "$rule_src" "$dest/$(basename "$rule_src")" \
-      "$(basename "$rule_src")" || exit 1
-  done
-  count=$(ls -1 "$dest/"*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo "✓ Copied $count Claude Code rules → .claude/rules/"
+  install_rules_dir "$KIT_ROOT/claude/rules" md "$dest" "Claude Code rules" || exit 1
 fi
 
 # ---------- Copy skills (opt-in) ----------
@@ -371,6 +381,10 @@ if $SKILLS; then
         # each of them with no chance to back one up. Like cp -rf, this adds
         # and replaces but never removes, so a file the kit no longer ships
         # stays put.
+        #
+        # Regular files only: unlike cp -rf, this does not carry symlinks or
+        # recreate empty directories. No skill ships either today; a skill
+        # that needs one must extend this walk.
         while IFS= read -r -d '' skill_file; do
           skill_rel="${skill_file#"$skill_dir"}"
           skill_file_dest="$skills_dest/$skill_name/$skill_rel"
@@ -682,6 +696,16 @@ AGENTS_SECTION
 # Returns the shared writer contract (0 = written, 1 = I/O failure,
 # 2 = malformed markers, warn-and-skip) via scripts/lib/marker-rewrite.sh.
 refresh_agents_section() {
+  # A third posture, distinct from the owned-overwrite and seeded-never-touch
+  # groups: this rewrites kit-owned bytes *inside* a project-owned file.
+  # Content outside the markers survives, but anything a project wrote
+  # between them does not — and the refresh fires on every kit version bump,
+  # in every target. Same guarantee as the delivered files, then: a
+  # recoverable copy before the bytes go.
+  if $SAFE_MODE && [ -f "$agents_md" ] && ! backup_file "$agents_md"; then
+    echo "✗ Failed to back up AGENTS.md before refreshing its house-rules section" >&2
+    return 1
+  fi
   marker_rewrite_file "$agents_md" "$agents_begin" "$agents_end" \
     html "house-rules section markers" render_agents_section
 }

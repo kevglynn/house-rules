@@ -142,6 +142,8 @@ The checker CLIs ship to target repos through one manifest (`scripts/distributed
 | `install-aliases.sh` | Per-machine `hr` / `house-rules` aliases and the `PROCESS_KIT` env var |
 | `setup-worktree.sh` | Makes git worktrees share the main repo's beads database |
 
+Shared shell code the installers source lives in `scripts/lib/` — `marker-rewrite.sh` (the managed-block rewrite the three installers share) and `backup-file.sh` (the timestamped-backup primitive `init` and `sync` share). A lib stays sourceable: no shebang, no top-level side effects, and a header comment stating its return-code contract. **`scripts/lib/` is not distributed** — it exists only in the kit clone, so nothing in `scripts/distributed-clis.list` may source it; a distributed CLI that grows a lib dependency breaks in every target.
+
 Distribution semantics, worktree setup, and drift-checking mechanics live in **[docs/operations.md](docs/operations.md)**. Pinning and compatibility: **[docs/versioning.md](docs/versioning.md)**.
 
 ## Governance and license
