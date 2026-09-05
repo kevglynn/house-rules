@@ -174,8 +174,10 @@ a vibes check:
 7. **Word-count the draft against its channel ceiling** (P8). Over the
    ceiling → cut whole items and hold them in reserve for a follow-up.
    Do not get there by trimming the surviving sentences into fragments.
-8. **Scan punctuation against the user's fingerprint** (P9); P9 carries
-   the overlay → principal's-writing → restrained-default ladder.
+8. **Search the draft for the em-dash character** (P9). Any hit → rewrite
+   that clause; the budget is zero unless an overlay says otherwise. Then
+   scan the rest of the punctuation against the user's fingerprint, which
+   follows the overlay → principal's-writing → restrained-default ladder.
 9. **Scan for compressed-metaphor shorthand** (P10). Three or more in a
    document → unpack them into plain statements; zero budget when the
    user's overlay says so.
@@ -304,16 +306,34 @@ and "nothing new is needed there."
 ## P9 — Punctuation fingerprint
 
 Punctuation is a voice signature the same way word choice is, and model
-defaults are recognizable: em dashes chained through every paragraph are
-the single most-cited AI tell. The law is generic. Match the user's own
-fingerprint, never the model's default.
+defaults are recognizable: the em dash is the single most-cited AI tell.
+The law is generic. Match the user's own fingerprint, never the model's
+default.
 
-The fingerprint itself is per-user data, not skill content — read it
+**Budget: zero em dashes, not "no chains."** One em dash in an otherwise
+clean paragraph is still the tell. People writing at speed reach for a
+period, a comma, a colon, or parentheses; the em dash is a typographic
+mark most writers never type at all, and a draft that uses it reads as
+generated whether it appears once or six times.
+
+Rewrite the clause rather than swapping in another dramatic mark. An
+ellipsis or a semicolon doing the same pivot work is the same tell in a
+different costume.
+
+| Em dash | Rewrite |
+|---|---|
+| The build passed — the tests did not. | The build passed. The tests did not. |
+| One thing to flag — the cap is 100 sites. | One thing to flag: the cap is 100 sites. |
+| The fix — a stale cache — landed Friday. | The fix (a stale cache) landed Friday. |
+| Ask Stephen — he owns the npm org. | Ask Stephen, who owns the npm org. |
+
+The rest of the fingerprint is per-user data, not skill content: read it
 from the user overlay (see "User Overlay" below). With no overlay, learn
-the fingerprint from the principal's own writing — their emails,
-documents, and messages are the reference. With no sample either,
-default to restrained punctuation: no em-dash chains, no ellipses in
-formal register.
+the fingerprint from the principal's own writing, using their emails,
+documents, and messages as the reference. With no sample either, default
+to restrained punctuation: zero em dashes, and no ellipses in formal
+register. An overlay may relax the em-dash budget for someone who
+genuinely writes that way, but that is an opt-in, never the default.
 
 Scope: this pattern governs prose drafted in the user's voice. The
 catalog's own explanatory text and agent-to-agent output are exempt (the
