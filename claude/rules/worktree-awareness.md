@@ -31,7 +31,15 @@ All worktrees share a single beads database via a redirect file (`.beads/redirec
 - A bead created in any worktree is visible to all others
 - There is one Dolt server instance, not one per worktree
 
-**How it works:** Create worktrees with `bd worktree create <name>` — it handles the redirect natively, and it is the only path that sets up the redirect in target repos, so prefer it over raw `git worktree add`. For the rest of the native command catalog (`bd worktree list/info/remove`, `bd where`), see `bd --help`.
+**How it works:** bd resolves the shared database automatically via git's common
+directory — a worktree with no `.beads/redirect` file and no local Dolt DB still
+reads and writes the main repo's database. Verified on bd 1.2.2: `bd where` run
+inside an unredirected worktree reports the main repo's `.beads/embeddeddolt`, not a
+local one. `bd worktree create <name>` additionally writes a `.beads/redirect` file
+pointing at the main repo — belt-and-braces, not required for DB access. This means
+raw `git worktree add` (what Cursor's UI and Claude Code's `EnterWorktree` both use)
+shares the database correctly without it. For the rest of the native command catalog
+(`bd worktree list/info/remove`, `bd where`), see `bd --help`.
 
 **If `bd list` fails in a worktree:** Run `bd doctor --agent` for diagnostics with remediation commands (server mode only — in embedded mode doctor no-ops; check `.beads/redirect` and run `bd where` instead). If the redirect is missing, recreate the worktree with `bd worktree create`.
 

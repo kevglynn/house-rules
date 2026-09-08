@@ -5,8 +5,9 @@ This protocol is non-negotiable. Every session. No exceptions. The numbered chec
 ## Session start — do this BEFORE any other work
 
 1. `bd prime` — reload workflow context and memories
-2. `bd show --current` — check for in-progress work from a prior session
+2. `bd show --current` — check for in-progress work from a prior session of **yours**. This is not a collision check — see step 4.
 3. `bd ready` — find the next unblocked task
+4. **Git pre-flight — the actual collision check.** `git fetch`, review what moved on `origin/main`, and `git log --oneline --all -- <area>` for the files you're about to touch. Beads only tracks work its users file — a collaborator who doesn't track work in it is invisible to `bd list`/`bd ready` no matter how much they've pushed. Git history is the one surface everyone who commits shares.
 
 If `bd` is not installed or `.beads/` is missing, ask the user before proceeding.
 
@@ -28,6 +29,21 @@ If `bd` is not installed or `.beads/` is missing, ask the user before proceeding
 
 - `bd doctor --agent` — quick health check (catches orphaned in-progress beads, broken deps). **Embedded mode:** doctor is unsupported (exits 0 with a note, no diagnostics) — run `bd lint`, `bd orphans`, and `bd blocked` instead
 - `bd dolt pull && bd dolt push` — sync beads state with remote (if remote configured)
+
+## Time-to-merge and resuming carried-over work
+
+Size a unit of work to land within one session; if it can't, split it into pieces
+that can. Time-to-merge is the one variable fully under your control regardless of
+how fast `main` moves or how many people are pushing to it — treat it as the primary
+defense against rework, not a nice-to-have.
+
+Work not merged in the session that created it is suspect. Before resuming it,
+rebase onto `origin/main` and re-verify against current reality — never resume it as
+though it's still current. Past a short shelf life (days, not one session), re-plan
+instead of resuming: check `git log --all --oneline -- <area>` for the symptom or
+area first, because someone may have already fixed it from a different angle while
+the work sat unmerged. Discovering that after re-solving it from scratch is the
+expensive way to find out; discovering it before you start is free.
 
 ## Prohibited task tracking tools
 
