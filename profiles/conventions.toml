@@ -70,6 +70,7 @@ slug_pattern = '^[a-z0-9]+(-[a-z0-9]+)+\Z'
 [git]
 judgment = [
   "Commit at logical checkpoints, small and atomic — not one giant commit at bead close. Never force push shared branches without explicit user approval.",
+  "Before writing in a repo other than the session's own, read its AGENTS.md/CLAUDE.md. Branch naming applies only where the repo works on branches; a trunk-based repo commits to main and pushes.",
 ]
 
 # ---------------------------------------------------------------------------

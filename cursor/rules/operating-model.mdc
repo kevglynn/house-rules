@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Operating Model
 
-**Rule hierarchy:** specialized rules are the source of truth for their domain. This rule defines the operating model (roles, workflow, conventions). If a conflict arises: project agent rules > specialized rules > this rule > repo docs (AGENTS.md, CLAUDE.md).
+**Rule hierarchy:** specialized rules are the source of truth for their domain. This rule defines the operating model (roles, workflow, conventions). If a conflict arises: project agent rules > specialized rules > this rule > repo docs (AGENTS.md, CLAUDE.md). Exception: how work lands in a repo (branching, PRs vs pushing to main, pre-push gates) follows that repo's AGENTS.md/CLAUDE.md over this rule's Git Conventions.
 
 **Kit-resident references:** `skills/<name>` and `templates/<file>` paths cited by these rules resolve to the in-project copy when present, else the machine-global skills directory (`~/.cursor/skills/`, `~/.claude/skills/`), else the kit clone (`${PROCESS_KIT:-$HOME/process-kit}/skills/<name>`). A pointer that resolves nowhere is a setup gap — note it, don't silently skip the procedure it names.
 
@@ -69,6 +69,7 @@ On build/test failure: stop, diagnose, fix; if the fix is outside the current be
 
 - Commit messages: `<type>: <summary>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `spike`; summaries under 72 characters. Branch naming: `<type>/<bead-id>-<short-description>` — types `feat`, `fix`, `refactor`, `test`, `chore`, `docs`.
 - Commit at logical checkpoints, small and atomic — not one giant commit at bead close. Never force push shared branches without explicit user approval.
+- Before writing in a repo other than the session's own, read its AGENTS.md/CLAUDE.md. Branch naming applies only where the repo works on branches; a trunk-based repo commits to main and pushes.
 <!-- END GENERATED from profiles/conventions.toml -->
 
 ## Communication
